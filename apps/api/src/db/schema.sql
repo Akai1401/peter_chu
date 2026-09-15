@@ -66,3 +66,15 @@ CREATE TABLE IF NOT EXISTS singleton_locks (
   acquired_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   expires_at TEXT NOT NULL
 );
+
+-- Test dispatch queue for on-demand sends
+CREATE TABLE IF NOT EXISTS test_dispatch_queue (
+  id TEXT PRIMARY KEY,
+  reminder_id TEXT NOT NULL,
+  target_thread_id TEXT NOT NULL,
+  content TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'PENDING', -- 'PENDING', 'PROCESSING', 'COMPLETED', 'FAILED'
+  error TEXT,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  finished_at TEXT
+);

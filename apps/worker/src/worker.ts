@@ -101,6 +101,17 @@ function initWorkerDatabase(dbPath: string): Database.Database {
       acquired_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
       expires_at TEXT NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS test_dispatch_queue (
+      id TEXT PRIMARY KEY,
+      reminder_id TEXT NOT NULL,
+      target_thread_id TEXT NOT NULL,
+      content TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'PENDING',
+      error TEXT,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      finished_at TEXT
+    );
   `);
 
   return db;
@@ -110,7 +121,8 @@ async function bootstrapWorker() {
   const dbPath = getDbPath();
   const db = initWorkerDatabase(dbPath);
 
-  const isDryRun = process.env.DRY_RUN !== 'false';
+  const botStateRow = db.prepare('SELECT dry_run FROM bot_state WHERE id = 1').get() as { dry_run: number } | undefined;
+  const isDryRun = botStateRow !== undefined ? Boolean(botStateRow.dry_run) : (process.env.DRY_RUN !== 'false');
   console.log(`[Worker] Starting Messenger Bot Worker...`);
   console.log(`[Worker] Database: ${dbPath}`);
   console.log(`[Worker] DRY_RUN Mode: ${isDryRun}`);
@@ -118,6 +130,7 @@ async function bootstrapWorker() {
 
   const messengerClient = new MessengerClient({
     isDryRun,
+    headless: process.env.MESSENGER_HEADLESS === 'true',
     userDataDir: path.resolve(rootDir, process.env.MESSENGER_USER_DATA_DIR || './.messenger-session')
   });
 

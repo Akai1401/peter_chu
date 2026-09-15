@@ -1,7 +1,24 @@
 import type { Database } from 'better-sqlite3';
+import fs from 'node:fs';
+import path from 'node:path';
 import { getDb } from '../db/database.js';
 import { LogService } from './log.service.js';
 import type { BotState, BotStatus, SessionStatus } from '@messenger/shared';
+
+function findWorkspaceRoot(): string {
+  let curr = process.cwd();
+  while (curr !== path.dirname(curr)) {
+    const pkgPath = path.join(curr, 'package.json');
+    if (fs.existsSync(pkgPath)) {
+      try {
+        const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
+        if (pkg.workspaces) return curr;
+      } catch {}
+    }
+    curr = path.dirname(curr);
+  }
+  return process.cwd();
+}
 
 export class BotControlService {
   private db: Database;
@@ -104,13 +121,33 @@ export class BotControlService {
 
   setDryRun(dryRun: boolean, actor: string = 'admin'): BotState {
     const now = new Date().toISOString();
-    this.db.prepare(`
-      UPDATE bot_state
-      SET dry_run = ?, updated_at = ?
-      WHERE id = 1
-    `).run(dryRun ? 1 : 0, now);
+    let sessionStatus: SessionStatus | undefined;
 
-    this.logService.logAudit('BOT_DRY_RUN_TOGGLE', actor, { dryRun });
+    if (!dryRun) {
+      const sessionDir = path.resolve(
+        findWorkspaceRoot(),
+        process.env.MESSENGER_USER_DATA_DIR || './.messenger-session'
+      );
+      if (!fs.existsSync(sessionDir) || fs.readdirSync(sessionDir).length === 0) {
+        sessionStatus = 'UNAUTHENTICATED';
+      }
+    }
+
+    if (sessionStatus) {
+      this.db.prepare(`
+        UPDATE bot_state
+        SET dry_run = ?, session_status = ?, updated_at = ?
+        WHERE id = 1
+      `).run(dryRun ? 1 : 0, sessionStatus, now);
+    } else {
+      this.db.prepare(`
+        UPDATE bot_state
+        SET dry_run = ?, updated_at = ?
+        WHERE id = 1
+      `).run(dryRun ? 1 : 0, now);
+    }
+
+    this.logService.logAudit('BOT_DRY_RUN_TOGGLE', actor, { dryRun, sessionStatus });
     return this.getBotState();
   }
 

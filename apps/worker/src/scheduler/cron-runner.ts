@@ -29,6 +29,7 @@ export class CronRunner {
   private rateLimiter: RateLimiter;
   private workerId: string;
   private timer: NodeJS.Timeout | null = null;
+  private testTimer: NodeJS.Timeout | null = null;
   private isRunning: boolean = false;
 
   constructor(
@@ -88,8 +89,8 @@ export class CronRunner {
       return stats;
     }
 
-    // Synchronize dry-run flag
-    const isDryRun = Boolean(botStateRow.dryRun) || (process.env.DRY_RUN !== 'false');
+    // Synchronize dry-run flag from database (single source of truth)
+    const isDryRun = Boolean(botStateRow.dryRun);
     this.messengerClient.setDryRun(isDryRun);
 
     // 3. Query active reminders
@@ -210,6 +211,64 @@ export class CronRunner {
   }
 
   /**
+   * Check and execute on-demand test dispatch requests
+   */
+  async processTestQueue(): Promise<void> {
+    try {
+      const pending = this.db.prepare(`
+        SELECT id, reminder_id, target_thread_id, content
+        FROM test_dispatch_queue
+        WHERE status = 'PENDING'
+        ORDER BY created_at ASC
+        LIMIT 1
+      `).get() as { id: string; reminder_id: string; target_thread_id: string; content: string } | undefined;
+
+      if (!pending) return;
+
+      this.db.prepare(`UPDATE test_dispatch_queue SET status = 'PROCESSING' WHERE id = ?`).run(pending.id);
+
+      const botStateRow = this.db.prepare(`
+        SELECT status, emergency_stop as emergencyStop, dry_run as dryRun
+        FROM bot_state
+        WHERE id = 1
+      `).get() as { status: BotStatus; emergencyStop: number; dryRun: number } | undefined;
+
+      const isDryRun = Boolean(botStateRow?.dryRun);
+      this.messengerClient.setDryRun(isDryRun);
+
+      const sendResult = await this.messengerClient.sendMessage(pending.target_thread_id, pending.content);
+      const finishedAt = new Date().toISOString();
+      const status = sendResult.dryRun ? 'COMPLETED' : sendResult.success ? 'COMPLETED' : 'FAILED';
+
+      this.db.prepare(`
+        UPDATE test_dispatch_queue
+        SET status = ?, error = ?, finished_at = ?
+        WHERE id = ?
+      `).run(status, sendResult.error || null, finishedAt, pending.id);
+
+      // Record in execution logs
+      const preview = createMessagePreview(pending.content);
+      const slotKey = `test-${Date.now()}`;
+      const idempotencyKey = generateIdempotencyKey(pending.reminder_id, pending.target_thread_id, slotKey);
+
+      this.recordExecutionLog({
+        reminderId: pending.reminder_id,
+        threadId: pending.target_thread_id,
+        status: sendResult.dryRun ? 'DRY_RUN' : sendResult.success ? 'SUCCESS' : 'FAILED',
+        idempotencyKey,
+        messagePreview: preview,
+        details: {
+          testTrigger: true,
+          mode: sendResult.dryRun ? 'DRY_RUN' : 'LIVE',
+          error: sendResult.error
+        }
+      });
+    } catch (err: any) {
+      console.warn('[Worker] Error processing test queue:', err.message);
+    }
+  }
+
+  /**
    * Start scheduling loop
    */
   start(intervalMs: number = 30000): void {
@@ -222,6 +281,11 @@ export class CronRunner {
     this.timer = setInterval(() => {
       this.tick().catch(console.error);
     }, intervalMs);
+
+    // Check on-demand test dispatch queue every 1 second
+    this.testTimer = setInterval(() => {
+      this.processTestQueue().catch(console.error);
+    }, 1000);
   }
 
   /**
@@ -232,6 +296,10 @@ export class CronRunner {
     if (this.timer) {
       clearInterval(this.timer);
       this.timer = null;
+    }
+    if (this.testTimer) {
+      clearInterval(this.testTimer);
+      this.testTimer = null;
     }
     this.lockManager.releaseLock('worker_singleton', this.workerId);
     await this.messengerClient.close();

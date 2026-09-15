@@ -113,6 +113,16 @@ Mở 3 terminal riêng biệt để chạy các thành phần:
   # Dashboard giao diện mở tại http://localhost:3000
   ```
 
+### 5. Đăng Nhập Tài Khoản Messenger Thật (Khi muốn chạy Live)
+Khi muốn gửi tin nhắn thật lên Facebook (tắt chế độ DRY_RUN):
+1. Chạy lệnh:
+   ```bash
+   npm run login:messenger
+   ```
+2. Cửa sổ Chrome thật sẽ tự động mở trang Facebook Messenger. Bạn tiến hành đăng nhập tài khoản Facebook của bạn 1 lần duy nhất.
+3. Sau khi vào được màn hình tin nhắn, script sẽ tự động lưu phiên (cookies & storage) vào thư mục `.messenger-session/` và cập nhật `session_status = 'LOGGED_IN'`.
+4. Kể từ lúc này, Bot Worker có thể tự động gửi tin nhắn thật bằng tài khoản này mà không cần đăng nhập lại.
+
 ---
 
 ## 🧪 Kiểm Thử & Kiểm Tra Chất Lượng Mã Nguồn
