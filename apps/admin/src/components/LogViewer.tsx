@@ -1,5 +1,10 @@
 import React, { useState } from 'react';
 import { Terminal, RefreshCw, Filter, ChevronRight, ChevronDown } from 'lucide-react';
+import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Badge } from '@/components/ui/badge';
+import { ScrollArea } from '@/components/ui/scroll-area';
 import type { AuditLog, ExecutionLog } from '@messenger/shared';
 
 interface Props {
@@ -46,187 +51,194 @@ export const LogViewer: React.FC<Props> = ({
   const getStatusBadge = (status: string) => {
     switch (status) {
       case 'SUCCESS':
-        return <span className="badge badge-success text-[10px]">Success</span>;
+        return <Badge variant="success" className="text-[10px] uppercase tracking-wider">Success</Badge>;
       case 'DRY_RUN':
-        return <span className="badge badge-warning text-[10px]">Dry Run</span>;
+        return <Badge variant="info" className="text-[10px] uppercase tracking-wider">Dry Run</Badge>;
       case 'FAILED':
-        return <span className="badge badge-danger text-[10px]">Failed</span>;
+        return <Badge variant="destructive" className="text-[10px] uppercase tracking-wider">Failed</Badge>;
       case 'SKIPPED_DUPLICATE':
-        return <span className="badge badge-neutral text-[10px]">Duplicate Skipped</span>;
+        return <Badge variant="secondary" className="text-[10px] uppercase tracking-wider">Duplicate</Badge>;
       case 'SKIPPED_RATE_LIMITED':
-        return <span className="badge badge-warning text-[10px]">Rate Limited</span>;
+        return <Badge variant="warning" className="text-[10px] uppercase tracking-wider">Rate Limited</Badge>;
       default:
-        return <span className="badge badge-neutral text-[10px]">{status}</span>;
+        return <Badge variant="secondary" className="text-[10px] uppercase tracking-wider">{status}</Badge>;
     }
   };
 
   const getLevelBadge = (level: string) => {
     switch (level) {
       case 'INFO':
-        return <span className="badge badge-info text-[10px]">Info</span>;
+        return <Badge variant="info" className="text-[10px] uppercase tracking-wider">Info</Badge>;
       case 'WARN':
-        return <span className="badge badge-warning text-[10px]">Warn</span>;
+      case 'WARNING':
+        return <Badge variant="warning" className="text-[10px] uppercase tracking-wider">Warning</Badge>;
       case 'ERROR':
-        return <span className="badge badge-danger text-[10px]">Error</span>;
+      case 'CRITICAL':
+        return <Badge variant="destructive" className="text-[10px] uppercase tracking-wider">Error</Badge>;
       default:
-        return <span className="badge badge-neutral text-[10px]">{level}</span>;
+        return <Badge variant="secondary" className="text-[10px] uppercase tracking-wider">{level}</Badge>;
     }
   };
 
   return (
-    <div className="glass-panel p-6">
-      <div className="flex flex-wrap items-center justify-between gap-4 pb-4 border-b border-white/10">
-        <div className="flex items-center gap-4">
-          <h3 className="text-lg font-bold text-white flex items-center gap-2">
-            <Terminal size={18} className="text-indigo-400" />
-            System & Dispatch Logs
-          </h3>
+    <Card>
+      <CardHeader className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b">
+        <div className="flex flex-col sm:flex-row sm:items-center gap-4">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-lg bg-muted border flex items-center justify-center">
+              <Terminal className="w-4 h-4 text-foreground" />
+            </div>
+            <CardTitle className="text-lg">System Logs</CardTitle>
+          </div>
 
-          <div className="flex bg-slate-900 rounded-lg p-1 border border-white/5 text-xs">
+          <div className="flex bg-muted/50 rounded-md p-1 border">
             <button
               onClick={() => setTab('execution')}
-              className={`px-3 py-1 rounded-md transition-all ${
+              className={`px-3 py-1.5 rounded-sm text-xs font-semibold transition-colors ${
                 tab === 'execution'
-                  ? 'bg-indigo-600 text-white font-semibold shadow'
-                  : 'text-slate-400 hover:text-white'
+                  ? 'bg-background text-foreground shadow-sm'
+                  : 'text-muted-foreground hover:text-foreground hover:bg-background/50'
               }`}
             >
-              Execution Logs ({executionLogs.length})
+              Execution ({executionLogs.length})
             </button>
             <button
               onClick={() => setTab('audit')}
-              className={`px-3 py-1 rounded-md transition-all ${
+              className={`px-3 py-1.5 rounded-sm text-xs font-semibold transition-colors ${
                 tab === 'audit'
-                  ? 'bg-indigo-600 text-white font-semibold shadow'
-                  : 'text-slate-400 hover:text-white'
+                  ? 'bg-background text-foreground shadow-sm'
+                  : 'text-muted-foreground hover:text-foreground hover:bg-background/50'
               }`}
             >
-              Audit Trail ({auditLogs.length})
+              Audit ({auditLogs.length})
             </button>
           </div>
         </div>
 
         <div className="flex items-center gap-3">
-          <div className="relative">
-            <Filter size={14} className="absolute left-2.5 top-2.5 text-slate-500" />
-            <input
-              type="text"
+          <div className="relative flex-1 md:w-56">
+            <Filter className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+            <Input
               value={filterText}
               onChange={(e) => setFilterText(e.target.value)}
-              placeholder="Filter logs..."
-              className="pl-8 pr-3 py-1.5 rounded-lg bg-slate-900 border border-white/10 text-xs text-white focus:outline-none focus:border-indigo-500"
+              placeholder="Search logs..."
+              className="pl-9"
             />
           </div>
 
-          <button
+          <Button
+            variant="outline"
+            size="icon"
             onClick={() => onRefresh()}
             disabled={loading}
-            className="btn btn-ghost text-xs px-2.5 py-1.5"
-            title="Refresh logs"
+            className="shrink-0"
           >
-            <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
-          </button>
+            <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+          </Button>
         </div>
-      </div>
+      </CardHeader>
 
-      {/* Logs Table */}
-      <div className="mt-4 max-h-[420px] overflow-y-auto font-mono text-xs divide-y divide-white/5">
-        {tab === 'execution' ? (
-          filteredExecLogs.length === 0 ? (
-            <div className="py-8 text-center text-slate-500 font-sans">
-              No execution logs found.
-            </div>
-          ) : (
-            filteredExecLogs.map((log) => {
-              const isExpanded = expandedId === log.id;
-              return (
-                <div key={log.id} className="py-2.5 hover:bg-white/[0.02] px-2 rounded-lg transition-colors">
-                  <div
-                    onClick={() => toggleExpand(log.id)}
-                    className="flex flex-wrap items-center justify-between gap-3 cursor-pointer"
-                  >
-                    <div className="flex items-center gap-2">
-                      {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-                      <span className="text-slate-400">
-                        {new Date(log.executedAt).toLocaleTimeString()}
-                      </span>
-                      {getStatusBadge(log.status)}
-                      <span className="text-slate-300 font-sans truncate max-w-sm">
-                        {log.messagePreview}
-                      </span>
-                    </div>
+      <CardContent className="pt-4 sm:pt-6">
+        <ScrollArea className="h-[500px] pr-4 -mr-4">
+          <div className="space-y-3">
+            {tab === 'execution' ? (
+              filteredExecLogs.length === 0 ? (
+                <div className="py-16 text-center text-sm font-medium text-muted-foreground bg-muted/30 rounded-lg border border-dashed">
+                  No execution logs found.
+                </div>
+              ) : (
+                filteredExecLogs.map((log) => {
+                  const isExpanded = expandedId === log.id;
+                  return (
+                    <div key={log.id} className="border rounded-lg overflow-hidden bg-card hover:border-muted-foreground/30 transition-colors">
+                      <div
+                        onClick={() => toggleExpand(log.id)}
+                        className="p-3.5 flex items-start gap-3 cursor-pointer hover:bg-muted/30"
+                      >
+                        <div className="text-muted-foreground shrink-0 mt-1">
+                          {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                        </div>
+                        <div className="flex flex-col gap-1.5 min-w-0 flex-1">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            {getStatusBadge(log.status)}
+                            <span className="text-[11px] font-medium text-muted-foreground font-mono bg-muted/50 px-1.5 py-0.5 rounded">
+                              {new Date(log.executedAt).toLocaleTimeString()}
+                            </span>
+                          </div>
+                          <span className="text-sm font-medium line-clamp-2 break-words">{log.messagePreview}</span>
+                        </div>
+                      </div>
 
-                    <div className="flex items-center gap-3 text-slate-500">
-                      <span>Thread: {log.threadId}</span>
-                    </div>
-                  </div>
-
-                  {isExpanded && (
-                    <div className="mt-3 p-3 rounded-lg bg-slate-950/80 border border-white/5 text-[11px] text-slate-400 space-y-1">
-                      <p><strong className="text-slate-300">Log ID:</strong> {log.id}</p>
-                      <p><strong className="text-slate-300">Reminder ID:</strong> {log.reminderId}</p>
-                      <p><strong className="text-slate-300">Idempotency Key:</strong> {log.idempotencyKey}</p>
-                      <p><strong className="text-slate-300">Executed At:</strong> {log.executedAt}</p>
-                      {log.details && (
-                        <div>
-                          <strong className="text-slate-300">Details:</strong>
-                          <pre className="mt-1 p-2 rounded bg-slate-900 border border-white/5 overflow-x-auto text-cyan-300">
-                            {JSON.stringify(log.details, null, 2)}
-                          </pre>
+                      {isExpanded && (
+                        <div className="p-4 bg-muted/20 border-t space-y-2">
+                          <p className="text-xs"><span className="font-semibold">ID:</span> <span className="font-mono text-muted-foreground break-all">{log.id}</span></p>
+                          <p className="text-xs"><span className="font-semibold">Thread:</span> <span className="font-mono text-muted-foreground break-all">{log.threadId}</span></p>
+                          <p className="text-xs"><span className="font-semibold">Time:</span> <span className="font-mono text-muted-foreground">{log.executedAt}</span></p>
+                          {log.details && (
+                            <div className="mt-3">
+                              <pre className="p-3 bg-background border rounded-md overflow-x-auto text-xs font-mono">
+                                {JSON.stringify(log.details, null, 2)}
+                              </pre>
+                            </div>
+                          )}
                         </div>
                       )}
                     </div>
-                  )}
+                  );
+                })
+              )
+            ) : (
+              filteredAuditLogs.length === 0 ? (
+                <div className="py-16 text-center text-sm font-medium text-muted-foreground bg-muted/30 rounded-lg border border-dashed">
+                  No audit logs found.
                 </div>
-              );
-            })
-          )
-        ) : (
-          filteredAuditLogs.length === 0 ? (
-            <div className="py-8 text-center text-slate-500 font-sans">
-              No audit logs found.
-            </div>
-          ) : (
-            filteredAuditLogs.map((log) => {
-              const isExpanded = expandedId === log.id;
-              return (
-                <div key={log.id} className="py-2.5 hover:bg-white/[0.02] px-2 rounded-lg transition-colors">
-                  <div
-                    onClick={() => toggleExpand(log.id)}
-                    className="flex flex-wrap items-center justify-between gap-3 cursor-pointer"
-                  >
-                    <div className="flex items-center gap-2">
-                      {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-                      <span className="text-slate-400">
-                        {new Date(log.timestamp).toLocaleTimeString()}
-                      </span>
-                      {getLevelBadge(log.level)}
-                      <span className="font-semibold text-slate-200">{log.action}</span>
-                    </div>
+              ) : (
+                filteredAuditLogs.map((log) => {
+                  const isExpanded = expandedId === log.id;
+                  return (
+                    <div key={log.id} className="border rounded-lg overflow-hidden bg-card hover:border-muted-foreground/30 transition-colors">
+                      <div
+                        onClick={() => toggleExpand(log.id)}
+                        className="p-3.5 flex items-start gap-3 cursor-pointer hover:bg-muted/30"
+                      >
+                        <div className="text-muted-foreground shrink-0 mt-1">
+                          {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                        </div>
+                        <div className="flex flex-col gap-1.5 min-w-0 flex-1">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            {getLevelBadge(log.level)}
+                            <span className="text-[11px] font-medium text-muted-foreground font-mono bg-muted/50 px-1.5 py-0.5 rounded">
+                              {new Date(log.timestamp).toLocaleTimeString()}
+                            </span>
+                            <Badge variant="outline" className="text-[10px] ml-auto">
+                              {log.actor}
+                            </Badge>
+                          </div>
+                          <span className="text-sm font-medium line-clamp-2 break-words">{log.action}</span>
+                        </div>
+                      </div>
 
-                    <span className="text-slate-500">Actor: {log.actor}</span>
-                  </div>
-
-                  {isExpanded && (
-                    <div className="mt-3 p-3 rounded-lg bg-slate-950/80 border border-white/5 text-[11px] text-slate-400 space-y-1">
-                      <p><strong className="text-slate-300">Audit ID:</strong> {log.id}</p>
-                      <p><strong className="text-slate-300">Timestamp:</strong> {log.timestamp}</p>
-                      {log.details && (
-                        <div>
-                          <strong className="text-slate-300">Payload:</strong>
-                          <pre className="mt-1 p-2 rounded bg-slate-900 border border-white/5 overflow-x-auto text-amber-300">
-                            {JSON.stringify(log.details, null, 2)}
-                          </pre>
+                      {isExpanded && (
+                        <div className="p-4 bg-muted/20 border-t space-y-2">
+                          <p className="text-xs"><span className="font-semibold">ID:</span> <span className="font-mono text-muted-foreground break-all">{log.id}</span></p>
+                          <p className="text-xs sm:hidden"><span className="font-semibold">Actor:</span> <span className="font-mono text-muted-foreground">{log.actor}</span></p>
+                          {log.details && (
+                            <div className="mt-3">
+                              <pre className="p-3 bg-background border rounded-md overflow-x-auto text-xs font-mono">
+                                {JSON.stringify(log.details, null, 2)}
+                              </pre>
+                            </div>
+                          )}
                         </div>
                       )}
                     </div>
-                  )}
-                </div>
-              );
-            })
-          )
-        )}
-      </div>
-    </div>
+                  );
+                })
+              )
+            )}
+          </div>
+        </ScrollArea>
+      </CardContent>
+    </Card>
   );
 };

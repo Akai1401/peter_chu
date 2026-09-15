@@ -7,8 +7,20 @@ import {
   Trash2,
   Plus,
   Hash,
-  PhoneCall
+  PhoneCall,
+  MoreVertical,
+  Power
 } from 'lucide-react';
+import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import type { Reminder } from '@messenger/shared';
 
 interface Props {
@@ -34,7 +46,6 @@ export const ReminderList: React.FC<Props> = ({
 }) => {
   const [testingId, setTestingId] = useState<string | null>(null);
   const [callingId, setCallingId] = useState<string | null>(null);
-  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
 
   const handleTestClick = async (id: string) => {
     setTestingId(id);
@@ -55,185 +66,128 @@ export const ReminderList: React.FC<Props> = ({
   };
 
   return (
-    <div className="glass-panel p-6">
-      <div className="flex items-center justify-between pb-5 border-b border-white/10">
-        <div>
-          <h2 className="text-xl font-bold tracking-tight text-white flex items-center gap-2">
-            <Bell size={20} className="text-indigo-400" />
-            Scheduled Reminders ({reminders.length})
-          </h2>
-          <p className="text-sm text-slate-400 mt-1">
-            Automated message schedules targeted at Messenger threads
-          </p>
+    <Card className="h-full">
+      <CardHeader className="flex flex-row items-center justify-between pb-4 border-b">
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 rounded-lg bg-muted border flex items-center justify-center">
+            <Bell className="w-4 h-4 text-foreground" />
+          </div>
+          <CardTitle className="text-lg flex items-center gap-2">
+            Reminders <span className="text-muted-foreground text-sm font-medium">({reminders.length})</span>
+          </CardTitle>
         </div>
+        <Button onClick={onAddNew} disabled={loading} size="sm" className="gap-2">
+          <Plus className="w-4 h-4" /> New Reminder
+        </Button>
+      </CardHeader>
 
-        <button
-          onClick={onAddNew}
-          disabled={loading}
-          className="btn btn-primary"
-        >
-          <Plus size={16} /> Add Reminder
-        </button>
-      </div>
+      <CardContent className="pt-4 sm:pt-6 flex-1 flex flex-col min-h-0">
+        {reminders.length === 0 ? (
+          <div className="py-16 flex flex-col items-center justify-center text-center bg-muted/30 rounded-lg border border-dashed">
+            <div className="w-12 h-12 rounded-lg bg-background border flex items-center justify-center mb-4 text-muted-foreground">
+              <Bell className="w-6 h-6" />
+            </div>
+            <h3 className="text-base font-semibold mb-1">No reminders set</h3>
+            <p className="text-sm text-muted-foreground mb-6">Create a reminder to automate your Messenger tasks.</p>
+            <Button onClick={onAddNew} variant="outline">
+              Create First Reminder
+            </Button>
+          </div>
+        ) : (
+          <div className="grid gap-4">
+            {reminders.map((reminder) => {
+              const isTesting = testingId === reminder.id;
+              const isCalling = callingId === reminder.id;
 
-      {reminders.length === 0 ? (
-        <div className="py-12 text-center text-slate-400">
-          <Bell size={40} className="mx-auto text-slate-600 mb-3" />
-          <p className="font-medium text-slate-300">No reminders configured yet</p>
-          <p className="text-xs text-slate-500 mt-1 max-w-sm mx-auto">
-            Create your first reminder to automate recurring notifications during target hours.
-          </p>
-          <button onClick={onAddNew} className="btn btn-primary mt-4">
-            <Plus size={16} /> Create First Reminder
-          </button>
-        </div>
-      ) : (
-        <div className="mt-5 space-y-4">
-          {reminders.map((reminder) => {
-            const isTesting = testingId === reminder.id;
-            return (
-              <div
-                key={reminder.id}
-                className={`p-4 rounded-xl border transition-all ${
-                  reminder.active
-                    ? 'bg-slate-900/60 border-white/10 hover:border-indigo-500/30'
-                    : 'bg-slate-950/40 border-white/5 opacity-70'
-                }`}
-              >
-                <div className="flex flex-wrap items-start justify-between gap-4">
-                  {/* Info */}
-                  <div className="space-y-1.5 flex-1 min-w-[260px]">
-                    <div className="flex items-center gap-2.5">
-                      <h3 className="text-base font-semibold text-white">
-                        {reminder.title}
-                      </h3>
-                      {reminder.active ? (
-                        <span className="badge badge-success text-[10px]">Active</span>
-                      ) : (
-                        <span className="badge badge-neutral text-[10px]">Disabled</span>
-                      )}
-
-                      {/* Action Type Badge */}
-                      {reminder.actionType === 'AUDIO_CALL' && (
-                        <span className="badge bg-cyan-500/15 border border-cyan-500/30 text-cyan-300 text-[10px] flex items-center gap-1">
-                          📞 Gọi thoại ({reminder.callDurationSeconds || 25}s)
-                        </span>
-                      )}
-                      {reminder.actionType === 'VIDEO_CALL' && (
-                        <span className="badge bg-purple-500/15 border border-purple-500/30 text-purple-300 text-[10px] flex items-center gap-1">
-                          📹 Gọi video ({reminder.callDurationSeconds || 25}s)
-                        </span>
-                      )}
-                      {reminder.actionType === 'MESSAGE_AND_CALL' && (
-                        <span className="badge bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-[10px] flex items-center gap-1">
-                          💬📞 Nhắn & Gọi ({reminder.callDurationSeconds || 25}s)
-                        </span>
-                      )}
-                      {(!reminder.actionType || reminder.actionType === 'MESSAGE') && (
-                        <span className="badge bg-indigo-500/15 border border-indigo-500/30 text-indigo-300 text-[10px] flex items-center gap-1">
-                          💬 Tin nhắn
-                        </span>
-                      )}
+              return (
+                <div
+                  key={reminder.id}
+                  className={`relative p-4 rounded-lg border transition-colors ${
+                    reminder.active
+                      ? 'bg-card'
+                      : 'bg-muted/30 opacity-80'
+                  }`}
+                >
+                  <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3 mb-3">
+                    <div className="flex flex-col gap-2 pr-8 sm:pr-0 min-w-0 flex-1">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <h3 className="text-sm font-semibold break-words">{reminder.title}</h3>
+                        <Badge variant={reminder.active ? "success" : "secondary"} className="text-[10px] px-1.5 py-0">
+                          {reminder.active ? 'Active' : 'Paused'}
+                        </Badge>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        {reminder.actionType === 'AUDIO_CALL' && (
+                          <Badge variant="outline" className="text-[10px]">
+                            Audio Call ({reminder.callDurationSeconds || 25}s)
+                          </Badge>
+                        )}
+                        {reminder.actionType === 'VIDEO_CALL' && (
+                          <Badge variant="outline" className="text-[10px]">
+                            Video Call ({reminder.callDurationSeconds || 25}s)
+                          </Badge>
+                        )}
+                        {reminder.actionType === 'MESSAGE_AND_CALL' && (
+                          <Badge variant="outline" className="text-[10px]">
+                            Msg + Call ({reminder.callDurationSeconds || 25}s)
+                          </Badge>
+                        )}
+                      </div>
                     </div>
 
-                    <p className="text-sm text-slate-300 line-clamp-2 bg-slate-950/50 p-2.5 rounded-lg border border-white/5 font-sans">
-                      {reminder.content}
-                    </p>
-
-                    <div className="flex flex-wrap items-center gap-4 text-xs text-slate-400 pt-1">
-                      <span className="flex items-center gap-1 font-mono text-slate-300">
-                        <Hash size={13} className="text-indigo-400" />
-                        {reminder.targetThreadId}
-                      </span>
-                      <span className="flex items-center gap-1">
-                        <Clock size={13} className="text-cyan-400" />
-                        Window: {reminder.windowStart} - {reminder.windowEnd} (every {reminder.intervalMinutes}m)
-                      </span>
+                    {/* Actions Menu */}
+                    <div className="absolute sm:relative top-3 sm:top-0 right-3 sm:right-0">
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="outline" size="icon" className="h-8 w-8">
+                            <MoreVertical className="h-4 w-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" className="w-48">
+                          <DropdownMenuItem onClick={() => onToggle(reminder.id)} className="gap-2">
+                            <Power className="h-4 w-4" />
+                            {reminder.active ? 'Pause Schedule' : 'Start Schedule'}
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => onEdit(reminder)} className="gap-2">
+                            <Edit2 className="h-4 w-4 text-muted-foreground" /> Edit
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => handleTestClick(reminder.id)} disabled={isTesting} className="gap-2">
+                            <Send className={`h-4 w-4 ${isTesting ? 'animate-spin text-primary' : 'text-muted-foreground'}`} />
+                            Test Message
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => handleCallClick(reminder.id, reminder.actionType === 'VIDEO_CALL' ? 'VIDEO' : 'AUDIO')} disabled={isCalling} className="gap-2">
+                            <PhoneCall className={`h-4 w-4 ${isCalling ? 'animate-pulse text-primary' : 'text-muted-foreground'}`} />
+                            Test Call
+                          </DropdownMenuItem>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem onClick={() => onDelete(reminder.id)} className="gap-2 text-destructive focus:text-destructive focus:bg-destructive/10">
+                            <Trash2 className="h-4 w-4" /> Delete Reminder
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
                     </div>
                   </div>
 
-                  {/* Actions */}
-                  <div className="flex items-center gap-2">
-                    {/* Toggle Active Button */}
-                    <button
-                      onClick={() => onToggle(reminder.id)}
-                      disabled={loading}
-                      title={reminder.active ? 'Disable reminder' : 'Enable reminder'}
-                      className={`btn text-xs px-3 py-1.5 ${
-                        reminder.active ? 'btn-ghost text-amber-300' : 'btn-ghost text-emerald-400'
-                      }`}
-                    >
-                      {reminder.active ? 'Disable' : 'Enable'}
-                    </button>
+                  <p className="text-sm text-muted-foreground mb-4 line-clamp-3 leading-relaxed break-words break-all sm:break-words">
+                    {reminder.content}
+                  </p>
 
-                    {/* Test Send Message Button */}
-                    <button
-                      onClick={() => handleTestClick(reminder.id)}
-                      disabled={loading || isTesting}
-                      title="Gửi tin nhắn test ngay lập tức (an toàn khi ở chế độ DRY_RUN)"
-                      className="btn btn-ghost text-xs px-2.5 py-1.5 text-indigo-300 hover:text-white flex items-center gap-1"
-                    >
-                      <Send size={13} className={isTesting ? 'animate-spin' : ''} />
-                      {isTesting ? 'Đang gửi...' : 'Gửi tin'}
-                    </button>
-
-                    {/* Test Call Button */}
-                    <button
-                      onClick={() => handleCallClick(reminder.id, reminder.actionType === 'VIDEO_CALL' ? 'VIDEO' : 'AUDIO')}
-                      disabled={loading || callingId === reminder.id}
-                      title="Thực hiện cuộc gọi Messenger ngay lập tức (an toàn khi ở chế độ DRY_RUN)"
-                      className="btn btn-ghost text-xs px-2.5 py-1.5 text-cyan-300 hover:text-white flex items-center gap-1 border border-cyan-500/20 hover:border-cyan-500/50"
-                    >
-                      <PhoneCall size={13} className={callingId === reminder.id ? 'animate-bounce text-cyan-400' : ''} />
-                      {callingId === reminder.id ? 'Đang gọi...' : 'Gọi thử'}
-                    </button>
-
-                    {/* Edit */}
-                    <button
-                      onClick={() => onEdit(reminder)}
-                      disabled={loading}
-                      title="Edit reminder"
-                      className="p-2 rounded-lg text-slate-400 hover:text-white hover:bg-white/5"
-                    >
-                      <Edit2 size={16} />
-                    </button>
-
-                    {/* Delete */}
-                    {deleteConfirmId === reminder.id ? (
-                      <div className="flex items-center gap-1 bg-red-950/60 p-1 rounded-lg border border-red-500/30">
-                        <button
-                          onClick={() => {
-                            onDelete(reminder.id);
-                            setDeleteConfirmId(null);
-                          }}
-                          className="text-xs px-2 py-1 bg-red-600 text-white rounded font-medium hover:bg-red-500"
-                        >
-                          Confirm
-                        </button>
-                        <button
-                          onClick={() => setDeleteConfirmId(null)}
-                          className="text-xs px-2 py-1 text-slate-400 hover:text-white"
-                        >
-                          Cancel
-                        </button>
-                      </div>
-                    ) : (
-                      <button
-                        onClick={() => setDeleteConfirmId(reminder.id)}
-                        disabled={loading}
-                        title="Delete reminder"
-                        className="p-2 rounded-lg text-slate-400 hover:text-red-400 hover:bg-red-500/10"
-                      >
-                        <Trash2 size={16} />
-                      </button>
-                    )}
+                  <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                    <div className="flex items-center gap-1.5 border px-2 py-1 rounded-md break-all bg-muted">
+                      <Hash className="h-3 w-3" />
+                      {reminder.targetThreadId}
+                    </div>
+                    <div className="flex items-center gap-1.5 border px-2 py-1 rounded-md whitespace-nowrap bg-muted">
+                      <Clock className="h-3 w-3" />
+                      {reminder.windowStart} - {reminder.windowEnd} ({reminder.intervalMinutes}m)
+                    </div>
                   </div>
                 </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
-    </div>
+              );
+            })}
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 };

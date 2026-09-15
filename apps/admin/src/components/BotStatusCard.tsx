@@ -6,9 +6,32 @@ import {
   AlertOctagon,
   ShieldCheck,
   ShieldAlert,
-  Radio,
-  Clock
+  Clock,
+  Activity
 } from 'lucide-react';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { Switch } from '@/components/ui/switch';
+import { Label } from '@/components/ui/label';
+import { Input } from '@/components/ui/input';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  Drawer,
+  DrawerContent,
+  DrawerDescription,
+  DrawerFooter,
+  DrawerHeader,
+  DrawerTitle,
+} from "@/components/ui/drawer";
+import { useMediaQuery } from '@/hooks/use-media-query';
 import type { BotState } from '@messenger/shared';
 
 interface Props {
@@ -19,14 +42,18 @@ interface Props {
 }
 
 export const BotStatusCard: React.FC<Props> = ({ state, onAction, onToggleDryRun, loading }) => {
+  const isDesktop = useMediaQuery("(min-width: 768px)");
   const [showEmergencyModal, setShowEmergencyModal] = useState(false);
   const [emergencyReason, setEmergencyReason] = useState('');
 
   if (!state) {
     return (
-      <div className="glass-panel p-6 flex items-center justify-center text-slate-400">
-        Loading bot state...
-      </div>
+      <Card className="min-h-[160px] flex items-center justify-center">
+        <div className="flex flex-col items-center gap-4 text-muted-foreground">
+          <div className="w-8 h-8 border-2 border-muted-foreground/20 border-t-muted-foreground rounded-full animate-spin" />
+          <span className="text-sm font-medium">Initializing Nexus Core...</span>
+        </div>
+      </Card>
     );
   }
 
@@ -34,56 +61,57 @@ export const BotStatusCard: React.FC<Props> = ({ state, onAction, onToggleDryRun
   const isRunning = state.status === 'RUNNING';
 
   const getStatusBadge = () => {
-    if (isEmergency) {
-      return (
-        <span className="badge badge-danger">
-          <span className="w-2 h-2 rounded-full bg-red-500 pulse-dot inline-block"></span>
-          Emergency Stopped
-        </span>
-      );
+    if (isEmergency) return <Badge variant="destructive">Emergency Stopped</Badge>;
+    if (isRunning) return <Badge variant="success">System Active</Badge>;
+    return <Badge variant="secondary">System Standby</Badge>;
+  };
+
+  const getBadge = (state: BotState) => {
+    switch (state.status) {
+      case 'RUNNING':
+        return (
+          <Badge variant="success" className="text-[10px] uppercase tracking-wider animate-pulse">
+            Active
+          </Badge>
+        );
+      case 'STOPPED':
+        return (
+          <Badge variant="secondary" className="text-[10px] uppercase tracking-wider">
+            Stopped
+          </Badge>
+        );
+      case 'ERROR':
+        return (
+          <Badge variant="destructive" className="text-[10px] uppercase tracking-wider">
+            Error
+          </Badge>
+        );
+      default:
+        return (
+          <Badge variant="outline" className="text-[10px] uppercase tracking-wider">
+            Unknown
+          </Badge>
+        );
     }
-    if (isRunning) {
-      return (
-        <span className="badge badge-success">
-          <span className="w-2 h-2 rounded-full bg-emerald-400 pulse-dot inline-block"></span>
-          Running
-        </span>
-      );
-    }
-    return (
-      <span className="badge badge-neutral">
-        <span className="w-2 h-2 rounded-full bg-slate-400 inline-block"></span>
-        Stopped
-      </span>
-    );
   };
 
   const getSessionBadge = () => {
     switch (state.sessionStatus) {
       case 'LOGGED_IN':
         return (
-          <span className="badge badge-success">
-            <ShieldCheck size={14} /> Logged In
-          </span>
+          <Badge variant="outline" className="flex items-center gap-1.5">
+            <ShieldCheck className="w-3.5 h-3.5" /> Authenticated
+          </Badge>
         );
       case 'UNAUTHENTICATED':
-        return (
-          <span className="badge badge-danger">
-            <ShieldAlert size={14} /> Unauthenticated
-          </span>
-        );
       case 'SESSION_EXPIRED':
         return (
-          <span className="badge badge-warning">
-            <ShieldAlert size={14} /> Expired
-          </span>
+          <Badge variant="destructive" className="flex items-center gap-1.5">
+            <ShieldAlert className="w-3.5 h-3.5" /> {state.sessionStatus === 'SESSION_EXPIRED' ? 'Expired' : 'Unauthenticated'}
+          </Badge>
         );
       default:
-        return (
-          <span className="badge badge-neutral">
-            <Radio size={14} /> Unknown
-          </span>
-        );
+        return <Badge variant="secondary">Unknown</Badge>;
     }
   };
 
@@ -93,133 +121,124 @@ export const BotStatusCard: React.FC<Props> = ({ state, onAction, onToggleDryRun
     setEmergencyReason('');
   };
 
-  return (
-    <div className="glass-panel p-6">
-      {/* Header */}
-      <div className="flex flex-wrap items-center justify-between gap-4 pb-5 border-b border-white/10">
-        <div>
-          <div className="flex items-center gap-3">
-            <h2 className="text-xl font-bold tracking-tight text-white">Bot Operations Engine</h2>
-            {getStatusBadge()}
-          </div>
-          <p className="text-sm text-slate-400 mt-1">
-            Messenger Web Persistent Context & Scheduler Control
-          </p>
-        </div>
-
-        {/* Status Indicators */}
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-900/60 border border-white/5 text-xs text-slate-300">
-            <span className="text-slate-500">Messenger Session:</span>
-            {getSessionBadge()}
-          </div>
-
-          <button
-            onClick={() => onToggleDryRun(!state.dryRun)}
-            disabled={loading}
-            className={`px-3 py-1.5 rounded-lg border text-xs font-semibold flex items-center gap-2 transition-all ${
-              state.dryRun
-                ? 'bg-amber-500/10 border-amber-500/30 text-amber-300 hover:bg-amber-500/20'
-                : 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/20'
-            }`}
-            title="Toggle DRY_RUN safe simulation mode"
-          >
-            <span className={`w-2 h-2 rounded-full ${state.dryRun ? 'bg-amber-400' : 'bg-emerald-400'}`}></span>
-            DRY_RUN: {state.dryRun ? 'ENABLED (Safe)' : 'DISABLED (Live)'}
-          </button>
-        </div>
-      </div>
-
-      {/* Control Actions */}
-      <div className="pt-5 flex flex-wrap items-center justify-between gap-4">
-        <div className="flex flex-wrap items-center gap-3">
-          {!isRunning ? (
-            <button
-              onClick={() => onAction('START')}
-              disabled={loading}
-              className="btn btn-primary"
-            >
-              <Play size={16} /> Start Bot
-            </button>
-          ) : (
-            <button
-              onClick={() => onAction('STOP')}
-              disabled={loading}
-              className="btn btn-ghost"
-            >
-              <Square size={16} /> Stop Bot
-            </button>
-          )}
-
-          <button
-            onClick={() => onAction('RESTART')}
-            disabled={loading}
-            className="btn btn-ghost"
-          >
-            <RotateCcw size={16} /> Restart
-          </button>
-
-          <button
-            onClick={() => setShowEmergencyModal(true)}
-            disabled={loading || isEmergency}
-            className="btn btn-danger"
-          >
-            <AlertOctagon size={16} /> Emergency Stop
-          </button>
-        </div>
-
-        {/* Heartbeat info */}
-        <div className="text-xs text-slate-500 flex items-center gap-2 font-mono">
-          <Clock size={14} />
-          <span>Last Heartbeat: {state.lastHeartbeat ? new Date(state.lastHeartbeat).toLocaleTimeString() : 'N/A'}</span>
-          {state.lockHolderId && (
-            <span className="px-2 py-0.5 rounded bg-slate-800 text-slate-400">
-              {state.lockHolderId}
-            </span>
-          )}
-        </div>
-      </div>
-
-      {/* Emergency Stop Confirmation Modal */}
-      {showEmergencyModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4">
-          <div className="glass-panel max-w-md w-full p-6 border-red-500/30 bg-slate-950/95 shadow-2xl">
-            <div className="flex items-center gap-3 text-red-400 mb-3">
-              <AlertOctagon size={28} />
-              <h3 className="text-lg font-bold">Confirm Emergency Stop</h3>
-            </div>
-            <p className="text-sm text-slate-300 mb-4">
-              Triggering Emergency Stop will immediately halt all scheduled jobs and prevent any message delivery until explicitly restarted.
-            </p>
-            <div className="mb-4">
-              <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1">
-                Reason (optional):
-              </label>
-              <input
-                type="text"
-                value={emergencyReason}
-                onChange={(e) => setEmergencyReason(e.target.value)}
-                placeholder="e.g. Account security audit or suspicious behavior"
-                className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-white/10 text-white text-sm focus:outline-none focus:border-red-500"
-              />
-            </div>
-            <div className="flex justify-end gap-3">
-              <button
-                onClick={() => setShowEmergencyModal(false)}
-                className="btn btn-ghost"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleConfirmEmergency}
-                className="btn btn-danger"
-              >
-                Execute Emergency Stop
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+  const EmergencyForm = () => (
+    <div className="py-4 space-y-2 px-4 sm:px-0">
+      <Label htmlFor="reason">Reason for halt (Optional)</Label>
+      <Input
+        id="reason"
+        value={emergencyReason}
+        onChange={(e) => setEmergencyReason(e.target.value)}
+        placeholder="e.g. Rate limit hit on Facebook"
+        autoFocus={isDesktop}
+      />
     </div>
+  );
+
+  return (
+    <>
+      <Card>
+        <CardHeader className="pb-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="flex items-start gap-4">
+            <div className="w-10 h-10 rounded-lg bg-muted border flex items-center justify-center shrink-0">
+              <Activity className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="flex items-center gap-3 mb-1">
+                <CardTitle className="text-lg">Core Worker Status</CardTitle>
+                {getStatusBadge()}
+              </div>
+              <CardDescription>Manage the Playwright execution engine and scheduler.</CardDescription>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-4 pl-14 md:pl-0">
+            {getSessionBadge()}
+            
+            <div className="flex items-center space-x-2 border rounded-md px-3 py-1.5 bg-card">
+              <Switch 
+                id="dry-run" 
+                checked={state.dryRun}
+                onCheckedChange={onToggleDryRun}
+                disabled={loading}
+              />
+              <Label htmlFor="dry-run" className="text-sm cursor-pointer">Dry Run</Label>
+            </div>
+          </div>
+        </CardHeader>
+        
+        <CardContent>
+          <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-4 pt-4 border-t">
+            <div className="grid grid-cols-2 sm:flex items-center gap-3 w-full xl:w-auto">
+              {!isRunning ? (
+                <Button onClick={() => onAction('START')} disabled={loading} className="col-span-2 sm:col-span-1 gap-2">
+                  <Play className="w-4 h-4" /> Initialize
+                </Button>
+              ) : (
+                <Button onClick={() => onAction('STOP')} disabled={loading} variant="secondary" className="col-span-2 sm:col-span-1 gap-2">
+                  <Square className="w-4 h-4" /> Halt
+                </Button>
+              )}
+
+              <Button onClick={() => onAction('RESTART')} disabled={loading} variant="outline" className="gap-2">
+                <RotateCcw className="w-4 h-4" /> Reboot
+              </Button>
+
+              <Button onClick={() => setShowEmergencyModal(true)} disabled={loading || isEmergency} variant="destructive" className="gap-2">
+                <AlertOctagon className="w-4 h-4" /> E-Stop
+              </Button>
+            </div>
+
+            <div className="flex items-center gap-2 text-sm text-muted-foreground border px-3 py-1.5 rounded-md">
+              <Clock className="w-4 h-4" />
+              <span>Last Heartbeat: {state.lastHeartbeat ? new Date(state.lastHeartbeat).toLocaleTimeString() : 'N/A'}</span>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {isDesktop ? (
+        <Dialog open={showEmergencyModal} onOpenChange={setShowEmergencyModal}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle>Confirm Emergency Stop</DialogTitle>
+              <DialogDescription>
+                This will forcefully halt all running jobs and prevent the bot from executing future reminders.
+              </DialogDescription>
+            </DialogHeader>
+            <EmergencyForm />
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setShowEmergencyModal(false)}>
+                Cancel
+              </Button>
+              <Button variant="destructive" onClick={handleConfirmEmergency}>
+                Execute Stop
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      ) : (
+        <Drawer open={showEmergencyModal} onOpenChange={setShowEmergencyModal}>
+          <DrawerContent className="max-h-[90vh]">
+            <div className="overflow-y-auto" data-vaul-scrollable>
+              <DrawerHeader className="text-left">
+                <DrawerTitle>Confirm Emergency Stop</DrawerTitle>
+                <DrawerDescription>
+                  This will forcefully halt all running jobs and prevent the bot from executing future reminders.
+                </DrawerDescription>
+              </DrawerHeader>
+              <EmergencyForm />
+              <DrawerFooter className="pt-2 pb-6 mt-2">
+                <Button variant="destructive" onClick={handleConfirmEmergency}>
+                  Execute Stop
+                </Button>
+                <Button variant="outline" onClick={() => setShowEmergencyModal(false)}>
+                  Cancel
+                </Button>
+              </DrawerFooter>
+            </div>
+          </DrawerContent>
+        </Drawer>
+      )}
+    </>
   );
 };

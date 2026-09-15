@@ -1,11 +1,14 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Bot, Clock, RefreshCw, Sparkles } from 'lucide-react';
+import { Bot, Clock, RefreshCw } from 'lucide-react';
 import { api } from './api';
 import { BotStatusCard } from './components/BotStatusCard';
 import { ReminderList } from './components/ReminderList';
 import { ReminderModal } from './components/ReminderModal';
 import { UpcomingScheduleCard } from './components/UpcomingScheduleCard';
 import { LogViewer } from './components/LogViewer';
+import { Toaster } from '@/components/ui/sonner';
+import { toast } from 'sonner';
+import { Button } from '@/components/ui/button';
 import type {
   BotState,
   Reminder,
@@ -23,21 +26,17 @@ export function App() {
   const [executionLogs, setExecutionLogs] = useState<ExecutionLog[]>([]);
 
   const [loading, setLoading] = useState(false);
-  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
 
-  // Modal state
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingReminder, setEditingReminder] = useState<Reminder | null>(null);
-
-  // Clock
   const [vnTime, setVnTime] = useState('');
 
   const showToast = (message: string, type: 'success' | 'error' | 'info' = 'info') => {
-    setToast({ message, type });
-    setTimeout(() => setToast(null), 4000);
+    if (type === 'success') toast.success(message);
+    else if (type === 'error') toast.error(message);
+    else toast.info(message);
   };
 
-  // Update ICT clock every second
   useEffect(() => {
     const updateClock = () => {
       const now = new Date();
@@ -47,7 +46,7 @@ export function App() {
         timeStyle: 'medium',
         hourCycle: 'h23'
       });
-      setVnTime(formatter.format(now) + ' (ICT)');
+      setVnTime(formatter.format(now));
     };
     updateClock();
     const interval = setInterval(updateClock, 1000);
@@ -76,7 +75,6 @@ export function App() {
     }
   }, []);
 
-  // Initial load + periodic background polling every 6 seconds
   useEffect(() => {
     loadData();
     const pollTimer = setInterval(() => {
@@ -85,13 +83,12 @@ export function App() {
     return () => clearInterval(pollTimer);
   }, [loadData]);
 
-  // Bot actions
   const handleBotAction = async (action: 'START' | 'STOP' | 'RESTART' | 'EMERGENCY_STOP', reason?: string) => {
     try {
       setLoading(true);
       const updated = await api.sendBotAction(action, reason);
       setBotState(updated);
-      showToast(`Bot action "${action}" executed successfully`, 'success');
+      showToast(`Action "${action}" executed`, 'success');
       await loadData(true);
     } catch (err: any) {
       showToast(err.message || `Failed to execute ${action}`, 'error');
@@ -105,21 +102,20 @@ export function App() {
       setLoading(true);
       const updated = await api.setDryRun(dryRun);
       setBotState(updated);
-      showToast(`DRY_RUN mode set to ${dryRun ? 'ENABLED' : 'DISABLED'}`, 'info');
+      showToast(`Dry Run mode ${dryRun ? 'enabled' : 'disabled'}`, 'info');
       await loadData(true);
     } catch (err: any) {
-      showToast(err.message || 'Failed to update DRY_RUN', 'error');
+      showToast(err.message || 'Failed to update Dry Run', 'error');
     } finally {
       setLoading(false);
     }
   };
 
-  // Reminder operations
   const handleToggleReminder = async (id: string) => {
     try {
       const updated = await api.toggleReminder(id);
       setReminders((prev) => prev.map((r) => (r.id === id ? updated : r)));
-      showToast(`Reminder "${updated.title}" ${updated.active ? 'enabled' : 'disabled'}`, 'success');
+      showToast(`Reminder ${updated.active ? 'enabled' : 'disabled'}`, 'success');
       await loadData(true);
     } catch (err: any) {
       showToast(err.message || 'Failed to toggle reminder', 'error');
@@ -132,7 +128,7 @@ export function App() {
       showToast(res.message, 'success');
       await loadData(true);
     } catch (err: any) {
-      showToast(err.message || 'Failed to dispatch test reminder', 'error');
+      showToast(err.message || 'Failed to dispatch test', 'error');
     }
   };
 
@@ -142,7 +138,7 @@ export function App() {
       showToast(res.message, 'success');
       await loadData(true);
     } catch (err: any) {
-      showToast(err.message || 'Failed to initiate Messenger call', 'error');
+      showToast(err.message || 'Failed to initiate call', 'error');
     }
   };
 
@@ -150,7 +146,7 @@ export function App() {
     try {
       await api.deleteReminder(id);
       setReminders((prev) => prev.filter((r) => r.id !== id));
-      showToast('Reminder deleted successfully', 'success');
+      showToast('Reminder deleted', 'success');
       await loadData(true);
     } catch (err: any) {
       showToast(err.message || 'Failed to delete reminder', 'error');
@@ -162,10 +158,10 @@ export function App() {
       setLoading(true);
       if (editingReminder) {
         await api.updateReminder(editingReminder.id, data);
-        showToast('Reminder updated successfully', 'success');
+        showToast('Reminder updated', 'success');
       } else {
         await api.createReminder(data);
-        showToast('Reminder created successfully', 'success');
+        showToast('Reminder created', 'success');
       }
       setIsModalOpen(false);
       setEditingReminder(null);
@@ -178,65 +174,40 @@ export function App() {
   };
 
   return (
-    <div className="min-h-screen pb-16">
-      {/* Toast Notification */}
-      {toast && (
-        <div className="fixed bottom-6 right-6 z-50 animate-bounce">
-          <div
-            className={`px-4 py-3 rounded-xl shadow-2xl text-xs font-semibold flex items-center gap-2 border ${
-              toast.type === 'success'
-                ? 'bg-emerald-950/90 border-emerald-500/50 text-emerald-200'
-                : toast.type === 'error'
-                ? 'bg-red-950/90 border-red-500/50 text-red-200'
-                : 'bg-indigo-950/90 border-indigo-500/50 text-indigo-200'
-            }`}
-          >
-            <Sparkles size={14} />
-            {toast.message}
-          </div>
-        </div>
-      )}
+    <div className="min-h-screen bg-muted/40">
+      <Toaster position="top-center" richColors />
 
       {/* Top Navigation */}
-      <header className="border-b border-white/5 bg-slate-950/60 backdrop-blur-md sticky top-0 z-40">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-600 to-cyan-500 flex items-center justify-center shadow-lg shadow-indigo-500/25">
-              <Bot size={22} className="text-white" />
+      <header className="sticky top-0 z-40 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+        <div className="container flex h-14 items-center justify-between">
+          <div className="flex items-center gap-2">
+            <div className="flex h-8 w-8 items-center justify-center rounded-md border bg-muted">
+              <Bot className="h-4 w-4" />
             </div>
-            <div>
-              <h1 className="text-base font-bold tracking-tight text-white flex items-center gap-2">
-                Messenger AI Bot Control Center
-                <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
-                  Phase 1
-                </span>
-              </h1>
-              <p className="text-xs text-slate-400">Scheduled Reminder Operations & Playwright Automation</p>
-            </div>
+            <h1 className="font-semibold tracking-tight">Coin Card</h1>
           </div>
 
           <div className="flex items-center gap-4">
-            <div className="hidden sm:flex items-center gap-2 text-xs font-mono text-slate-400 bg-slate-900/80 px-3 py-1.5 rounded-lg border border-white/5">
-              <Clock size={14} className="text-cyan-400" />
-              <span>{vnTime}</span>
+            <div className="hidden sm:flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+              <Clock className="h-3.5 w-3.5" />
+              <span>{vnTime} (ICT)</span>
             </div>
 
-            <button
+            <Button
+              variant="outline"
+              size="icon"
+              className="h-8 w-8"
               onClick={() => loadData()}
               disabled={loading}
-              className="btn btn-ghost text-xs px-3 py-1.5"
-              title="Refresh all data"
             >
-              <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
-              <span>Refresh</span>
-            </button>
+              <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+            </Button>
           </div>
         </div>
       </header>
 
       {/* Main Content Dashboard */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-8 space-y-8">
-        {/* Row 1: Bot Operations Engine */}
+      <main className="container pt-6 sm:pt-8 pb-10 space-y-4 sm:space-y-6">
         <BotStatusCard
           state={botState}
           onAction={handleBotAction}
@@ -244,8 +215,7 @@ export function App() {
           loading={loading}
         />
 
-        {/* Row 2: Reminders Management & Upcoming Schedules */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
           <div className="lg:col-span-2">
             <ReminderList
               reminders={reminders}
@@ -270,7 +240,6 @@ export function App() {
           </div>
         </div>
 
-        {/* Row 3: Live Logs Viewer */}
         <LogViewer
           auditLogs={auditLogs}
           executionLogs={executionLogs}
@@ -279,7 +248,6 @@ export function App() {
         />
       </main>
 
-      {/* Reminder Create/Edit Modal */}
       <ReminderModal
         isOpen={isModalOpen}
         initialData={editingReminder}

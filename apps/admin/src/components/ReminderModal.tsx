@@ -1,5 +1,27 @@
 import React, { useState, useEffect } from 'react';
-import { X, Sparkles } from 'lucide-react';
+import { Sparkles, MessageCircle, PhoneCall, Video, Settings2 } from 'lucide-react';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  Drawer,
+  DrawerContent,
+  DrawerDescription,
+  DrawerFooter,
+  DrawerHeader,
+  DrawerTitle,
+} from "@/components/ui/drawer";
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import { Switch } from '@/components/ui/switch';
+import { useMediaQuery } from '@/hooks/use-media-query';
 import type { Reminder, CreateReminderInput } from '@messenger/shared';
 
 interface Props {
@@ -17,6 +39,8 @@ export const ReminderModal: React.FC<Props> = ({
   onSubmit,
   loading
 }) => {
+  const isDesktop = useMediaQuery("(min-width: 768px)");
+
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
   const [targetThreadId, setTargetThreadId] = useState('');
@@ -29,7 +53,7 @@ export const ReminderModal: React.FC<Props> = ({
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (initialData) {
+    if (initialData && isOpen) {
       setTitle(initialData.title);
       setContent(initialData.content);
       setTargetThreadId(initialData.targetThreadId);
@@ -39,7 +63,7 @@ export const ReminderModal: React.FC<Props> = ({
       setWindowEnd(initialData.windowEnd || '22:00');
       setIntervalMinutes(initialData.intervalMinutes || 10);
       setActive(initialData.active);
-    } else {
+    } else if (isOpen) {
       setTitle('');
       setContent('');
       setTargetThreadId('');
@@ -53,20 +77,10 @@ export const ReminderModal: React.FC<Props> = ({
     setError(null);
   }, [initialData, isOpen]);
 
-  if (!isOpen) return null;
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!title.trim()) {
-      setError('Title is required');
-      return;
-    }
-    if (!content.trim()) {
-      setError('Content message is required');
-      return;
-    }
-    if (!targetThreadId.trim()) {
-      setError('Target thread ID or Messenger conversation URL is required');
+    if (!title.trim() || !content.trim() || !targetThreadId.trim()) {
+      setError('Please fill in all required fields');
       return;
     }
 
@@ -82,262 +96,211 @@ export const ReminderModal: React.FC<Props> = ({
         intervalMinutes: Number(intervalMinutes),
         active
       });
-      onClose();
     } catch (err: any) {
       setError(err.message || 'Failed to save reminder');
     }
   };
 
-  const applyDefaultWindow = () => {
-    setWindowStart('18:00');
-    setWindowEnd('22:00');
-    setIntervalMinutes(10);
-  };
+  const actionTypes = [
+    { id: 'MESSAGE', label: 'Message', icon: <MessageCircle className="h-4 w-4" /> },
+    { id: 'AUDIO_CALL', label: 'Audio', icon: <PhoneCall className="h-4 w-4" /> },
+    { id: 'VIDEO_CALL', label: 'Video', icon: <Video className="h-4 w-4" /> },
+    { id: 'MESSAGE_AND_CALL', label: 'Both', icon: <Settings2 className="h-4 w-4" /> }
+  ];
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 overflow-y-auto">
-      <div className="glass-panel max-w-xl w-full p-6 bg-slate-950/95 border-indigo-500/20 shadow-2xl my-8">
-        <div className="flex items-center justify-between pb-4 border-b border-white/10">
-          <h3 className="text-lg font-bold text-white">
-            {initialData ? 'Edit Scheduled Reminder' : 'Create New Reminder'}
-          </h3>
-          <button
-            onClick={onClose}
-            className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-white/5"
-          >
-            <X size={20} />
-          </button>
-        </div>
-
+  const formContentNode = (
+    <form id="reminder-form" onSubmit={handleSubmit} className="flex flex-col">
+      <div className="p-4 sm:p-6 space-y-4 sm:space-y-6">
         {error && (
-          <div className="mt-4 p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-xs">
+          <div className="p-3 bg-destructive/10 border border-destructive/20 text-destructive rounded-md text-sm font-medium">
             {error}
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="mt-4 space-y-4">
-          <div>
-            <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1">
-              Title *
-            </label>
-            <input
-              type="text"
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="space-y-2">
+            <Label htmlFor="title">Title</Label>
+            <Input
+              id="title"
               required
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              placeholder="e.g. Evening Daily Standup Reminder"
-              className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-white/10 text-white text-sm focus:outline-none focus:border-indigo-500"
+              placeholder="e.g. Daily Standup"
             />
           </div>
-
-          <div>
-            <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1">
-              Target Messenger Thread ID or URL *
-            </label>
-            <input
-              type="text"
+          <div className="space-y-2">
+            <Label htmlFor="target">Target Thread ID</Label>
+            <Input
+              id="target"
               required
               value={targetThreadId}
               onChange={(e) => setTargetThreadId(e.target.value)}
-              placeholder="e.g. 1000123456789 or https://www.facebook.com/messages/t/1000123456789"
-              className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-white/10 text-white text-sm font-mono focus:outline-none focus:border-indigo-500"
+              placeholder="e.g. 1000123456789"
+              className="font-mono text-sm"
             />
           </div>
+        </div>
 
-          {/* Action Type Selection */}
-          <div className="p-3.5 rounded-xl bg-slate-900/60 border border-indigo-500/20 space-y-3">
-            <div>
-              <label className="block text-xs font-semibold uppercase tracking-wider text-indigo-300 mb-1.5">
-                Hành động thực hiện (Action Type) *
-              </label>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  onClick={() => setActionType('MESSAGE')}
-                  className={`p-2.5 rounded-lg border text-left text-xs transition-all flex items-center gap-2 ${
-                    actionType === 'MESSAGE'
-                      ? 'bg-indigo-600/30 border-indigo-500 text-white font-semibold'
-                      : 'bg-slate-950 border-white/10 text-slate-400 hover:text-white'
-                  }`}
-                >
-                  <span className="text-base">💬</span>
-                  <div>
-                    <div>Gửi tin nhắn</div>
-                    <div className="text-[10px] text-slate-500 font-normal">Gửi nội dung văn bản</div>
-                  </div>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setActionType('AUDIO_CALL')}
-                  className={`p-2.5 rounded-lg border text-left text-xs transition-all flex items-center gap-2 ${
-                    actionType === 'AUDIO_CALL'
-                      ? 'bg-indigo-600/30 border-indigo-500 text-white font-semibold'
-                      : 'bg-slate-950 border-white/10 text-slate-400 hover:text-white'
-                  }`}
-                >
-                  <span className="text-base">📞</span>
-                  <div>
-                    <div>Gọi thoại Messenger</div>
-                    <div className="text-[10px] text-slate-500 font-normal">Đổ chuông voice call</div>
-                  </div>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setActionType('VIDEO_CALL')}
-                  className={`p-2.5 rounded-lg border text-left text-xs transition-all flex items-center gap-2 ${
-                    actionType === 'VIDEO_CALL'
-                      ? 'bg-indigo-600/30 border-indigo-500 text-white font-semibold'
-                      : 'bg-slate-950 border-white/10 text-slate-400 hover:text-white'
-                  }`}
-                >
-                  <span className="text-base">📹</span>
-                  <div>
-                    <div>Gọi video Messenger</div>
-                    <div className="text-[10px] text-slate-500 font-normal">Đổ chuông video call</div>
-                  </div>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setActionType('MESSAGE_AND_CALL')}
-                  className={`p-2.5 rounded-lg border text-left text-xs transition-all flex items-center gap-2 ${
-                    actionType === 'MESSAGE_AND_CALL'
-                      ? 'bg-indigo-600/30 border-indigo-500 text-white font-semibold'
-                      : 'bg-slate-950 border-white/10 text-slate-400 hover:text-white'
-                  }`}
-                >
-                  <span className="text-base">💬📞</span>
-                  <div>
-                    <div>Nhắn tin & Gọi thoại</div>
-                    <div className="text-[10px] text-slate-500 font-normal">Gửi tin trước rồi gọi</div>
-                  </div>
-                </button>
-              </div>
-            </div>
-
-            {actionType !== 'MESSAGE' && (
-              <div className="pt-2 border-t border-white/5 flex items-center justify-between">
-                <label className="text-xs text-slate-400">
-                  Thời lượng đổ chuông trước khi gác máy:
-                </label>
-                <div className="flex items-center gap-2">
-                  <input
-                    type="number"
-                    min={5}
-                    max={180}
-                    value={callDurationSeconds}
-                    onChange={(e) => setCallDurationSeconds(Number(e.target.value))}
-                    className="w-20 px-2 py-1 rounded bg-slate-950 border border-white/10 text-white text-xs font-mono text-center focus:outline-none focus:border-indigo-500"
-                  />
-                  <span className="text-xs text-slate-400">giây</span>
-                </div>
-              </div>
-            )}
-          </div>
-
-          <div>
-            <div className="flex justify-between items-center mb-1">
-              <label className="text-xs font-semibold uppercase tracking-wider text-slate-400">
-                Message Content *
-              </label>
-              <span className="text-xs text-slate-500">{content.length}/2000 chars</span>
-            </div>
-            <textarea
-              required
-              rows={4}
-              value={content}
-              onChange={(e) => setContent(e.target.value)}
-              placeholder="Nhập nội dung nhắc nhở cần gửi đến Messenger..."
-              className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-white/10 text-white text-sm focus:outline-none focus:border-indigo-500 resize-y"
-            />
-          </div>
-
-          {/* Time Window Settings */}
-          <div className="p-4 rounded-xl bg-slate-900/50 border border-white/5 space-y-3">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold text-indigo-400 uppercase tracking-wider">
-                Schedule & Operational Window (Asia/Ho_Chi_Minh)
-              </span>
+        <div className="space-y-3">
+          <Label>Action Type</Label>
+          <div className="grid grid-cols-4 gap-2">
+            {actionTypes.map(type => (
               <button
+                key={type.id}
                 type="button"
-                onClick={applyDefaultWindow}
-                className="text-xs text-indigo-400 hover:text-indigo-300 flex items-center gap-1"
+                onClick={() => setActionType(type.id)}
+                className={`flex flex-col items-center justify-center gap-2 p-2 sm:p-3 rounded-md border transition-colors ${
+                  actionType === type.id
+                    ? 'bg-primary border-primary text-primary-foreground'
+                    : 'bg-card border-input text-muted-foreground hover:bg-accent hover:text-accent-foreground'
+                }`}
               >
-                <Sparkles size={12} /> Default (18:00-22:00, 10m)
+                {type.icon}
+                <span className="text-[10px] font-semibold uppercase tracking-wider">{type.label}</span>
               </button>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              <div>
-                <label className="block text-xs text-slate-400 mb-1">Start Time (HH:mm)</label>
-                <input
-                  type="text"
-                  value={windowStart}
-                  onChange={(e) => setWindowStart(e.target.value)}
-                  placeholder="18:00"
-                  className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-white/10 text-white text-sm font-mono focus:outline-none focus:border-indigo-500 text-center"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs text-slate-400 mb-1">End Time (HH:mm)</label>
-                <input
-                  type="text"
-                  value={windowEnd}
-                  onChange={(e) => setWindowEnd(e.target.value)}
-                  placeholder="22:00"
-                  className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-white/10 text-white text-sm font-mono focus:outline-none focus:border-indigo-500 text-center"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs text-slate-400 mb-1">Interval (Mins)</label>
-                <input
-                  type="number"
-                  min={1}
-                  max={1440}
-                  value={intervalMinutes}
-                  onChange={(e) => setIntervalMinutes(Number(e.target.value))}
-                  className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-white/10 text-white text-sm font-mono focus:outline-none focus:border-indigo-500 text-center"
-                />
-              </div>
-            </div>
+            ))}
           </div>
+        </div>
 
-          <div className="flex items-center gap-2 pt-2">
-            <input
-              type="checkbox"
-              id="reminder-active"
-              checked={active}
-              onChange={(e) => setActive(e.target.checked)}
-              className="w-4 h-4 rounded text-indigo-600 focus:ring-0 cursor-pointer"
+        {actionType !== 'MESSAGE' && (
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 sm:p-4 bg-muted/50 rounded-lg border">
+            <Label htmlFor="duration" className="font-semibold">Ring Duration (sec)</Label>
+            <Input
+              id="duration"
+              type="number"
+              min={5}
+              max={180}
+              value={callDurationSeconds}
+              onChange={(e) => setCallDurationSeconds(Number(e.target.value))}
+              className="sm:w-24 bg-background"
             />
-            <label htmlFor="reminder-active" className="text-sm text-slate-300 cursor-pointer">
-              Active (scheduler will process this reminder)
-            </label>
           </div>
+        )}
 
-          <div className="flex justify-end gap-3 pt-4 border-t border-white/10">
-            <button
-              type="button"
-              onClick={onClose}
-              disabled={loading}
-              className="btn btn-ghost"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={loading}
-              className="btn btn-primary"
-            >
-              {loading ? 'Saving...' : initialData ? 'Update Reminder' : 'Create Reminder'}
-            </button>
+        <div className="space-y-2">
+          <div className="flex justify-between items-center">
+            <Label htmlFor="content">Message Content</Label>
+            <span className="text-xs text-muted-foreground">{content.length}/2000</span>
           </div>
-        </form>
+          <Textarea
+            id="content"
+            required
+            rows={3}
+            value={content}
+            onChange={(e) => setContent(e.target.value)}
+            placeholder="Enter message content..."
+            className="resize-y min-h-[80px]"
+          />
+        </div>
+
+        <div className="p-3 sm:p-4 bg-muted/30 rounded-lg border space-y-4">
+          <div className="flex items-center justify-between">
+            <h4 className="text-sm font-semibold">Schedule Window</h4>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-7 text-[10px] uppercase tracking-wider gap-1"
+              onClick={() => { setWindowStart('18:00'); setWindowEnd('22:00'); setIntervalMinutes(10); }}
+            >
+              <Sparkles className="h-3 w-3" /> Default
+            </Button>
+          </div>
+          <div className="grid grid-cols-3 gap-2 sm:gap-3">
+            <div className="space-y-2">
+              <Label htmlFor="start" className="text-xs sm:text-sm">Start</Label>
+              <Input
+                id="start"
+                type="text"
+                value={windowStart}
+                onChange={(e) => setWindowStart(e.target.value)}
+                className="text-center font-mono text-xs sm:text-sm px-1 sm:px-3"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="end" className="text-xs sm:text-sm">End</Label>
+              <Input
+                id="end"
+                type="text"
+                value={windowEnd}
+                onChange={(e) => setWindowEnd(e.target.value)}
+                className="text-center font-mono text-xs sm:text-sm px-1 sm:px-3"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="interval" className="text-xs sm:text-sm truncate">Interval(m)</Label>
+              <Input
+                id="interval"
+                type="number"
+                value={intervalMinutes}
+                onChange={(e) => setIntervalMinutes(Number(e.target.value))}
+                className="text-center font-mono text-xs sm:text-sm px-1 sm:px-3"
+              />
+            </div>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-3 pt-2 pb-6 sm:pb-0">
+          <Switch 
+            id="active" 
+            checked={active}
+            onCheckedChange={setActive}
+          />
+          <Label htmlFor="active" className="cursor-pointer">
+            Active Status
+          </Label>
+        </div>
       </div>
-    </div>
+    </form>
+  );
+
+  if (isDesktop) {
+    return (
+      <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
+        <DialogContent className="sm:max-w-xl max-h-[90vh] flex flex-col p-0 overflow-hidden">
+          <DialogHeader className="p-6 pb-2 shrink-0">
+            <DialogTitle>{initialData ? 'Edit Configuration' : 'New Configuration'}</DialogTitle>
+            <DialogDescription>
+              Configure the automated message and call behavior for this schedule.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="overflow-y-auto flex-1 min-h-0">
+            {formContentNode}
+          </div>
+          <DialogFooter className="p-6 pt-4 shrink-0 border-t">
+            <Button type="button" variant="outline" onClick={onClose} disabled={loading} className="w-full sm:w-24">
+              Cancel
+            </Button>
+            <Button type="submit" form="reminder-form" disabled={loading} className="w-full sm:w-auto">
+              {loading ? 'Saving...' : initialData ? 'Save Configuration' : 'Create Configuration'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    );
+  }
+
+  return (
+    <Drawer open={isOpen} onOpenChange={(open) => !open && onClose()}>
+      <DrawerContent className="max-h-[90vh]">
+        <div className="overflow-y-auto" data-vaul-scrollable>
+          <DrawerHeader className="text-left pb-2">
+            <DrawerTitle>{initialData ? 'Edit Configuration' : 'New Configuration'}</DrawerTitle>
+            <DrawerDescription>
+              Configure the automated message and call behavior for this schedule.
+            </DrawerDescription>
+          </DrawerHeader>
+          {formContentNode}
+          <DrawerFooter className="pt-2 pb-6 border-t mt-4">
+            <Button type="submit" form="reminder-form" disabled={loading} className="w-full">
+              {loading ? 'Saving...' : initialData ? 'Save Configuration' : 'Create Configuration'}
+            </Button>
+            <Button type="button" variant="outline" onClick={onClose} disabled={loading} className="w-full">
+              Cancel
+            </Button>
+          </DrawerFooter>
+        </div>
+      </DrawerContent>
+    </Drawer>
   );
 };
