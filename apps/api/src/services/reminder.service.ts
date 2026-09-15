@@ -1,0 +1,185 @@
+import { randomUUID } from 'node:crypto';
+import type { Database } from 'better-sqlite3';
+import { getDb } from '../db/database.js';
+import { LogService } from './log.service.js';
+import type {
+  Reminder,
+  CreateReminderInput,
+  UpdateReminderInput
+} from '@messenger/shared';
+
+export class ReminderService {
+  private db: Database;
+  private logService: LogService;
+
+  constructor(db?: Database, logService?: LogService) {
+    this.db = db || getDb();
+    this.logService = logService || new LogService(this.db);
+  }
+
+  getAllReminders(): Reminder[] {
+    const stmt = this.db.prepare(`
+      SELECT id, title, content, target_thread_id as targetThreadId,
+             schedule_cron as scheduleCron, active,
+             window_start as windowStart, window_end as windowEnd,
+             interval_minutes as intervalMinutes,
+             created_at as createdAt, updated_at as updatedAt
+      FROM reminders
+      ORDER BY created_at DESC
+    `);
+    const rows = stmt.all() as Array<{
+      id: string;
+      title: string;
+      content: string;
+      targetThreadId: string;
+      scheduleCron: string | null;
+      active: number;
+      windowStart: string;
+      windowEnd: string;
+      intervalMinutes: number;
+      createdAt: string;
+      updatedAt: string;
+    }>;
+
+    return rows.map((r) => ({
+      ...r,
+      active: Boolean(r.active)
+    }));
+  }
+
+  getReminderById(id: string): Reminder | null {
+    const stmt = this.db.prepare(`
+      SELECT id, title, content, target_thread_id as targetThreadId,
+             schedule_cron as scheduleCron, active,
+             window_start as windowStart, window_end as windowEnd,
+             interval_minutes as intervalMinutes,
+             created_at as createdAt, updated_at as updatedAt
+      FROM reminders
+      WHERE id = ?
+    `);
+    const row = stmt.get(id) as {
+      id: string;
+      title: string;
+      content: string;
+      targetThreadId: string;
+      scheduleCron: string | null;
+      active: number;
+      windowStart: string;
+      windowEnd: string;
+      intervalMinutes: number;
+      createdAt: string;
+      updatedAt: string;
+    } | undefined;
+
+    if (!row) return null;
+    return {
+      ...row,
+      active: Boolean(row.active)
+    };
+  }
+
+  createReminder(data: CreateReminderInput, actor: string = 'admin'): Reminder {
+    const id = randomUUID();
+    const now = new Date().toISOString();
+    const activeInt = data.active !== false ? 1 : 0;
+    const windowStart = data.windowStart || '18:00';
+    const windowEnd = data.windowEnd || '22:00';
+    const intervalMinutes = data.intervalMinutes ?? 10;
+
+    const stmt = this.db.prepare(`
+      INSERT INTO reminders (
+        id, title, content, target_thread_id, schedule_cron,
+        active, window_start, window_end, interval_minutes,
+        created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    stmt.run(
+      id,
+      data.title,
+      data.content,
+      data.targetThreadId,
+      data.scheduleCron || null,
+      activeInt,
+      windowStart,
+      windowEnd,
+      intervalMinutes,
+      now,
+      now
+    );
+
+    const created = this.getReminderById(id)!;
+    this.logService.logAudit('REMINDER_CREATE', actor, { reminderId: id, title: data.title });
+    return created;
+  }
+
+  updateReminder(id: string, data: UpdateReminderInput, actor: string = 'admin'): Reminder | null {
+    const existing = this.getReminderById(id);
+    if (!existing) return null;
+
+    const title = data.title ?? existing.title;
+    const content = data.content ?? existing.content;
+    const targetThreadId = data.targetThreadId ?? existing.targetThreadId;
+    const scheduleCron = data.scheduleCron !== undefined ? data.scheduleCron : existing.scheduleCron;
+    const activeInt = data.active !== undefined ? (data.active ? 1 : 0) : (existing.active ? 1 : 0);
+    const windowStart = data.windowStart ?? existing.windowStart;
+    const windowEnd = data.windowEnd ?? existing.windowEnd;
+    const intervalMinutes = data.intervalMinutes ?? existing.intervalMinutes;
+    const now = new Date().toISOString();
+
+    const stmt = this.db.prepare(`
+      UPDATE reminders
+      SET title = ?, content = ?, target_thread_id = ?, schedule_cron = ?,
+          active = ?, window_start = ?, window_end = ?, interval_minutes = ?,
+          updated_at = ?
+      WHERE id = ?
+    `);
+
+    stmt.run(
+      title,
+      content,
+      targetThreadId,
+      scheduleCron,
+      activeInt,
+      windowStart,
+      windowEnd,
+      intervalMinutes,
+      now,
+      id
+    );
+
+    this.logService.logAudit('REMINDER_UPDATE', actor, { reminderId: id, changes: data });
+    return this.getReminderById(id);
+  }
+
+  toggleReminder(id: string, actor: string = 'admin'): Reminder | null {
+    const existing = this.getReminderById(id);
+    if (!existing) return null;
+
+    const nextActive = !existing.active;
+    const now = new Date().toISOString();
+
+    this.db.prepare(`
+      UPDATE reminders
+      SET active = ?, updated_at = ?
+      WHERE id = ?
+    `).run(nextActive ? 1 : 0, now, id);
+
+    this.logService.logAudit('REMINDER_TOGGLE', actor, {
+      reminderId: id,
+      previous: existing.active,
+      current: nextActive
+    });
+
+    return this.getReminderById(id);
+  }
+
+  deleteReminder(id: string, actor: string = 'admin'): boolean {
+    const existing = this.getReminderById(id);
+    if (!existing) return false;
+
+    this.db.prepare(`DELETE FROM reminders WHERE id = ?`).run(id);
+    this.logService.logAudit('REMINDER_DELETE', actor, { reminderId: id, title: existing.title });
+    return true;
+  }
+}

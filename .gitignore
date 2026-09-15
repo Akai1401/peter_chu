@@ -1,0 +1,27 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Builds
+dist/
+build/
+.tsbuildinfo
+
+# SQLite databases
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# Playwright & Browser Sessions
+.messenger-session/
+playwright-report/
+test-results/
+
+# Environment files
+.env
+.env.local
+
+# OS
+.DS_Store
+*.log

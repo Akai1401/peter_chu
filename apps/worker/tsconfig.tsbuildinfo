@@ -1,0 +1,1 @@
+{"root":["./src/worker.test.ts","./src/worker.ts","./src/messenger/playwright-client.ts","./src/safety/lock-manager.ts","./src/safety/rate-limiter.ts","./src/scheduler/cron-runner.ts"],"version":"5.9.3"}

@@ -1,0 +1,26 @@
+{
+  "name": "@messenger/worker",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "./dist/worker.js",
+  "scripts": {
+    "dev": "tsx watch src/worker.ts",
+    "build": "tsc -b",
+    "typecheck": "tsc --noEmit",
+    "test": "node --test --import tsx src/**/*.test.ts",
+    "lint": "tsc --noEmit",
+    "start": "node dist/worker.js"
+  },
+  "dependencies": {
+    "@messenger/shared": "*",
+    "better-sqlite3": "^11.8.1",
+    "dotenv": "^16.4.7",
+    "playwright": "^1.50.1"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.12",
+    "@types/node": "^22.10.5",
+    "tsx": "^4.19.3",
+    "typescript": "^5.7.3"
+  }
+}

@@ -1,0 +1,1 @@
+{"root":["./src/api.test.ts","./src/server.ts","./src/db/database.ts","./src/routes/bot.router.ts","./src/routes/log.router.ts","./src/routes/reminder.router.ts","./src/routes/schedule.router.ts","./src/services/bot-control.service.ts","./src/services/log.service.ts","./src/services/reminder.service.ts","./src/services/schedule.service.ts"],"version":"5.9.3"}

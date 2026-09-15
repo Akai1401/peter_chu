@@ -1,0 +1,23 @@
+{
+  "name": "messenger-control-center",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Messenger AI Bot Control Center - Phase 1: Reminder Bot",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "dev:api": "npm --workspace=@messenger/api run dev",
+    "dev:worker": "npm --workspace=@messenger/worker run dev",
+    "dev:admin": "npm --workspace=@messenger/admin run dev",
+    "build": "npm run build --workspaces",
+    "typecheck": "npm run typecheck --workspaces",
+    "lint": "npm run lint --workspaces",
+    "test": "npm run test --workspaces"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.5",
+    "typescript": "^5.7.3"
+  }
+}

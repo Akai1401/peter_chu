@@ -1,0 +1,1 @@
+{"root":["./src/app.tsx","./src/api.ts","./src/main.tsx","./src/components/botstatuscard.tsx","./src/components/logviewer.tsx","./src/components/reminderlist.tsx","./src/components/remindermodal.tsx","./src/components/upcomingschedulecard.tsx"],"version":"5.9.3"}
