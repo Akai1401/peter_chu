@@ -23,15 +23,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import {
-  Drawer,
-  DrawerContent,
-  DrawerDescription,
-  DrawerFooter,
-  DrawerHeader,
-  DrawerTitle,
-} from "@/components/ui/drawer";
-import { useMediaQuery } from '@/hooks/use-media-query';
 import type { BotState } from '@messenger/shared';
 
 interface Props {
@@ -42,7 +33,6 @@ interface Props {
 }
 
 export const BotStatusCard: React.FC<Props> = ({ state, onAction, onToggleDryRun, loading }) => {
-  const isDesktop = useMediaQuery("(min-width: 768px)");
   const [showEmergencyModal, setShowEmergencyModal] = useState(false);
   const [emergencyReason, setEmergencyReason] = useState('');
 
@@ -66,34 +56,7 @@ export const BotStatusCard: React.FC<Props> = ({ state, onAction, onToggleDryRun
     return <Badge variant="secondary">System Standby</Badge>;
   };
 
-  const getBadge = (state: BotState) => {
-    switch (state.status) {
-      case 'RUNNING':
-        return (
-          <Badge variant="success" className="text-[10px] uppercase tracking-wider animate-pulse">
-            Active
-          </Badge>
-        );
-      case 'STOPPED':
-        return (
-          <Badge variant="secondary" className="text-[10px] uppercase tracking-wider">
-            Stopped
-          </Badge>
-        );
-      case 'ERROR':
-        return (
-          <Badge variant="destructive" className="text-[10px] uppercase tracking-wider">
-            Error
-          </Badge>
-        );
-      default:
-        return (
-          <Badge variant="outline" className="text-[10px] uppercase tracking-wider">
-            Unknown
-          </Badge>
-        );
-    }
-  };
+
 
   const getSessionBadge = () => {
     switch (state.sessionStatus) {
@@ -129,7 +92,6 @@ export const BotStatusCard: React.FC<Props> = ({ state, onAction, onToggleDryRun
         value={emergencyReason}
         onChange={(e) => setEmergencyReason(e.target.value)}
         placeholder="e.g. Rate limit hit on Facebook"
-        autoFocus={isDesktop}
       />
     </div>
   );
@@ -196,49 +158,25 @@ export const BotStatusCard: React.FC<Props> = ({ state, onAction, onToggleDryRun
         </CardContent>
       </Card>
 
-      {isDesktop ? (
-        <Dialog open={showEmergencyModal} onOpenChange={setShowEmergencyModal}>
-          <DialogContent className="sm:max-w-md">
-            <DialogHeader>
-              <DialogTitle>Confirm Emergency Stop</DialogTitle>
-              <DialogDescription>
-                This will forcefully halt all running jobs and prevent the bot from executing future reminders.
-              </DialogDescription>
-            </DialogHeader>
-            <EmergencyForm />
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setShowEmergencyModal(false)}>
-                Cancel
-              </Button>
-              <Button variant="destructive" onClick={handleConfirmEmergency}>
-                Execute Stop
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-      ) : (
-        <Drawer open={showEmergencyModal} onOpenChange={setShowEmergencyModal}>
-          <DrawerContent className="max-h-[90vh]">
-            <div className="overflow-y-auto" data-vaul-scrollable>
-              <DrawerHeader className="text-left">
-                <DrawerTitle>Confirm Emergency Stop</DrawerTitle>
-                <DrawerDescription>
-                  This will forcefully halt all running jobs and prevent the bot from executing future reminders.
-                </DrawerDescription>
-              </DrawerHeader>
-              <EmergencyForm />
-              <DrawerFooter className="pt-2 pb-6 mt-2">
-                <Button variant="destructive" onClick={handleConfirmEmergency}>
-                  Execute Stop
-                </Button>
-                <Button variant="outline" onClick={() => setShowEmergencyModal(false)}>
-                  Cancel
-                </Button>
-              </DrawerFooter>
-            </div>
-          </DrawerContent>
-        </Drawer>
-      )}
+      <Dialog open={showEmergencyModal} onOpenChange={setShowEmergencyModal}>
+        <DialogContent className="sm:max-w-md w-[95vw] rounded-lg">
+          <DialogHeader>
+            <DialogTitle>Confirm Emergency Stop</DialogTitle>
+            <DialogDescription>
+              This will forcefully halt all running jobs and prevent the bot from executing future reminders.
+            </DialogDescription>
+          </DialogHeader>
+          <EmergencyForm />
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="outline" onClick={() => setShowEmergencyModal(false)}>
+              Cancel
+            </Button>
+            <Button variant="destructive" onClick={handleConfirmEmergency}>
+              Execute Stop
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
 };

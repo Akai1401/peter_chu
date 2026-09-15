@@ -48,10 +48,10 @@ export const UpcomingScheduleCard: React.FC<Props> = ({ slots, loading }) => {
 
                   <div className="flex sm:flex-col items-center sm:items-end justify-between sm:justify-center shrink-0 pt-2 sm:pt-0 mt-1 sm:mt-0 border-t sm:border-t-0">
                     <span className="text-sm font-bold text-primary">
-                      {slot.slotLocal}
+                      {slot.minutesFromNow === 0 ? 'DUE NOW' : `IN ~${slot.minutesFromNow}M`}
                     </span>
                     <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-                      {slot.minutesFromNow === 0 ? 'DUE NOW' : `IN ~${slot.minutesFromNow}M`}
+                      {slot.slotLocal}
                     </span>
                   </div>
                 </div>

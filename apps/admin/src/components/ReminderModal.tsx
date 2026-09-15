@@ -8,20 +8,11 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import {
-  Drawer,
-  DrawerContent,
-  DrawerDescription,
-  DrawerFooter,
-  DrawerHeader,
-  DrawerTitle,
-} from "@/components/ui/drawer";
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Switch } from '@/components/ui/switch';
-import { useMediaQuery } from '@/hooks/use-media-query';
 import type { Reminder, CreateReminderInput } from '@messenger/shared';
 
 interface Props {
@@ -39,8 +30,6 @@ export const ReminderModal: React.FC<Props> = ({
   onSubmit,
   loading
 }) => {
-  const isDesktop = useMediaQuery("(min-width: 768px)");
-
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
   const [targetThreadId, setTargetThreadId] = useState('');
@@ -254,53 +243,27 @@ export const ReminderModal: React.FC<Props> = ({
     </form>
   );
 
-  if (isDesktop) {
-    return (
-      <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-        <DialogContent className="sm:max-w-xl max-h-[90vh] flex flex-col p-0 overflow-hidden">
-          <DialogHeader className="p-6 pb-2 shrink-0">
-            <DialogTitle>{initialData ? 'Edit Configuration' : 'New Configuration'}</DialogTitle>
-            <DialogDescription>
-              Configure the automated message and call behavior for this schedule.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="overflow-y-auto flex-1 min-h-0">
-            {formContentNode}
-          </div>
-          <DialogFooter className="p-6 pt-4 shrink-0 border-t">
-            <Button type="button" variant="outline" onClick={onClose} disabled={loading} className="w-full sm:w-24">
-              Cancel
-            </Button>
-            <Button type="submit" form="reminder-form" disabled={loading} className="w-full sm:w-auto">
-              {loading ? 'Saving...' : initialData ? 'Save Configuration' : 'Create Configuration'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    );
-  }
-
   return (
-    <Drawer open={isOpen} onOpenChange={(open) => !open && onClose()}>
-      <DrawerContent className="max-h-[90vh]">
-        <div className="overflow-y-auto" data-vaul-scrollable>
-          <DrawerHeader className="text-left pb-2">
-            <DrawerTitle>{initialData ? 'Edit Configuration' : 'New Configuration'}</DrawerTitle>
-            <DrawerDescription>
-              Configure the automated message and call behavior for this schedule.
-            </DrawerDescription>
-          </DrawerHeader>
+    <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="w-[95vw] sm:max-w-xl max-h-[90vh] flex flex-col p-0 overflow-hidden rounded-lg">
+        <DialogHeader className="p-4 sm:p-6 pb-2 shrink-0 text-left">
+          <DialogTitle>{initialData ? 'Edit Configuration' : 'New Configuration'}</DialogTitle>
+          <DialogDescription>
+            Configure the automated message and call behavior for this schedule.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="overflow-y-auto flex-1 min-h-0">
           {formContentNode}
-          <DrawerFooter className="pt-2 pb-6 border-t mt-4">
-            <Button type="submit" form="reminder-form" disabled={loading} className="w-full">
-              {loading ? 'Saving...' : initialData ? 'Save Configuration' : 'Create Configuration'}
-            </Button>
-            <Button type="button" variant="outline" onClick={onClose} disabled={loading} className="w-full">
-              Cancel
-            </Button>
-          </DrawerFooter>
         </div>
-      </DrawerContent>
-    </Drawer>
+        <DialogFooter className="p-4 sm:p-6 pt-2 sm:pt-4 shrink-0 border-t flex-col sm:flex-row gap-2 sm:gap-0">
+          <Button type="button" variant="outline" onClick={onClose} disabled={loading} className="w-full sm:w-24">
+            Cancel
+          </Button>
+          <Button type="submit" form="reminder-form" disabled={loading} className="w-full sm:w-auto">
+            {loading ? 'Saving...' : initialData ? 'Save Configuration' : 'Create Configuration'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 };
