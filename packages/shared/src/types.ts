@@ -13,11 +13,15 @@ export type ExecutionStatus =
   | 'SKIPPED_OFF_HOURS'
   | 'SKIPPED_BOT_STOPPED';
 
+export type ReminderActionType = 'MESSAGE' | 'AUDIO_CALL' | 'VIDEO_CALL' | 'MESSAGE_AND_CALL';
+
 export interface Reminder {
   id: string;
   title: string;
   content: string;
   targetThreadId: string;
+  actionType: ReminderActionType;
+  callDurationSeconds: number;
   scheduleCron?: string | null;
   active: boolean;
   windowStart: string; // e.g. "18:00"

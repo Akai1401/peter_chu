@@ -136,6 +136,16 @@ export function App() {
     }
   };
 
+  const handleCallReminder = async (id: string, callType: 'AUDIO' | 'VIDEO' = 'AUDIO') => {
+    try {
+      const res = await api.callReminder(id, callType);
+      showToast(res.message, 'success');
+      await loadData(true);
+    } catch (err: any) {
+      showToast(err.message || 'Failed to initiate Messenger call', 'error');
+    }
+  };
+
   const handleDeleteReminder = async (id: string) => {
     try {
       await api.deleteReminder(id);
@@ -241,6 +251,7 @@ export function App() {
               reminders={reminders}
               onToggle={handleToggleReminder}
               onTest={handleTestReminder}
+              onCall={handleCallReminder}
               onEdit={(reminder) => {
                 setEditingReminder(reminder);
                 setIsModalOpen(true);

@@ -67,6 +67,11 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ actor: 'admin_dashboard' })
     }),
+  callReminder: (id: string, callType: 'AUDIO' | 'VIDEO' = 'AUDIO', durationSeconds: number = 25) =>
+    request<{ success: boolean; message: string; execution: ExecutionLog }>(`/reminders/${id}/call`, {
+      method: 'POST',
+      body: JSON.stringify({ callType, durationSeconds, actor: 'admin_dashboard' })
+    }),
 
   // Schedules
   getUpcomingSlots: () => request<UpcomingSlot[]>('/schedules/upcoming'),

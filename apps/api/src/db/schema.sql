@@ -22,6 +22,8 @@ CREATE TABLE IF NOT EXISTS reminders (
   title TEXT NOT NULL,
   content TEXT NOT NULL,
   target_thread_id TEXT NOT NULL,
+  action_type TEXT NOT NULL DEFAULT 'MESSAGE', -- 'MESSAGE', 'AUDIO_CALL', 'VIDEO_CALL', 'MESSAGE_AND_CALL'
+  call_duration_seconds INTEGER NOT NULL DEFAULT 30,
   schedule_cron TEXT,
   active INTEGER NOT NULL DEFAULT 1,
   window_start TEXT NOT NULL DEFAULT '18:00',
@@ -73,6 +75,8 @@ CREATE TABLE IF NOT EXISTS test_dispatch_queue (
   reminder_id TEXT NOT NULL,
   target_thread_id TEXT NOT NULL,
   content TEXT NOT NULL,
+  action_type TEXT NOT NULL DEFAULT 'MESSAGE',
+  call_duration_seconds INTEGER NOT NULL DEFAULT 30,
   status TEXT NOT NULL DEFAULT 'PENDING', -- 'PENDING', 'PROCESSING', 'COMPLETED', 'FAILED'
   error TEXT,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,

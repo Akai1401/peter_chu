@@ -20,6 +20,7 @@ export class ReminderService {
   getAllReminders(): Reminder[] {
     const stmt = this.db.prepare(`
       SELECT id, title, content, target_thread_id as targetThreadId,
+             action_type as actionType, call_duration_seconds as callDurationSeconds,
              schedule_cron as scheduleCron, active,
              window_start as windowStart, window_end as windowEnd,
              interval_minutes as intervalMinutes,
@@ -32,6 +33,8 @@ export class ReminderService {
       title: string;
       content: string;
       targetThreadId: string;
+      actionType: any;
+      callDurationSeconds: number;
       scheduleCron: string | null;
       active: number;
       windowStart: string;
@@ -43,6 +46,8 @@ export class ReminderService {
 
     return rows.map((r) => ({
       ...r,
+      actionType: r.actionType || 'MESSAGE',
+      callDurationSeconds: r.callDurationSeconds || 30,
       active: Boolean(r.active)
     }));
   }
@@ -50,6 +55,7 @@ export class ReminderService {
   getReminderById(id: string): Reminder | null {
     const stmt = this.db.prepare(`
       SELECT id, title, content, target_thread_id as targetThreadId,
+             action_type as actionType, call_duration_seconds as callDurationSeconds,
              schedule_cron as scheduleCron, active,
              window_start as windowStart, window_end as windowEnd,
              interval_minutes as intervalMinutes,
@@ -62,6 +68,8 @@ export class ReminderService {
       title: string;
       content: string;
       targetThreadId: string;
+      actionType: any;
+      callDurationSeconds: number;
       scheduleCron: string | null;
       active: number;
       windowStart: string;
@@ -74,6 +82,8 @@ export class ReminderService {
     if (!row) return null;
     return {
       ...row,
+      actionType: row.actionType || 'MESSAGE',
+      callDurationSeconds: row.callDurationSeconds || 30,
       active: Boolean(row.active)
     };
   }
@@ -85,13 +95,15 @@ export class ReminderService {
     const windowStart = data.windowStart || '18:00';
     const windowEnd = data.windowEnd || '22:00';
     const intervalMinutes = data.intervalMinutes ?? 10;
+    const actionType = data.actionType || 'MESSAGE';
+    const callDurationSeconds = data.callDurationSeconds ?? 30;
 
     const stmt = this.db.prepare(`
       INSERT INTO reminders (
-        id, title, content, target_thread_id, schedule_cron,
+        id, title, content, target_thread_id, action_type, call_duration_seconds, schedule_cron,
         active, window_start, window_end, interval_minutes,
         created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     stmt.run(
@@ -99,6 +111,8 @@ export class ReminderService {
       data.title,
       data.content,
       data.targetThreadId,
+      actionType,
+      callDurationSeconds,
       data.scheduleCron || null,
       activeInt,
       windowStart,
@@ -120,6 +134,8 @@ export class ReminderService {
     const title = data.title ?? existing.title;
     const content = data.content ?? existing.content;
     const targetThreadId = data.targetThreadId ?? existing.targetThreadId;
+    const actionType = data.actionType ?? existing.actionType;
+    const callDurationSeconds = data.callDurationSeconds ?? existing.callDurationSeconds;
     const scheduleCron = data.scheduleCron !== undefined ? data.scheduleCron : existing.scheduleCron;
     const activeInt = data.active !== undefined ? (data.active ? 1 : 0) : (existing.active ? 1 : 0);
     const windowStart = data.windowStart ?? existing.windowStart;
@@ -129,7 +145,8 @@ export class ReminderService {
 
     const stmt = this.db.prepare(`
       UPDATE reminders
-      SET title = ?, content = ?, target_thread_id = ?, schedule_cron = ?,
+      SET title = ?, content = ?, target_thread_id = ?, action_type = ?,
+          call_duration_seconds = ?, schedule_cron = ?,
           active = ?, window_start = ?, window_end = ?, interval_minutes = ?,
           updated_at = ?
       WHERE id = ?
@@ -139,6 +156,8 @@ export class ReminderService {
       title,
       content,
       targetThreadId,
+      actionType,
+      callDurationSeconds,
       scheduleCron,
       activeInt,
       windowStart,

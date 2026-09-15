@@ -16,6 +16,8 @@ export interface ReminderRow {
   title: string;
   content: string;
   target_thread_id: string;
+  action_type?: string;
+  call_duration_seconds?: number;
   active: number;
   window_start: string;
   window_end: string;
@@ -95,7 +97,7 @@ export class CronRunner {
 
     // 3. Query active reminders
     const reminders = this.db.prepare(`
-      SELECT id, title, content, target_thread_id, active,
+      SELECT id, title, content, target_thread_id, action_type, call_duration_seconds, active,
              window_start, window_end, interval_minutes
       FROM reminders
       WHERE active = 1
@@ -134,7 +136,15 @@ export class CronRunner {
 
       // 5. Rate limiting check
       const rateCheck = this.rateLimiter.canSend(reminder.target_thread_id);
-      const preview = createMessagePreview(reminder.content);
+      const actionType = reminder.action_type || 'MESSAGE';
+      const callDuration = reminder.call_duration_seconds || 25;
+      const preview = actionType === 'AUDIO_CALL'
+        ? `[Cuộc gọi thoại Messenger (${callDuration}s)]`
+        : actionType === 'VIDEO_CALL'
+        ? `[Cuộc gọi video Messenger (${callDuration}s)]`
+        : actionType === 'MESSAGE_AND_CALL'
+        ? `${createMessagePreview(reminder.content)} + [Gọi thoại Messenger]`
+        : createMessagePreview(reminder.content);
 
       if (!rateCheck.allowed) {
         // Record rate-limited skip
@@ -150,15 +160,46 @@ export class CronRunner {
         continue;
       }
 
-      // 6. Dispatch message via Playwright client (or dry-run mock)
-      const sendResult = await this.messengerClient.sendMessage(
-        reminder.target_thread_id,
-        reminder.content
-      );
+      // 6. Dispatch action via Playwright client
+      let isSuccess = true;
+      let errorMsg: string | undefined;
 
-      const execStatus = sendResult.dryRun
+      if (actionType === 'MESSAGE' || actionType === 'MESSAGE_AND_CALL') {
+        const sendResult = await this.messengerClient.sendMessage(
+          reminder.target_thread_id,
+          reminder.content
+        );
+        if (!sendResult.dryRun && !sendResult.success) {
+          isSuccess = false;
+          errorMsg = sendResult.error;
+        }
+      }
+
+      if (isSuccess && (actionType === 'AUDIO_CALL' || actionType === 'MESSAGE_AND_CALL')) {
+        const callResult = await this.messengerClient.startCall(
+          reminder.target_thread_id,
+          'AUDIO',
+          callDuration
+        );
+        if (!callResult.dryRun && !callResult.success) {
+          isSuccess = false;
+          errorMsg = callResult.error;
+        }
+      } else if (isSuccess && actionType === 'VIDEO_CALL') {
+        const callResult = await this.messengerClient.startCall(
+          reminder.target_thread_id,
+          'VIDEO',
+          callDuration
+        );
+        if (!callResult.dryRun && !callResult.success) {
+          isSuccess = false;
+          errorMsg = callResult.error;
+        }
+      }
+
+      const execStatus = isDryRun
         ? 'DRY_RUN'
-        : sendResult.success
+        : isSuccess
         ? 'SUCCESS'
         : 'FAILED';
 
@@ -170,8 +211,9 @@ export class CronRunner {
         messagePreview: preview,
         details: {
           slotKey,
-          dryRun: sendResult.dryRun,
-          error: sendResult.error
+          actionType,
+          dryRun: isDryRun,
+          error: errorMsg
         }
       });
 
@@ -216,12 +258,19 @@ export class CronRunner {
   async processTestQueue(): Promise<void> {
     try {
       const pending = this.db.prepare(`
-        SELECT id, reminder_id, target_thread_id, content
+        SELECT id, reminder_id, target_thread_id, content, action_type, call_duration_seconds
         FROM test_dispatch_queue
         WHERE status = 'PENDING'
         ORDER BY created_at ASC
         LIMIT 1
-      `).get() as { id: string; reminder_id: string; target_thread_id: string; content: string } | undefined;
+      `).get() as {
+        id: string;
+        reminder_id: string;
+        target_thread_id: string;
+        content: string;
+        action_type?: string;
+        call_duration_seconds?: number;
+      } | undefined;
 
       if (!pending) return;
 
@@ -236,31 +285,74 @@ export class CronRunner {
       const isDryRun = Boolean(botStateRow?.dryRun);
       this.messengerClient.setDryRun(isDryRun);
 
-      const sendResult = await this.messengerClient.sendMessage(pending.target_thread_id, pending.content);
+      const actionType = pending.action_type || 'MESSAGE';
+      const callDuration = pending.call_duration_seconds || 25;
+
+      let isSuccess = true;
+      let errorMsg: string | undefined;
+
+      if (actionType === 'MESSAGE' || actionType === 'MESSAGE_AND_CALL') {
+        const sendResult = await this.messengerClient.sendMessage(pending.target_thread_id, pending.content);
+        if (!sendResult.dryRun && !sendResult.success) {
+          isSuccess = false;
+          errorMsg = sendResult.error;
+        }
+      }
+
+      if (isSuccess && (actionType === 'AUDIO_CALL' || actionType === 'MESSAGE_AND_CALL')) {
+        const callResult = await this.messengerClient.startCall(
+          pending.target_thread_id,
+          'AUDIO',
+          callDuration
+        );
+        if (!callResult.dryRun && !callResult.success) {
+          isSuccess = false;
+          errorMsg = callResult.error;
+        }
+      } else if (isSuccess && actionType === 'VIDEO_CALL') {
+        const callResult = await this.messengerClient.startCall(
+          pending.target_thread_id,
+          'VIDEO',
+          callDuration
+        );
+        if (!callResult.dryRun && !callResult.success) {
+          isSuccess = false;
+          errorMsg = callResult.error;
+        }
+      }
+
       const finishedAt = new Date().toISOString();
-      const status = sendResult.dryRun ? 'COMPLETED' : sendResult.success ? 'COMPLETED' : 'FAILED';
+      const status = isDryRun ? 'COMPLETED' : isSuccess ? 'COMPLETED' : 'FAILED';
 
       this.db.prepare(`
         UPDATE test_dispatch_queue
         SET status = ?, error = ?, finished_at = ?
         WHERE id = ?
-      `).run(status, sendResult.error || null, finishedAt, pending.id);
+      `).run(status, errorMsg || null, finishedAt, pending.id);
 
       // Record in execution logs
-      const preview = createMessagePreview(pending.content);
+      const preview = actionType === 'AUDIO_CALL'
+        ? `[Cuộc gọi thoại Messenger (${callDuration}s)]`
+        : actionType === 'VIDEO_CALL'
+        ? `[Cuộc gọi video Messenger (${callDuration}s)]`
+        : actionType === 'MESSAGE_AND_CALL'
+        ? `${createMessagePreview(pending.content)} + [Gọi thoại Messenger]`
+        : createMessagePreview(pending.content);
+
       const slotKey = `test-${Date.now()}`;
       const idempotencyKey = generateIdempotencyKey(pending.reminder_id, pending.target_thread_id, slotKey);
 
       this.recordExecutionLog({
         reminderId: pending.reminder_id,
         threadId: pending.target_thread_id,
-        status: sendResult.dryRun ? 'DRY_RUN' : sendResult.success ? 'SUCCESS' : 'FAILED',
+        status: isDryRun ? 'DRY_RUN' : isSuccess ? 'SUCCESS' : 'FAILED',
         idempotencyKey,
         messagePreview: preview,
         details: {
           testTrigger: true,
-          mode: sendResult.dryRun ? 'DRY_RUN' : 'LIVE',
-          error: sendResult.error
+          actionType,
+          mode: isDryRun ? 'DRY_RUN' : 'LIVE',
+          error: errorMsg
         }
       });
     } catch (err: any) {

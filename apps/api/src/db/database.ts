@@ -49,6 +49,20 @@ export function initDatabase(dbPath?: string): Database.Database {
     db.exec(schemaSql);
   }
 
+  // Safe migrations for newly added columns
+  try {
+    db.exec(`ALTER TABLE reminders ADD COLUMN action_type TEXT NOT NULL DEFAULT 'MESSAGE'`);
+  } catch {}
+  try {
+    db.exec(`ALTER TABLE reminders ADD COLUMN call_duration_seconds INTEGER NOT NULL DEFAULT 30`);
+  } catch {}
+  try {
+    db.exec(`ALTER TABLE test_dispatch_queue ADD COLUMN action_type TEXT NOT NULL DEFAULT 'MESSAGE'`);
+  } catch {}
+  try {
+    db.exec(`ALTER TABLE test_dispatch_queue ADD COLUMN call_duration_seconds INTEGER NOT NULL DEFAULT 30`);
+  } catch {}
+
   return db;
 }
 

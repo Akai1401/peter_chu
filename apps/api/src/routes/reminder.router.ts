@@ -184,17 +184,19 @@ export function createReminderRouter(
 
       const db = getDb();
       const testId = randomUUID();
+      const actionType = req.body.actionType || reminder.actionType || 'MESSAGE';
+      const callDurationSeconds = req.body.callDurationSeconds || reminder.callDurationSeconds || 25;
 
       db.prepare(`
-        INSERT INTO test_dispatch_queue (id, reminder_id, target_thread_id, content, status)
-        VALUES (?, ?, ?, ?, 'PENDING')
-      `).run(testId, reminder.id, reminder.targetThreadId, reminder.content);
+        INSERT INTO test_dispatch_queue (id, reminder_id, target_thread_id, content, action_type, call_duration_seconds, status)
+        VALUES (?, ?, ?, ?, ?, ?, 'PENDING')
+      `).run(testId, reminder.id, reminder.targetThreadId, reminder.content, actionType, callDurationSeconds);
 
-      // Wait up to 25 seconds for worker to process
+      // Wait up to 35 seconds for worker to process
       const start = Date.now();
       let finishedJob: { status: string; error: string | null } | null = null;
 
-      while (Date.now() - start < 25000) {
+      while (Date.now() - start < 35000) {
         await new Promise((r) => setTimeout(r, 600));
         const job = db
           .prepare('SELECT status, error FROM test_dispatch_queue WHERE id = ?')
@@ -227,7 +229,130 @@ export function createReminderRouter(
 
       res.json({
         success: true,
-        message: 'Đã gửi tin nhắn thật thành công đến Messenger!',
+        message: 'Đã thực thi thành công trên Messenger!',
+        execution: latestLog
+      });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // POST /api/reminders/:id/call
+  // Triggers an immediate voice or video call for this reminder
+  router.post('/:id/call', async (req, res) => {
+    try {
+      const reminder = reminderService.getReminderById(req.params.id);
+      if (!reminder) {
+        res.status(404).json({ success: false, error: 'Reminder not found' });
+        return;
+      }
+
+      const botState = botService.getBotState();
+      const isEmergencyStopped = botState.emergencyStop || botState.status === 'EMERGENCY_STOPPED';
+
+      if (isEmergencyStopped) {
+        res.status(400).json({
+          success: false,
+          error: 'Bot is currently EMERGENCY_STOPPED. Cannot initiate call.'
+        });
+        return;
+      }
+
+      const isDryRun = Boolean(botState.dryRun);
+      const callType = (req.body.callType === 'VIDEO' ? 'VIDEO_CALL' : 'AUDIO_CALL') as 'AUDIO_CALL' | 'VIDEO_CALL';
+      const durationSeconds = Number(req.body.durationSeconds || reminder.callDurationSeconds || 25);
+      const slotKey = `call-${Date.now()}`;
+      const idempotencyKey = generateIdempotencyKey(reminder.id, reminder.targetThreadId, slotKey);
+      const callLabel = callType === 'VIDEO_CALL' ? 'Video' : 'Thoại';
+
+      // Record audit
+      logService.logAudit('TEST_CALL_TRIGGER', req.body.actor || 'admin_ui', {
+        reminderId: reminder.id,
+        title: reminder.title,
+        callType,
+        durationSeconds,
+        isDryRun
+      });
+
+      if (isDryRun) {
+        const log = logService.logExecution({
+          reminderId: reminder.id,
+          threadId: reminder.targetThreadId,
+          status: 'DRY_RUN',
+          idempotencyKey,
+          messagePreview: `[Mô phỏng gọi ${callLabel} Messenger (${durationSeconds}s)]`,
+          details: {
+            testTrigger: true,
+            callType,
+            durationSeconds,
+            mode: 'SIMULATION_DRY_RUN',
+            executedAt: new Date().toISOString()
+          }
+        });
+
+        res.json({
+          success: true,
+          message: `Mô phỏng cuộc gọi ${callLabel} thành công (DRY_RUN: không thực hiện cuộc gọi thật).`,
+          execution: log
+        });
+        return;
+      }
+
+      // LIVE MODE: Call through worker
+      if (botState.sessionStatus === 'UNAUTHENTICATED') {
+        res.status(400).json({
+          success: false,
+          error: 'Messenger Web chưa đăng nhập. Vui lòng chạy "npm run login:messenger" trên terminal!'
+        });
+        return;
+      }
+
+      const db = getDb();
+      const testId = randomUUID();
+
+      db.prepare(`
+        INSERT INTO test_dispatch_queue (id, reminder_id, target_thread_id, content, action_type, call_duration_seconds, status)
+        VALUES (?, ?, ?, ?, ?, ?, 'PENDING')
+      `).run(testId, reminder.id, reminder.targetThreadId, reminder.content, callType, durationSeconds);
+
+      // Wait for worker to process (duration + 25 seconds overhead)
+      const timeoutMs = (durationSeconds + 25) * 1000;
+      const start = Date.now();
+      let finishedJob: { status: string; error: string | null } | null = null;
+
+      while (Date.now() - start < timeoutMs) {
+        await new Promise((r) => setTimeout(r, 600));
+        const job = db
+          .prepare('SELECT status, error FROM test_dispatch_queue WHERE id = ?')
+          .get(testId) as { status: string; error: string | null } | undefined;
+
+        if (job && (job.status === 'COMPLETED' || job.status === 'FAILED')) {
+          finishedJob = job;
+          break;
+        }
+      }
+
+      if (!finishedJob) {
+        res.status(504).json({
+          success: false,
+          error: 'Quá thời gian chờ Worker xử lý cuộc gọi. Hãy chắc chắn rằng bạn đang chạy "npm run dev:worker"!'
+        });
+        return;
+      }
+
+      if (finishedJob.status === 'FAILED') {
+        res.status(400).json({
+          success: false,
+          error: finishedJob.error || 'Worker thực hiện cuộc gọi Messenger thất bại.'
+        });
+        return;
+      }
+
+      const latestLog = logService.getExecutionLogs(1, 0, reminder.id)[0];
+
+      res.json({
+        success: true,
+        message: `Đã thực hiện cuộc gọi ${callLabel} Messenger thành công (${durationSeconds}s)!`,
         execution: latestLog
       });
     } catch (err: any) {

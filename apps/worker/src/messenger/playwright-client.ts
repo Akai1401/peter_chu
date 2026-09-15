@@ -18,6 +18,16 @@ export interface SendResult {
   timestamp: string;
 }
 
+export interface CallResult {
+  success: boolean;
+  dryRun: boolean;
+  threadId: string;
+  callType: 'AUDIO' | 'VIDEO';
+  durationSeconds: number;
+  error?: string;
+  timestamp: string;
+}
+
 export class MessengerClient {
   private userDataDir: string;
   private isDryRun: boolean;
@@ -59,12 +69,15 @@ export class MessengerClient {
       this.context = await chromium.launchPersistentContext(this.userDataDir, {
         headless: this.headless,
         viewport: { width: 1280, height: 800 },
+        permissions: ['microphone', 'camera'],
         userAgent:
           'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
         args: [
           '--disable-blink-features=AutomationControlled',
           '--no-sandbox',
-          '--disable-dev-shm-usage'
+          '--disable-dev-shm-usage',
+          '--use-fake-ui-for-media-stream',
+          '--use-fake-device-for-media-stream'
         ]
       });
 
@@ -266,6 +279,166 @@ export class MessengerClient {
         threadId: targetThreadId,
         message,
         error: err.message || 'Failed to send message via Messenger Web',
+        timestamp
+      };
+    }
+  }
+
+  /**
+   * Start a Messenger voice or video call to target thread
+   */
+  async startCall(
+    targetThreadId: string,
+    callType: 'AUDIO' | 'VIDEO' = 'AUDIO',
+    durationSeconds: number = 25
+  ): Promise<CallResult> {
+    const timestamp = new Date().toISOString();
+
+    if (this.isDryRun) {
+      console.log(`[Messenger] (DRY_RUN) Simulated ${callType} call to ${targetThreadId}`);
+      return {
+        success: true,
+        dryRun: true,
+        threadId: targetThreadId,
+        callType,
+        durationSeconds,
+        timestamp
+      };
+    }
+
+    try {
+      await this.init();
+      if (!this.page) {
+        throw new Error('Browser page could not be initialized');
+      }
+
+      // Build target URL (always use facebook.com session where logged in)
+      let threadUrl = targetThreadId.trim();
+      const urlMatch = threadUrl.match(/(?:messenger\.com|facebook\.com)?\/?(?:messages\/)?(?:e2ee\/)?t\/([^/?#]+)/i);
+      if (urlMatch && urlMatch[1]) {
+        threadUrl = `https://www.facebook.com/messages/t/${urlMatch[1]}`;
+      } else if (!threadUrl.startsWith('http')) {
+        threadUrl = `https://www.facebook.com/messages/t/${threadUrl}`;
+      }
+
+      console.log(`[Messenger] Navigating for call to ${threadUrl}...`);
+      await this.page.goto(threadUrl, {
+        waitUntil: 'domcontentloaded',
+        timeout: 30000
+      });
+
+      await this.page.waitForTimeout(3000);
+
+      // Dismiss any popups/shortcuts
+      try {
+        const closeButtons = this.page.locator([
+          'button:has-text("Tắt")',
+          '[role="button"]:has-text("Tắt")',
+          'div[aria-label="Đóng"]',
+          'div[aria-label="Close"]',
+          'button:has-text("Lúc khác")',
+          'button:has-text("Not now")',
+          'button:has-text("Đóng")',
+          'button:has-text("Close")'
+        ].join(', '));
+        if ((await closeButtons.count()) > 0) {
+          await closeButtons.first().click({ force: true }).catch(() => {});
+          await this.page.waitForTimeout(500);
+        }
+      } catch {}
+
+      // Locate call button in header
+      const audioSelectors = [
+        'div[aria-label*="gọi thoại" i]',
+        'div[aria-label*="cuộc gọi thoại" i]',
+        'div[aria-label*="voice call" i]',
+        'div[aria-label*="audio call" i]',
+        '[aria-label*="Bắt đầu gọi thoại" i]',
+        '[aria-label*="Bắt đầu cuộc gọi thoại" i]',
+        '[aria-label="Bắt đầu gọi thoại"]',
+        '[aria-label="Start a voice call"]',
+        '[aria-label="Start voice call"]'
+      ].join(', ');
+
+      const videoSelectors = [
+        'div[aria-label*="gọi video" i]',
+        'div[aria-label*="cuộc gọi video" i]',
+        'div[aria-label*="video call" i]',
+        '[aria-label*="Bắt đầu gọi video" i]',
+        '[aria-label*="Bắt đầu cuộc gọi video" i]',
+        '[aria-label="Bắt đầu gọi video"]',
+        '[aria-label="Start a video call"]',
+        '[aria-label="Start video call"]'
+      ].join(', ');
+
+      const targetSelector = callType === 'VIDEO' ? videoSelectors : audioSelectors;
+      const callBtn = this.page.locator(targetSelector).first();
+
+      await callBtn.waitFor({ state: 'visible', timeout: 20000 });
+      console.log(`[Messenger] Initiating ${callType} call button click...`);
+      await callBtn.click({ force: true });
+
+      // Track if a popup window or in-page call window opens
+      let callPage: Page = this.page;
+      try {
+        const popupPromise = this.context?.waitForEvent('page', { timeout: 4000 });
+        if (popupPromise) {
+          const popup = await popupPromise.catch(() => null);
+          if (popup) {
+            callPage = popup;
+            console.log('[Messenger] Call opened in popup window');
+          }
+        }
+      } catch {}
+
+      // Ring for the specified duration (clamped between 5s and 180s)
+      const effectiveDuration = Math.max(5, Math.min(durationSeconds, 180));
+      console.log(`[Messenger] Call is ringing. Waiting for ${effectiveDuration} seconds...`);
+      await new Promise((r) => setTimeout(r, effectiveDuration * 1000));
+
+      // End the call
+      try {
+        const endCallSelectors = [
+          'div[aria-label*="Kết thúc cuộc gọi" i]',
+          'div[aria-label*="Kết thúc" i]',
+          'div[aria-label*="End call" i]',
+          'div[aria-label*="Rời khỏi" i]',
+          'div[aria-label*="Leave call" i]',
+          'div[aria-label*="Gác máy" i]',
+          'div[aria-label*="Hang up" i]',
+          'button[aria-label*="End" i]',
+          'button[aria-label*="Kết thúc" i]'
+        ].join(', ');
+
+        const endBtn = callPage.locator(endCallSelectors).first();
+        if ((await endBtn.count()) > 0 && (await endBtn.isVisible().catch(() => false))) {
+          console.log('[Messenger] Hanging up call...');
+          await endBtn.click({ force: true }).catch(() => {});
+        } else if (callPage !== this.page) {
+          await callPage.close().catch(() => {});
+        }
+      } catch (err: any) {
+        console.warn('[Messenger] Could not cleanly hang up call:', err.message);
+      }
+
+      console.log(`[Messenger] Call finished successfully.`);
+      return {
+        success: true,
+        dryRun: false,
+        threadId: targetThreadId,
+        callType,
+        durationSeconds: effectiveDuration,
+        timestamp
+      };
+    } catch (err: any) {
+      console.error('[Messenger] Call failed:', err.message);
+      return {
+        success: false,
+        dryRun: false,
+        threadId: targetThreadId,
+        callType,
+        durationSeconds,
+        error: err.message || `Failed to initiate ${callType} call via Messenger Web`,
         timestamp
       };
     }

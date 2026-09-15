@@ -6,7 +6,8 @@ import {
   Edit2,
   Trash2,
   Plus,
-  Hash
+  Hash,
+  PhoneCall
 } from 'lucide-react';
 import type { Reminder } from '@messenger/shared';
 
@@ -14,6 +15,7 @@ interface Props {
   reminders: Reminder[];
   onToggle: (id: string) => Promise<void>;
   onTest: (id: string) => Promise<void>;
+  onCall: (id: string, callType?: 'AUDIO' | 'VIDEO') => Promise<void>;
   onEdit: (reminder: Reminder) => void;
   onDelete: (id: string) => Promise<void>;
   onAddNew: () => void;
@@ -24,12 +26,14 @@ export const ReminderList: React.FC<Props> = ({
   reminders,
   onToggle,
   onTest,
+  onCall,
   onEdit,
   onDelete,
   onAddNew,
   loading
 }) => {
   const [testingId, setTestingId] = useState<string | null>(null);
+  const [callingId, setCallingId] = useState<string | null>(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
 
   const handleTestClick = async (id: string) => {
@@ -38,6 +42,15 @@ export const ReminderList: React.FC<Props> = ({
       await onTest(id);
     } finally {
       setTestingId(null);
+    }
+  };
+
+  const handleCallClick = async (id: string, callType: 'AUDIO' | 'VIDEO' = 'AUDIO') => {
+    setCallingId(id);
+    try {
+      await onCall(id, callType);
+    } finally {
+      setCallingId(null);
     }
   };
 
@@ -99,6 +112,28 @@ export const ReminderList: React.FC<Props> = ({
                       ) : (
                         <span className="badge badge-neutral text-[10px]">Disabled</span>
                       )}
+
+                      {/* Action Type Badge */}
+                      {reminder.actionType === 'AUDIO_CALL' && (
+                        <span className="badge bg-cyan-500/15 border border-cyan-500/30 text-cyan-300 text-[10px] flex items-center gap-1">
+                          📞 Gọi thoại ({reminder.callDurationSeconds || 25}s)
+                        </span>
+                      )}
+                      {reminder.actionType === 'VIDEO_CALL' && (
+                        <span className="badge bg-purple-500/15 border border-purple-500/30 text-purple-300 text-[10px] flex items-center gap-1">
+                          📹 Gọi video ({reminder.callDurationSeconds || 25}s)
+                        </span>
+                      )}
+                      {reminder.actionType === 'MESSAGE_AND_CALL' && (
+                        <span className="badge bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-[10px] flex items-center gap-1">
+                          💬📞 Nhắn & Gọi ({reminder.callDurationSeconds || 25}s)
+                        </span>
+                      )}
+                      {(!reminder.actionType || reminder.actionType === 'MESSAGE') && (
+                        <span className="badge bg-indigo-500/15 border border-indigo-500/30 text-indigo-300 text-[10px] flex items-center gap-1">
+                          💬 Tin nhắn
+                        </span>
+                      )}
                     </div>
 
                     <p className="text-sm text-slate-300 line-clamp-2 bg-slate-950/50 p-2.5 rounded-lg border border-white/5 font-sans">
@@ -131,15 +166,26 @@ export const ReminderList: React.FC<Props> = ({
                       {reminder.active ? 'Disable' : 'Enable'}
                     </button>
 
-                    {/* Test Trigger Button */}
+                    {/* Test Send Message Button */}
                     <button
                       onClick={() => handleTestClick(reminder.id)}
                       disabled={loading || isTesting}
-                      title="Send test message now (respects DRY_RUN safe mode)"
-                      className="btn btn-ghost text-xs px-3 py-1.5 text-indigo-300 hover:text-white"
+                      title="Gửi tin nhắn test ngay lập tức (an toàn khi ở chế độ DRY_RUN)"
+                      className="btn btn-ghost text-xs px-2.5 py-1.5 text-indigo-300 hover:text-white flex items-center gap-1"
                     >
-                      <Send size={14} className={isTesting ? 'animate-spin' : ''} />
-                      {isTesting ? 'Testing...' : 'Test Send'}
+                      <Send size={13} className={isTesting ? 'animate-spin' : ''} />
+                      {isTesting ? 'Đang gửi...' : 'Gửi tin'}
+                    </button>
+
+                    {/* Test Call Button */}
+                    <button
+                      onClick={() => handleCallClick(reminder.id, reminder.actionType === 'VIDEO_CALL' ? 'VIDEO' : 'AUDIO')}
+                      disabled={loading || callingId === reminder.id}
+                      title="Thực hiện cuộc gọi Messenger ngay lập tức (an toàn khi ở chế độ DRY_RUN)"
+                      className="btn btn-ghost text-xs px-2.5 py-1.5 text-cyan-300 hover:text-white flex items-center gap-1 border border-cyan-500/20 hover:border-cyan-500/50"
+                    >
+                      <PhoneCall size={13} className={callingId === reminder.id ? 'animate-bounce text-cyan-400' : ''} />
+                      {callingId === reminder.id ? 'Đang gọi...' : 'Gọi thử'}
                     </button>
 
                     {/* Edit */}
