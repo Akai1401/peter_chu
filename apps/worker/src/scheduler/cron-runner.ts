@@ -468,6 +468,61 @@ export class CronRunner {
         return;
       }
 
+      // 4b. Special command: LEARN_PERSONA
+      if (actionType === 'LEARN_PERSONA') {
+        const targetThread = pending.target_thread_id;
+        console.log(`[PersonaLearning] Starting persona learning job from thread: ${targetThread}...`);
+        try {
+          const { outgoingMessages, contextSnippet } =
+            await this.messengerClient.extractOutgoingMessagesForLearning(targetThread, 4);
+
+          if (!outgoingMessages || outgoingMessages.length < 2) {
+            const errStr = 'Không tìm thấy đủ tin nhắn của bạn (tối thiểu 2 tin nhắn) trong cuộc hội thoại này để học văn phong.';
+            this.db.prepare(`UPDATE test_dispatch_queue SET status = 'FAILED', error = ?, finished_at = ? WHERE id = ?`).run(
+              errStr,
+              new Date().toISOString(),
+              pending.id
+            );
+            this.recordAuditLog('PERSONA_LEARN_FAILED', 'gemini_bot', `Thất bại khi học văn phong: ${errStr}`, 'WARN');
+            return;
+          }
+
+          console.log(`[PersonaLearning] Analyzing ${outgoingMessages.length} messages with Gemini...`);
+          const persona = await this.geminiService.analyzePersonaFromMessages(outgoingMessages, contextSnippet);
+          const personaJson = JSON.stringify(persona);
+          const nowIso = new Date().toISOString();
+
+          this.db.prepare(`
+            UPDATE bot_state
+            SET learned_persona = ?, persona_source_thread = ?, persona_updated_at = ?, updated_at = ?
+            WHERE id = 1
+          `).run(personaJson, targetThread, nowIso, nowIso);
+
+          this.db.prepare(`UPDATE test_dispatch_queue SET status = 'COMPLETED', error = ?, finished_at = ? WHERE id = ?`).run(
+            personaJson,
+            nowIso,
+            pending.id
+          );
+
+          this.recordAuditLog(
+            'PERSONA_LEARNED',
+            'gemini_bot',
+            `Đã học thành công văn phong từ hội thoại "${targetThread}": ${persona.styleSummary} (Xưng hô: ${persona.pronouns})`,
+            'INFO'
+          );
+          console.log(`[PersonaLearning] Successfully learned and saved persona from ${targetThread}`);
+        } catch (learnErr: any) {
+          console.error(`[PersonaLearning] Failed:`, learnErr.message);
+          this.db.prepare(`UPDATE test_dispatch_queue SET status = 'FAILED', error = ?, finished_at = ? WHERE id = ?`).run(
+            learnErr.message,
+            new Date().toISOString(),
+            pending.id
+          );
+          this.recordAuditLog('PERSONA_LEARN_FAILED', 'gemini_bot', `Lỗi khi học văn phong: ${learnErr.message}`, 'ERROR');
+        }
+        return;
+      }
+
       const callDuration = pending.call_duration_seconds || 25;
       let isSuccess = true;
       let errorMsg: string | undefined;
@@ -589,7 +644,8 @@ export class CronRunner {
     // Check bot state
     const botState = this.db.prepare(`
       SELECT status, emergency_stop as emergencyStop, dry_run as dryRun, session_status as sessionStatus,
-             ai_auto_reply as aiAutoReply, ai_target_thread as aiTargetThread
+             ai_auto_reply as aiAutoReply, ai_target_thread as aiTargetThread,
+             learned_persona as learnedPersona
       FROM bot_state
       WHERE id = 1
     `).get() as {
@@ -599,6 +655,7 @@ export class CronRunner {
       sessionStatus?: string;
       aiAutoReply?: number;
       aiTargetThread?: string;
+      learnedPersona?: string;
     } | undefined;
 
     // Bot must be RUNNING, not emergency stopped, and session must be LOGGED_IN
@@ -767,9 +824,16 @@ export class CronRunner {
         }).join('\n');
       }
 
-      // Generate response using Gemini with multi-turn context, database reminder state, and image attachments
+      // Generate response using Gemini with multi-turn context, database reminder state, image attachments, and learned persona
+      let parsedPersona: any = null;
+      if (botState.learnedPersona && botState.learnedPersona.trim()) {
+        try {
+          parsedPersona = JSON.parse(botState.learnedPersona);
+        } catch {}
+      }
+
       const imgCount = incoming.imageAttachments?.length || 0;
-      console.log(`[AI-AutoReply] Generating Gemini reply for message from ${senderDisplay} with ${conversationHistory?.length || 0} context messages, ${imgCount} images...`);
+      console.log(`[AI-AutoReply] Generating Gemini reply for message from ${senderDisplay} with ${conversationHistory?.length || 0} context messages, ${imgCount} images, Persona: ${parsedPersona?.tone || 'Mặc định'}...`);
       let replyText = '';
       let isQuotaFallback = false;
       try {
@@ -778,7 +842,8 @@ export class CronRunner {
           senderName,
           conversationHistory,
           existingRemindersInfo,
-          incoming.imageAttachments
+          incoming.imageAttachments,
+          parsedPersona
         );
       } catch (geminiErr: any) {
         const errMessage = String(geminiErr?.message || '');

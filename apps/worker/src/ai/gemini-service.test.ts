@@ -260,6 +260,94 @@ test('GeminiService - multimodal image attachments included in request payload a
   }
 });
 
+test('GeminiService - analyzePersonaFromMessages parses JSON response', async () => {
+  const originalFetch = globalThis.fetch;
+  try {
+    globalThis.fetch = (async (_url: any, options: any) => {
+      const parsedBody = JSON.parse(options.body);
+      const prompt = parsedBody.contents[0].parts[0].text;
+      assert.ok(prompt.includes('Phân tích tỉ mỉ và sâu sắc văn phong'));
+      assert.ok(prompt.includes('alo anh ơi'));
+      assert.ok(prompt.includes('ok em nhé để anh gửi'));
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          candidates: [
+            {
+              content: {
+                parts: [
+                  {
+                    text: '```json\n{\n  "styleSummary": "Thân mật, xưng anh gọi em",\n  "pronouns": "anh - em",\n  "tone": "Nhiệt tình, nhanh gọn",\n  "catchphrases": ["ok em nhé", "inbox anh"],\n  "sampleMessages": ["ok em nhé để anh gửi"],\n  "rawPromptInstruction": "Luôn xưng anh với khách, trả lời ngắn gọn và thân thiện."\n}\n```'
+                  }
+                ]
+              }
+            }
+          ]
+        })
+      } as any;
+    }) as any;
 
+    const gemini = new GeminiService({ apiKey: 'dummy_key' });
+    const persona = await gemini.analyzePersonaFromMessages(
+      ['alo anh ơi', 'ok em nhé để anh gửi'],
+      'Context snippet'
+    );
 
+    assert.strictEqual(persona.tone, 'Nhiệt tình, nhanh gọn');
+    assert.strictEqual(persona.pronouns, 'anh - em');
+    assert.deepStrictEqual(persona.catchphrases, ['ok em nhé', 'inbox anh']);
+    assert.ok(persona.rawPromptInstruction.includes('Luôn xưng anh với khách'));
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
 
+test('GeminiService - learned persona is injected into generateReply prompt', async () => {
+  const originalFetch = globalThis.fetch;
+  try {
+    let promptCaptured = '';
+    globalThis.fetch = (async (_url: any, options: any) => {
+      const parsedBody = JSON.parse(options.body);
+      promptCaptured = parsedBody.contents[0].parts[0].text;
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          candidates: [
+            {
+              content: {
+                parts: [{ text: 'Ok em nhé, để anh xem liền nè!' }]
+              }
+            }
+          ]
+        })
+      } as any;
+    }) as any;
+
+    const gemini = new GeminiService({ apiKey: 'dummy_key' });
+    const reply = await gemini.generateReply(
+      'anh xem giúp em giá với',
+      'Khách A',
+      [],
+      '',
+      undefined,
+      {
+        styleSummary: 'Hài hước, thân mật',
+        pronouns: 'anh - em',
+        tone: 'Vui vẻ, nhiệt tình',
+        catchphrases: ['nè', 'ok em nhé'],
+        sampleMessages: ['Ok em nhé để anh check'],
+        rawPromptInstruction: 'Xưng anh gọi em cực kỳ thân mật.'
+      }
+    );
+
+    assert.strictEqual(reply, 'Ok em nhé, để anh xem liền nè!');
+    assert.ok(promptCaptured.includes('HỒ SƠ PHONG CÁCH & VĂN PHONG GIAO TIẾP CỦA TÔI'));
+    assert.ok(promptCaptured.includes('Vui vẻ, nhiệt tình'));
+    assert.ok(promptCaptured.includes('anh - em'));
+    assert.ok(promptCaptured.includes('Xưng anh gọi em cực kỳ thân mật.'));
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});

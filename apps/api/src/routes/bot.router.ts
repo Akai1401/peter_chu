@@ -234,5 +234,192 @@ export function createBotRouter(botService: BotControlService = new BotControlSe
     }
   });
 
+  // GET /api/bot/persona (Get current learned persona)
+  router.get('/persona', (_req, res) => {
+    try {
+      const state = botService.getBotState();
+      res.json({
+        success: true,
+        data: {
+          persona: state.learnedPersona || null,
+          sourceThread: state.personaSourceThread || '',
+          updatedAt: state.personaUpdatedAt || ''
+        }
+      });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // POST /api/bot/learn-persona (Trigger worker to learn persona from a thread)
+  router.post('/learn-persona', async (req, res) => {
+    try {
+      const { threadUrl } = req.body || {};
+      if (!threadUrl || typeof threadUrl !== 'string' || !threadUrl.trim()) {
+        res.status(400).json({ success: false, error: 'Vui lòng cung cấp link cuộc hội thoại Messenger cần học' });
+        return;
+      }
+
+      const db = getDb();
+      const testId = randomUUID();
+
+      db.prepare(`
+        INSERT INTO test_dispatch_queue (id, reminder_id, target_thread_id, content, action_type, call_duration_seconds, status)
+        VALUES (?, 'system', ?, 'learn-persona', 'LEARN_PERSONA', 0, 'PENDING')
+      `).run(testId, threadUrl.trim());
+
+      // Wait up to 35 seconds for worker to scrape and analyze
+      const start = Date.now();
+      let finishedJob: { status: string; error: string | null } | null = null;
+      while (Date.now() - start < 35000) {
+        await new Promise((r) => setTimeout(r, 600));
+        const job = db
+          .prepare('SELECT status, error FROM test_dispatch_queue WHERE id = ?')
+          .get(testId) as { status: string; error: string | null } | undefined;
+        if (job && (job.status === 'COMPLETED' || job.status === 'FAILED')) {
+          finishedJob = job;
+          break;
+        }
+      }
+
+      if (!finishedJob || finishedJob.status === 'FAILED') {
+        const errorMsg = finishedJob?.error || 'Quá thời gian chờ Worker học văn phong. Vui lòng thử lại!';
+        res.status(400).json({ success: false, error: errorMsg });
+        return;
+      }
+
+      let parsedPersona: any = null;
+      try {
+        parsedPersona = JSON.parse(finishedJob.error || '{}');
+      } catch {
+        parsedPersona = finishedJob.error;
+      }
+
+      res.json({
+        success: true,
+        data: {
+          persona: parsedPersona,
+          sourceThread: threadUrl.trim(),
+          message: 'Đã học thành công phong cách nói chuyện của bạn từ cuộc hội thoại!'
+        }
+      });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // PUT /api/bot/persona (Manually update/tune persona)
+  router.put('/persona', (req, res) => {
+    try {
+      const { persona, sourceThread } = req.body || {};
+      if (!persona) {
+        res.status(400).json({ success: false, error: 'Dữ liệu persona không hợp lệ' });
+        return;
+      }
+      botService.updatePersona(persona, sourceThread);
+      res.json({
+        success: true,
+        message: 'Đã cập nhật hồ sơ văn phong AI thành công!'
+      });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // DELETE /api/bot/persona (Reset persona to default)
+  router.delete('/persona', (_req, res) => {
+    try {
+      botService.updatePersona(null);
+      res.json({
+        success: true,
+        message: 'Đã xóa và đặt lại văn phong AI về mặc định.'
+      });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // GET /api/bot/personas (Get list of all saved persona profiles)
+  router.get('/personas', (_req, res) => {
+    try {
+      const profiles = botService.getPersonaProfiles();
+      res.json({
+        success: true,
+        data: profiles
+      });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // POST /api/bot/personas (Create a new persona profile)
+  router.post('/personas', (req, res) => {
+    try {
+      const { name, persona, sourceThread, makeActive } = req.body || {};
+      if (!persona) {
+        res.status(400).json({ success: false, error: 'Dữ liệu văn phong không hợp lệ' });
+        return;
+      }
+      const created = botService.createPersonaProfile({
+        name: name || 'Văn phong mới',
+        persona,
+        sourceThread,
+        makeActive: makeActive !== undefined ? Boolean(makeActive) : true
+      });
+      res.json({
+        success: true,
+        data: created,
+        message: `Đã lưu bộ cấu hình "${created.name}" thành công!`
+      });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // PUT /api/bot/personas/:id (Update an existing persona profile)
+  router.put('/personas/:id', (req, res) => {
+    try {
+      const { id } = req.params;
+      const { name, persona, sourceThread } = req.body || {};
+      const updated = botService.updatePersonaProfile(id, { name, persona, sourceThread });
+      res.json({
+        success: true,
+        data: updated,
+        message: `Đã cập nhật bộ cấu hình "${updated.name}" thành công!`
+      });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // POST /api/bot/personas/:id/activate (Activate a specific persona profile)
+  router.post('/personas/:id/activate', (req, res) => {
+    try {
+      const { id } = req.params;
+      const activated = botService.activatePersonaProfile(id);
+      res.json({
+        success: true,
+        data: activated,
+        message: `Đã kích hoạt áp dụng bộ cấu hình "${activated.name}"!`
+      });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // DELETE /api/bot/personas/:id (Delete a persona profile)
+  router.delete('/personas/:id', (req, res) => {
+    try {
+      const { id } = req.params;
+      botService.deletePersonaProfile(id);
+      res.json({
+        success: true,
+        message: 'Đã xóa bộ cấu hình văn phong thành công!'
+      });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
   return router;
 }

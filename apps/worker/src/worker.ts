@@ -153,6 +153,37 @@ function initWorkerDatabase(dbPath: string): Database.Database {
   try {
     db.exec(`ALTER TABLE bot_state ADD COLUMN ai_auto_reply INTEGER NOT NULL DEFAULT 1`);
   } catch {}
+  try {
+    db.exec(`ALTER TABLE bot_state ADD COLUMN ai_target_thread TEXT DEFAULT ''`);
+  } catch {}
+  try {
+    db.exec(`ALTER TABLE bot_state ADD COLUMN learned_persona TEXT DEFAULT ''`);
+  } catch {}
+  try {
+    db.exec(`ALTER TABLE bot_state ADD COLUMN active_persona_id TEXT DEFAULT ''`);
+  } catch {}
+  try {
+    db.exec(`ALTER TABLE bot_state ADD COLUMN active_persona_name TEXT DEFAULT ''`);
+  } catch {}
+  try {
+    db.exec(`ALTER TABLE bot_state ADD COLUMN persona_source_thread TEXT DEFAULT ''`);
+  } catch {}
+  try {
+    db.exec(`ALTER TABLE bot_state ADD COLUMN persona_updated_at TEXT DEFAULT ''`);
+  } catch {}
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS persona_profiles (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      persona TEXT NOT NULL,
+      source_thread TEXT DEFAULT '',
+      is_active INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_persona_profiles_active ON persona_profiles(is_active);
+  `);
 
   return db;
 }

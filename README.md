@@ -125,7 +125,26 @@ Hệ thống tích hợp Google Gemini AI để tự động phát hiện tin nh
   - Tại bảng **System Logs**, chọn tab **"Tin nhắn & AI"** để xem danh sách toàn bộ hội thoại được gộp cặp trực quan.
   - Hiển thị đầy đủ số lượng tin nhắn ngữ cảnh đã đối soát (`context`), model AI sử dụng, thread ID và nút liên kết trực tiếp tới Messenger.
 
-### 3. Cấu hình Gemini AI
+### 3. Học & Tự Động Cá Nhân Hóa Văn Phong (Persona Learning)
+Hệ thống cho phép bạn đưa vào link 1 cuộc hội thoại Messenger bất kỳ (ví dụ: `https://www.facebook.com/messages/t/100040388333156`):
+- **Cơ chế thu thập & trích xuất dữ liệu**:
+  - Playwright tự động điều hướng tới đoạn chat chỉ định, cuộn trang ngược dòng thời gian để quét lịch sử tin nhắn.
+  - Phân tích và lọc ra các tin nhắn gửi đi của chính chủ tài khoản (outgoing messages) cùng bối cảnh đối thoại.
+- **Phân tích với Gemini AI**:
+  - Gemini phân tích toàn diện văn phong, đại từ xưng hô (`anh - em`, `mình - bạn`, `tao - mày`), giọng điệu (hài hước, thân mật, nhiệt tình), từ ngữ cửa miệng (`ok em nhé`, `đợi tí`, icon `=))`), các câu nói mẫu điển hình.
+  - Tự động sinh ra cấu trúc chỉ thị cá nhân hóa (`LearnedPersona`).
+- **Áp dụng tự động vào mọi câu trả lời**:
+  - Hồ sơ phong cách được lưu an toàn vào cơ sở dữ liệu `bot_state`.
+  - Mỗi khi AI chuẩn bị phản hồi tin nhắn mới của khách, hồ sơ văn phong này được nhúng trực tiếp vào System Prompt.
+  - Khách hàng sẽ luôn cảm nhận được như đang trò chuyện với chính chủ tài khoản.
+- **Quản lý đa bộ cấu hình trên Admin Dashboard**:
+  - Nhấn nút **"Học văn phong"** trên card System Status để mở modal quản lý.
+  - Hỗ trợ lưu thành nhiều bộ cấu hình phong cách khác nhau, tạo bộ mới hoàn toàn trống, nhân bản và xóa.
+  - Danh sách hiển thị dạng thẻ dọc trực quan, bấm "Chọn áp dụng" để đổi phong cách tức thì cho AI Bot.
+  - **Tự do chỉnh sửa chi tiết**: Cho phép thêm/sửa/xóa trực tiếp từng từ ngữ cửa miệng và từng câu nói mẫu tiêu biểu (có nút `×` để xóa nhanh, ô nhập thêm câu mới hoặc chỉnh sửa trực tiếp nội dung).
+  - **Tự động lọc tin nhắn rác/hệ thống**: Hệ thống tự động nhận diện và loại bỏ hoàn toàn các thông báo hệ thống Facebook ("Bạn đã xóa một tin nhắn", "Tin nhắn đã bị thu hồi", "Đã gỡ tin nhắn", cuộc gọi, v.v.), đảm bảo dữ liệu phong cách luôn chuẩn xác 100%.
+
+### 4. Cấu hình Gemini AI
 Chỉ cần cấu hình trong file `.env`:
 ```ini
 GOOGLE_GEMINI_API_KEY=your_gemini_api_key_here

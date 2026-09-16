@@ -6,7 +6,9 @@ import type {
   ExecutionLog,
   UpcomingSlot,
   CreateReminderInput,
-  UpdateReminderInput
+  UpdateReminderInput,
+  LearnedPersona,
+  PersonaProfile
 } from '@messenger/shared';
 
 const API_BASE = '/api';
@@ -60,6 +62,42 @@ export const api = {
   checkIncomingMessages: () =>
     request<{ result: string; found: boolean; message: string }>('/bot/check-incoming', {
       method: 'POST'
+    }),
+  getPersona: () =>
+    request<{ persona: LearnedPersona | null; sourceThread: string; updatedAt: string }>('/bot/persona'),
+  learnPersona: (threadUrl: string) =>
+    request<{ persona: LearnedPersona; sourceThread: string; message: string }>('/bot/learn-persona', {
+      method: 'POST',
+      body: JSON.stringify({ threadUrl })
+    }),
+  updatePersona: (persona: LearnedPersona, sourceThread?: string) =>
+    request<{ message: string }>('/bot/persona', {
+      method: 'PUT',
+      body: JSON.stringify({ persona, sourceThread })
+    }),
+  resetPersona: () =>
+    request<{ message: string }>('/bot/persona', {
+      method: 'DELETE'
+    }),
+  getPersonaProfiles: () =>
+    request<PersonaProfile[]>('/bot/personas'),
+  createPersonaProfile: (input: { name: string; persona: LearnedPersona; sourceThread?: string; makeActive?: boolean }) =>
+    request<PersonaProfile>('/bot/personas', {
+      method: 'POST',
+      body: JSON.stringify(input)
+    }),
+  updatePersonaProfile: (id: string, input: { name?: string; persona?: LearnedPersona; sourceThread?: string }) =>
+    request<PersonaProfile>(`/bot/personas/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(input)
+    }),
+  activatePersonaProfile: (id: string) =>
+    request<PersonaProfile>(`/bot/personas/${id}/activate`, {
+      method: 'POST'
+    }),
+  deletePersonaProfile: (id: string) =>
+    request<{ message: string }>(`/bot/personas/${id}`, {
+      method: 'DELETE'
     }),
 
   // Reminders

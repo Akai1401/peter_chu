@@ -410,6 +410,10 @@ export function App() {
             isCheckingSession={isCheckingSession}
             isCheckingIncoming={isCheckingIncoming}
             loading={loading}
+            onNotify={showToast}
+            onPersonaUpdated={async () => {
+              await loadData(true);
+            }}
           />
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6 mt-4 sm:mt-6">

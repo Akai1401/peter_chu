@@ -160,3 +160,99 @@ test('API Integration - Reminder CRUD and Test Dispatch', async () => {
   assert.equal(delRes.status, 200);
   assert.equal(delRes.body.success, true);
 });
+
+test('API Integration - Persona Profiles CRUD and Activation', async () => {
+  const app = createApp();
+
+  // 1. Create a profile
+  const createRes = await request(app)
+    .post('/api/bot/personas')
+    .send({
+      name: 'Văn phong thử nghiệm',
+      persona: {
+        styleSummary: 'Hài hước, lầy lội',
+        pronouns: 'tao - mày',
+        tone: 'Vui vẻ',
+        catchphrases: ['alo', 'ok nha'],
+        sampleMessages: ['Alo mày ơi'],
+        rawPromptInstruction: 'Nói chuyện kiểu bạn thân.'
+      },
+      sourceThread: 'https://www.facebook.com/messages/t/test123456',
+      makeActive: true
+    });
+
+  assert.equal(createRes.status, 200);
+  assert.equal(createRes.body.success, true);
+  assert.equal(createRes.body.data.name, 'Văn phong thử nghiệm');
+  assert.equal(createRes.body.data.isActive, true);
+  const profileId = createRes.body.data.id;
+
+  // 2. Get profiles
+  const listRes = await request(app).get('/api/bot/personas');
+  assert.equal(listRes.status, 200);
+  assert.equal(listRes.body.success, true);
+  assert.ok(listRes.body.data.length >= 1);
+  const found = listRes.body.data.find((p: any) => p.id === profileId);
+  assert.ok(found);
+  assert.equal(found.name, 'Văn phong thử nghiệm');
+  assert.deepEqual(found.persona.catchphrases, ['alo', 'ok nha']);
+
+  // 3. Verify bot status reflects active persona
+  const statusRes = await request(app).get('/api/bot/status');
+  assert.equal(statusRes.status, 200);
+  assert.equal(statusRes.body.data.activePersonaId, profileId);
+  assert.equal(statusRes.body.data.activePersonaName, 'Văn phong thử nghiệm');
+  assert.equal(statusRes.body.data.learnedPersona.tone, 'Vui vẻ');
+
+  // 4. Update profile (edit catchphrases, tone, etc.)
+  const updateRes = await request(app)
+    .put(`/api/bot/personas/${profileId}`)
+    .send({
+      name: 'Văn phong cập nhật',
+      persona: {
+        styleSummary: 'Hài hước, lầy lội đã cập nhật',
+        pronouns: 'anh - em',
+        tone: 'Nhiệt tình',
+        catchphrases: ['alo', 'ok em nhé', 'đợi tí'],
+        sampleMessages: ['Alo em ơi'],
+        rawPromptInstruction: 'Nói chuyện xưng anh gọi em.'
+      }
+    });
+  assert.equal(updateRes.status, 200);
+  assert.equal(updateRes.body.data.name, 'Văn phong cập nhật');
+  assert.deepEqual(updateRes.body.data.persona.catchphrases, ['alo', 'ok em nhé', 'đợi tí']);
+
+  // 5. Create second profile and activate it
+  const createRes2 = await request(app)
+    .post('/api/bot/personas')
+    .send({
+      name: 'Văn phong công việc',
+      persona: {
+        styleSummary: 'Lịch sự, trang trọng',
+        pronouns: 'tôi - bạn',
+        tone: 'Lịch thiệp',
+        catchphrases: ['dạ vâng', 'kính chào'],
+        sampleMessages: ['Dạ vâng chào bạn'],
+        rawPromptInstruction: 'Lịch sự và chuyên nghiệp.'
+      },
+      makeActive: false
+    });
+  const profileId2 = createRes2.body.data.id;
+  assert.equal(createRes2.body.data.isActive, false);
+
+  // Activate second profile
+  const actRes = await request(app).post(`/api/bot/personas/${profileId2}/activate`);
+  assert.equal(actRes.status, 200);
+  assert.equal(actRes.body.data.isActive, true);
+
+  // Verify bot status updated to second profile
+  const statusRes2 = await request(app).get('/api/bot/status');
+  assert.equal(statusRes2.body.data.activePersonaId, profileId2);
+  assert.equal(statusRes2.body.data.activePersonaName, 'Văn phong công việc');
+
+  // 6. Delete profile
+  const delProfileRes = await request(app).delete(`/api/bot/personas/${profileId}`);
+  assert.equal(delProfileRes.status, 200);
+  assert.equal(delProfileRes.body.success, true);
+});
+

@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { getDb } from '../db/database.js';
 import { LogService } from './log.service.js';
-import type { BotState, BotStatus, SessionStatus } from '@messenger/shared';
+import type { BotState, BotStatus, SessionStatus, LearnedPersona, PersonaProfile } from '@messenger/shared';
 
 function findWorkspaceRoot(): string {
   let curr = process.cwd();
@@ -33,6 +33,11 @@ export class BotControlService {
     const row = this.db.prepare(`
       SELECT status, session_status as sessionStatus, emergency_stop as emergencyStop,
              dry_run as dryRun, ai_auto_reply as aiAutoReply, ai_target_thread as aiTargetThread,
+             learned_persona as learnedPersona,
+             active_persona_id as activePersonaId,
+             active_persona_name as activePersonaName,
+             persona_source_thread as personaSourceThread,
+             persona_updated_at as personaUpdatedAt,
              last_heartbeat as lastHeartbeat, lock_holder_id as lockHolderId, updated_at as updatedAt
       FROM bot_state
       WHERE id = 1
@@ -43,6 +48,11 @@ export class BotControlService {
       dryRun: number;
       aiAutoReply?: number;
       aiTargetThread?: string;
+      learnedPersona?: string;
+      activePersonaId?: string;
+      activePersonaName?: string;
+      personaSourceThread?: string;
+      personaUpdatedAt?: string;
       lastHeartbeat: string | null;
       lockHolderId: string | null;
       updatedAt: string;
@@ -56,8 +66,20 @@ export class BotControlService {
         dryRun: process.env.DRY_RUN !== 'false',
         aiAutoReply: true,
         aiTargetThread: '',
+        learnedPersona: null,
+        activePersonaId: null,
+        activePersonaName: null,
+        personaSourceThread: '',
+        personaUpdatedAt: '',
         updatedAt: new Date().toISOString()
       };
+    }
+
+    let parsedPersona: LearnedPersona | null = null;
+    if (row.learnedPersona && row.learnedPersona.trim()) {
+      try {
+        parsedPersona = JSON.parse(row.learnedPersona);
+      } catch {}
     }
 
     return {
@@ -67,10 +89,330 @@ export class BotControlService {
       dryRun: Boolean(row.dryRun),
       aiAutoReply: row.aiAutoReply === undefined || row.aiAutoReply === null ? true : Boolean(row.aiAutoReply),
       aiTargetThread: row.aiTargetThread || '',
+      learnedPersona: parsedPersona,
+      activePersonaId: row.activePersonaId || null,
+      activePersonaName: row.activePersonaName || null,
+      personaSourceThread: row.personaSourceThread || '',
+      personaUpdatedAt: row.personaUpdatedAt || '',
       lastHeartbeat: row.lastHeartbeat,
       lockHolderId: row.lockHolderId,
       updatedAt: row.updatedAt
     };
+  }
+
+  getPersonaProfiles(): PersonaProfile[] {
+    const rows = this.db.prepare(`
+      SELECT id, name, persona, source_thread as sourceThread, is_active as isActive, created_at as createdAt, updated_at as updatedAt
+      FROM persona_profiles
+      ORDER BY updated_at DESC
+    `).all() as any[];
+
+    return rows.map((r) => {
+      let parsed: LearnedPersona;
+      try {
+        parsed = JSON.parse(r.persona);
+      } catch {
+        parsed = {
+          styleSummary: '',
+          pronouns: '',
+          tone: '',
+          catchphrases: [],
+          sampleMessages: [],
+          rawPromptInstruction: ''
+        };
+      }
+      return {
+        id: r.id,
+        name: r.name,
+        persona: parsed,
+        sourceThread: r.sourceThread || '',
+        isActive: Boolean(r.isActive),
+        createdAt: r.createdAt,
+        updatedAt: r.updatedAt
+      };
+    });
+  }
+
+  createPersonaProfile(data: {
+    name: string;
+    persona: LearnedPersona;
+    sourceThread?: string;
+    makeActive?: boolean;
+  }): PersonaProfile {
+    const id = `persona_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+    const nowIso = new Date().toISOString();
+    const name = data.name.trim() || 'Văn phong mới';
+    const makeActive = Boolean(data.makeActive);
+
+    if (makeActive) {
+      this.db.prepare(`UPDATE persona_profiles SET is_active = 0`).run();
+    }
+
+    this.db.prepare(`
+      INSERT INTO persona_profiles (id, name, persona, source_thread, is_active, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      id,
+      name,
+      JSON.stringify(data.persona),
+      data.sourceThread || '',
+      makeActive ? 1 : 0,
+      nowIso,
+      nowIso
+    );
+
+    if (makeActive) {
+      this.db.prepare(`
+        UPDATE bot_state
+        SET learned_persona = ?,
+            active_persona_id = ?,
+            active_persona_name = ?,
+            persona_source_thread = ?,
+            persona_updated_at = ?,
+            updated_at = ?
+        WHERE id = 1
+      `).run(
+        JSON.stringify(data.persona),
+        id,
+        name,
+        data.sourceThread || '',
+        nowIso,
+        nowIso
+      );
+    }
+
+    this.logService.logAudit(
+      'PERSONA_PROFILE_CREATED',
+      'admin_dashboard',
+      { id, name, makeActive }
+    );
+
+    return {
+      id,
+      name,
+      persona: data.persona,
+      sourceThread: data.sourceThread || '',
+      isActive: makeActive,
+      createdAt: nowIso,
+      updatedAt: nowIso
+    };
+  }
+
+  updatePersonaProfile(
+    id: string,
+    data: { name?: string; persona?: LearnedPersona; sourceThread?: string }
+  ): PersonaProfile {
+    const existing = this.db.prepare(`
+      SELECT id, name, persona, source_thread as sourceThread, is_active as isActive, created_at as createdAt, updated_at as updatedAt
+      FROM persona_profiles
+      WHERE id = ?
+    `).get(id) as any;
+
+    if (!existing) {
+      throw new Error(`Không tìm thấy bộ cấu hình văn phong với ID: ${id}`);
+    }
+
+    const nowIso = new Date().toISOString();
+    const updatedName = data.name !== undefined ? data.name.trim() : existing.name;
+    const updatedPersona = data.persona !== undefined ? data.persona : JSON.parse(existing.persona);
+    const updatedSource = data.sourceThread !== undefined ? data.sourceThread : (existing.sourceThread || '');
+
+    this.db.prepare(`
+      UPDATE persona_profiles
+      SET name = ?, persona = ?, source_thread = ?, updated_at = ?
+      WHERE id = ?
+    `).run(
+      updatedName,
+      JSON.stringify(updatedPersona),
+      updatedSource,
+      nowIso,
+      id
+    );
+
+    if (existing.isActive) {
+      this.db.prepare(`
+        UPDATE bot_state
+        SET learned_persona = ?,
+            active_persona_name = ?,
+            persona_source_thread = ?,
+            persona_updated_at = ?,
+            updated_at = ?
+        WHERE id = 1
+      `).run(
+        JSON.stringify(updatedPersona),
+        updatedName,
+        updatedSource,
+        nowIso,
+        nowIso
+      );
+    }
+
+    this.logService.logAudit(
+      'PERSONA_PROFILE_UPDATED',
+      'admin_dashboard',
+      { id, name: updatedName }
+    );
+
+    return {
+      id,
+      name: updatedName,
+      persona: updatedPersona,
+      sourceThread: updatedSource,
+      isActive: Boolean(existing.isActive),
+      createdAt: existing.createdAt,
+      updatedAt: nowIso
+    };
+  }
+
+  activatePersonaProfile(id: string): PersonaProfile {
+    const existing = this.db.prepare(`
+      SELECT id, name, persona, source_thread as sourceThread, created_at as createdAt, updated_at as updatedAt
+      FROM persona_profiles
+      WHERE id = ?
+    `).get(id) as any;
+
+    if (!existing) {
+      throw new Error(`Không tìm thấy bộ cấu hình văn phong với ID: ${id}`);
+    }
+
+    const nowIso = new Date().toISOString();
+    this.db.prepare(`UPDATE persona_profiles SET is_active = 0`).run();
+    this.db.prepare(`UPDATE persona_profiles SET is_active = 1, updated_at = ? WHERE id = ?`).run(nowIso, id);
+
+    let parsedPersona: LearnedPersona;
+    try {
+      parsedPersona = JSON.parse(existing.persona);
+    } catch {
+      throw new Error('Dữ liệu văn phong trong bộ cấu hình này không hợp lệ');
+    }
+
+    this.db.prepare(`
+      UPDATE bot_state
+      SET learned_persona = ?,
+          active_persona_id = ?,
+          active_persona_name = ?,
+          persona_source_thread = ?,
+          persona_updated_at = ?,
+          updated_at = ?
+      WHERE id = 1
+    `).run(
+      existing.persona,
+      id,
+      existing.name,
+      existing.sourceThread || '',
+      nowIso,
+      nowIso
+    );
+
+    this.logService.logAudit(
+      'PERSONA_PROFILE_ACTIVATED',
+      'admin_dashboard',
+      { id, name: existing.name }
+    );
+
+    return {
+      id,
+      name: existing.name,
+      persona: parsedPersona,
+      sourceThread: existing.sourceThread || '',
+      isActive: true,
+      createdAt: existing.createdAt,
+      updatedAt: nowIso
+    };
+  }
+
+  deletePersonaProfile(id: string): void {
+    const existing = this.db.prepare(`
+      SELECT id, name, is_active as isActive
+      FROM persona_profiles
+      WHERE id = ?
+    `).get(id) as any;
+
+    if (!existing) {
+      return;
+    }
+
+    this.db.prepare(`DELETE FROM persona_profiles WHERE id = ?`).run(id);
+
+    if (existing.isActive) {
+      const nowIso = new Date().toISOString();
+      this.db.prepare(`
+        UPDATE bot_state
+        SET learned_persona = '',
+            active_persona_id = '',
+            active_persona_name = '',
+            persona_source_thread = '',
+            persona_updated_at = '',
+            updated_at = ?
+        WHERE id = 1
+      `).run(nowIso);
+    }
+
+    this.logService.logAudit(
+      'PERSONA_PROFILE_DELETED',
+      'admin_dashboard',
+      { id, name: existing.name }
+    );
+  }
+
+  updatePersona(persona: any | null, sourceThread?: string): void {
+    const nowIso = new Date().toISOString();
+    const personaJson = persona ? JSON.stringify(persona) : '';
+    
+    // Check if there is an active profile
+    const activeProfile = this.db.prepare(`
+      SELECT id, name FROM persona_profiles WHERE is_active = 1
+    `).get() as { id: string; name: string } | undefined;
+
+    if (persona && activeProfile) {
+      this.db.prepare(`
+        UPDATE persona_profiles
+        SET persona = ?, source_thread = ?, updated_at = ?
+        WHERE id = ?
+      `).run(personaJson, sourceThread || '', nowIso, activeProfile.id);
+    } else if (persona && !activeProfile) {
+      // Auto-create a profile
+      const newId = `persona_${Date.now()}`;
+      const newName = persona.styleSummary ? `Văn phong ${persona.tone || 'cá nhân'}` : 'Văn phong mặc định';
+      this.db.prepare(`
+        INSERT INTO persona_profiles (id, name, persona, source_thread, is_active, created_at, updated_at)
+        VALUES (?, ?, ?, ?, 1, ?, ?)
+      `).run(newId, newName, personaJson, sourceThread || '', nowIso, nowIso);
+
+      this.db.prepare(`
+        UPDATE bot_state
+        SET learned_persona = ?, active_persona_id = ?, active_persona_name = ?, persona_source_thread = ?, persona_updated_at = ?, updated_at = ?
+        WHERE id = 1
+      `).run(personaJson, newId, newName, sourceThread || '', nowIso, nowIso);
+      return;
+    } else if (!persona) {
+      // Reset
+      this.db.prepare(`UPDATE persona_profiles SET is_active = 0`).run();
+    }
+
+    this.db.prepare(`
+      UPDATE bot_state
+      SET learned_persona = ?,
+          active_persona_id = ?,
+          active_persona_name = ?,
+          persona_source_thread = ?,
+          persona_updated_at = ?,
+          updated_at = ?
+      WHERE id = 1
+    `).run(
+      personaJson,
+      persona && activeProfile ? activeProfile.id : '',
+      persona && activeProfile ? activeProfile.name : '',
+      sourceThread || '',
+      persona ? nowIso : '',
+      nowIso
+    );
+
+    this.logService.logAudit(
+      persona ? 'PERSONA_UPDATED' : 'PERSONA_RESET',
+      'admin_dashboard',
+      { summary: persona?.styleSummary || '', sourceThread }
+    );
   }
 
   updateBotStatus(

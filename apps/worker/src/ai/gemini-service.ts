@@ -1,4 +1,4 @@
-import { getLocalTimeParts } from '@messenger/shared';
+import { getLocalTimeParts, LearnedPersona } from '@messenger/shared';
 
 export interface ConversationMessage {
   role: 'user' | 'model';
@@ -132,7 +132,8 @@ export class GeminiService {
     senderName?: string,
     conversationHistory?: ConversationMessage[],
     existingRemindersInfo?: string,
-    imageAttachments?: ImageAttachment[]
+    imageAttachments?: ImageAttachment[],
+    learnedPersona?: LearnedPersona | null
   ): Promise<string> {
     if (!this.isConfigured()) {
       throw new Error('Gemini API key is not configured');
@@ -153,7 +154,8 @@ export class GeminiService {
       senderName,
       conversationHistory,
       existingRemindersInfo,
-      hasImages ? imageAttachments.length : 0
+      hasImages ? imageAttachments.length : 0,
+      learnedPersona
     );
 
     // Build multimodal contents parts
@@ -239,12 +241,157 @@ export class GeminiService {
     throw lastError || new Error('All Gemini candidate models failed to generate reply');
   }
 
+  /**
+   * Analyzes real outgoing messages sent by the account owner to extract their unique communication style,
+   * tone of voice, pronouns, catchphrases, and sample messages into a LearnedPersona profile.
+   */
+  async analyzePersonaFromMessages(
+    outgoingMessages: string[],
+    contextSnippet?: string
+  ): Promise<LearnedPersona> {
+    if (!this.isConfigured()) {
+      throw new Error('Gemini API key is not configured');
+    }
+
+    if (!outgoingMessages || outgoingMessages.length < 2) {
+      throw new Error('Cần ít nhất 2 tin nhắn của bạn để phân tích phong cách');
+    }
+
+    const messagesListText = outgoingMessages
+      .slice(-60)
+      .map((msg, i) => `${i + 1}. "${msg}"`)
+      .join('\n');
+
+    const prompt = `Bạn là một chuyên gia ngôn ngữ học và tâm lý học giao tiếp.
+Dưới đây là danh sách các tin nhắn THỰC TẾ do "Tôi (Chủ tài khoản Facebook cá nhân)" đã gửi cho bạn bè/khách hàng trên Messenger:
+
+--- DANH SÁCH TIN NHẮN CỦA TÔI ---
+${messagesListText}
+--- HẾT DANH SÁCH TIN NHẮN ---
+${contextSnippet ? `\n--- BỐI CẢNH ĐỐI THOẠI TRONG ĐOẠN CHAT ---\n${contextSnippet}\n--- HẾT BỐI CẢNH ---\n` : ''}
+
+NHIỆM VỤ CỦA BẠN:
+Phân tích tỉ mỉ và sâu sắc văn phong, ngữ điệu và cá tính nói chuyện đặc trưng của "Tôi" để một mô hình AI có thể mô phỏng và đóng vai "Tôi" chuẩn xác 100%.
+
+CẢNH BÁO CỰC KỲ QUAN TRỌNG:
+TUYỆT ĐỐI KHÔNG trích xuất hoặc đưa vào "sampleMessages" hoặc "catchphrases" bất kỳ câu thông báo hệ thống nào của Facebook/Messenger như:
+- "Bạn đã xóa một tin nhắn", "Bạn đã xoá một tin nhắn", "Bạn đã thu hồi một tin nhắn", "Tin nhắn đã bị thu hồi", "Đã gỡ một tin nhắn", "Bạn đã gỡ tin nhắn"
+- "Unsent a message", "You removed a message", "You unsent a message"
+- "Cuộc gọi thoại", "Cuộc gọi video", "Đã đặt biệt danh", "Đã đổi chủ đề"
+CHỈ trích xuất các câu nói chuyện, giao tiếp THỰC TẾ giữa người với người do Tôi gõ!
+
+YÊU CẦU ĐỊNH DẠNG TRẢ VỀ:
+Chỉ trả về DUY NHẤT một khối JSON hợp lệ theo đúng cấu trúc sau (không kèm bất kỳ lời giải thích nào khác):
+{
+  "styleSummary": "Tóm tắt ngắn gọn 1-2 câu về phong cách nói chuyện (ví dụ: Hài hước, lầy lội, thân mật kiểu bạn bè thân thiết, ấm áp và nhiệt tình, hay trêu đùa nhưng có trách nhiệm)",
+  "pronouns": "Quy tắc xưng hô cụ thể của Tôi (ví dụ: Xưng 'tôi' hoặc 'tao', gọi đối phương là 'ông tướng', 'mày', 'ba', 'bạn')",
+  "tone": "Giọng điệu chủ đạo (ví dụ: Tự nhiên, vui vẻ, bỗ bã thân thiện, lầy lội)",
+  "catchphrases": ["Mảng các từ cửa miệng, từ đệm, teencode hoặc icon Tôi hay dùng, ví dụ: '=))', 'ông tướng', 'chứ lị', 'ba', 'haha', 'không trượt phát nào'"],
+  "sampleMessages": ["5 đến 8 câu chat tiêu biểu nhất trích xuất từ tin nhắn thật của Tôi thể hiện rõ nhất phong cách này (tuyệt đối không lấy câu thông báo đã xóa/thu hồi)"],
+  "rawPromptInstruction": "Đoạn chỉ thị ngắn (3-4 câu) chỉ dẫn rõ ràng cho AI cách đóng vai Tôi, nhấn mạnh việc giữ đúng xưng hô, câu từ và độ tự nhiên"
+}`;
+
+    const candidateModels = Array.from(new Set([
+      this.model,
+      'gemini-3.5-flash-lite',
+      'gemini-3.1-flash-lite',
+      'gemini-3.8-flash'
+    ])).filter(Boolean);
+
+    let lastError: Error | null = null;
+
+    for (const modelName of candidateModels) {
+      const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${this.apiKey}`;
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 25000);
+
+      try {
+        const response = await fetch(endpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          signal: controller.signal,
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: prompt }] }],
+            generationConfig: {
+              temperature: 0.3,
+              responseMimeType: 'application/json',
+              maxOutputTokens: 1200
+            }
+          })
+        });
+
+        if (!response.ok) {
+          const errorBody = await response.text().catch(() => '');
+          lastError = new Error(`Gemini API error (HTTP ${response.status}): ${errorBody}`);
+          continue;
+        }
+
+        const data = (await response.json()) as any;
+        const parts: any[] = data?.candidates?.[0]?.content?.parts || [];
+        const responsePart = parts.filter((p: any) => !p.thought).pop();
+        const rawJsonText = responsePart?.text?.trim();
+
+        if (!rawJsonText) {
+          lastError = new Error('Empty response from Gemini API for persona analysis');
+          continue;
+        }
+
+        const cleanJson = rawJsonText
+          .replace(/^```(?:json)?\s*/i, '')
+          .replace(/\s*```$/i, '')
+          .trim();
+
+        const parsed = JSON.parse(cleanJson);
+
+        const isSystemNotice = (str: string): boolean => {
+          const lower = str.toLowerCase();
+          return (
+            lower.includes('đã xóa') ||
+            lower.includes('đã xoá') ||
+            lower.includes('đã thu hồi') ||
+            lower.includes('thu hồi tin nhắn') ||
+            lower.includes('tin nhắn đã bị') ||
+            lower.includes('đã gỡ') ||
+            lower.includes('unsent') ||
+            lower.includes('removed a message') ||
+            lower.includes('deleted a message') ||
+            lower.includes('cuộc gọi')
+          );
+        };
+
+        const rawCatchphrases: string[] = Array.isArray(parsed.catchphrases)
+          ? parsed.catchphrases.map((item: any) => String(item)).filter((s: string) => !isSystemNotice(s) && s.trim().length > 0)
+          : [];
+
+        const rawSampleMessages: string[] = Array.isArray(parsed.sampleMessages)
+          ? parsed.sampleMessages.map((item: any) => String(item)).filter((s: string) => !isSystemNotice(s) && s.trim().length > 0)
+          : [];
+
+        return {
+          styleSummary: String(parsed.styleSummary || 'Tự nhiên, thân thiện và gần gũi'),
+          pronouns: String(parsed.pronouns || 'Xưng tôi/mình, gọi bạn/anh/chị'),
+          tone: String(parsed.tone || 'Thân mật, tự nhiên'),
+          catchphrases: rawCatchphrases,
+          sampleMessages: rawSampleMessages,
+          rawPromptInstruction: String(parsed.rawPromptInstruction || 'Hãy trò chuyện tự nhiên, ngắn gọn và gần gũi.')
+        };
+      } catch (err: any) {
+        lastError = err;
+      } finally {
+        clearTimeout(timeout);
+      }
+    }
+
+    throw lastError || new Error('Không thể phân tích phong cách hội thoại từ Gemini');
+  }
+
   private buildPrompt(
     incomingMessage: string,
     senderName?: string,
     conversationHistory?: ConversationMessage[],
     existingRemindersInfo?: string,
-    imageCount: number = 0
+    imageCount: number = 0,
+    learnedPersona?: LearnedPersona | null
   ): string {
     const sender = senderName || 'Khách';
     const now = new Date();
@@ -259,11 +406,26 @@ export class GeminiService {
     let prompt = `Bạn đang đóng vai "Tôi (Chủ tài khoản)" trên Facebook Messenger để trò chuyện và hỗ trợ đối phương là "${sender} (Khách)".
 Thời gian hiện tại tại Việt Nam: ${currentTimeDesc}. Ngày hôm nay: ${todayFormatted}.
 
-QUY TẮC NÓI CHUYỆN:
+`;
+
+    if (learnedPersona && learnedPersona.styleSummary) {
+      prompt += `--- HỒ SƠ PHONG CÁCH & VĂN PHONG GIAO TIẾP CỦA TÔI (ĐÃ ĐƯỢC HỌC TỪ HỘI THOẠI THẬT) ---
+• Tóm tắt phong cách: ${learnedPersona.styleSummary}
+• Giọng điệu chủ đạo (Tone): ${learnedPersona.tone}
+• Quy tắc xưng hô: ${learnedPersona.pronouns}
+• Từ cửa miệng, thói quen câu chữ hay dùng: ${learnedPersona.catchphrases.length > 0 ? learnedPersona.catchphrases.join(', ') : 'Tự nhiên'}
+${learnedPersona.sampleMessages && learnedPersona.sampleMessages.length > 0 ? `• Một số câu chat mẫu điển hình của Tôi:\n${learnedPersona.sampleMessages.map((m) => `  - "${m}"`).join('\n')}\n` : ''}• CHỈ DẪN ĐẶC BIỆT: ${learnedPersona.rawPromptInstruction}
+YÊU CẦU BẮT BUỘC: Bạn PHẢI trò chuyện bằng đúng phong cách, cá tính, cách xưng hô và sử dụng các từ ngữ thân quen như trên để đối phương cảm giác như đang trò chuyện với chính Tôi!
+--- HẾT HỒ SƠ PHONG CÁCH ---
+\n`;
+    } else {
+      prompt += `QUY TẮC NÓI CHUYỆN:
 - Trả lời bằng tiếng Việt một cách tự nhiên, ngắn gọn, ấm áp và gần gũi như người thật (không dùng định dạng markdown tiêu đề, không in đậm lạm dụng, không xưng là mô hình AI).
 - Xưng hô lịch sự, thân mật (ví dụ: mình/em - bạn/anh/chị hoặc tao/mày tuỳ giọng điệu bối cảnh khách).
+\n`;
+    }
 
---- TRẠNG THÁI LỊCH NHẮC THỰC TẾ TRONG HỆ THỐNG MÁY CHỦ CỦA KHÁCH NÀY ---
+    prompt += `--- TRẠNG THÁI LỊCH NHẮC THỰC TẾ TRONG HỆ THỐNG MÁY CHỦ CỦA KHÁCH NÀY ---
 ${existingRemindersInfo && existingRemindersInfo.trim() ? existingRemindersInfo.trim() : '(HIỆN TẠI CHƯA CÓ LỊCH NHẮC NÀO ĐƯỢC TẠO HOẶC CHỜ CHẠY CHO KHÁCH NÀY!)'}
 --- HẾT TRẠNG THÁI LỊCH NHẮC ---
 

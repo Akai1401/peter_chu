@@ -9,6 +9,11 @@ CREATE TABLE IF NOT EXISTS bot_state (
   dry_run INTEGER NOT NULL DEFAULT 0,
   ai_auto_reply INTEGER NOT NULL DEFAULT 1,
   ai_target_thread TEXT DEFAULT '',
+  learned_persona TEXT DEFAULT '',
+  active_persona_id TEXT DEFAULT '',
+  active_persona_name TEXT DEFAULT '',
+  persona_source_thread TEXT DEFAULT '',
+  persona_updated_at TEXT DEFAULT '',
   last_heartbeat TEXT,
   lock_holder_id TEXT,
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -97,3 +102,16 @@ CREATE TABLE IF NOT EXISTS ai_processed_messages (
 );
 
 CREATE INDEX IF NOT EXISTS idx_ai_processed_messages_thread ON ai_processed_messages(thread_id);
+
+-- Persona Profiles for Messenger Auto-Reply Customization
+CREATE TABLE IF NOT EXISTS persona_profiles (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  persona TEXT NOT NULL,
+  source_thread TEXT DEFAULT '',
+  is_active INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_persona_profiles_active ON persona_profiles(is_active);

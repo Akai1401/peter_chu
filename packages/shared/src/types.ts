@@ -34,6 +34,25 @@ export interface Reminder {
   updatedAt: string;
 }
 
+export interface LearnedPersona {
+  styleSummary: string;
+  pronouns: string;
+  tone: string;
+  catchphrases: string[];
+  sampleMessages: string[];
+  rawPromptInstruction: string;
+}
+
+export interface PersonaProfile {
+  id: string;
+  name: string;
+  persona: LearnedPersona;
+  sourceThread?: string;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface BotState {
   status: BotStatus;
   sessionStatus: SessionStatus;
@@ -41,6 +60,11 @@ export interface BotState {
   dryRun: boolean;
   aiAutoReply?: boolean;
   aiTargetThread?: string;
+  learnedPersona?: LearnedPersona | null;
+  activePersonaId?: string | null;
+  activePersonaName?: string | null;
+  personaSourceThread?: string;
+  personaUpdatedAt?: string;
   lastHeartbeat?: string | null;
   lockHolderId?: string | null;
   updatedAt: string;

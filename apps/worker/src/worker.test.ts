@@ -28,11 +28,26 @@ function setupTestDb(): Database.Database {
       dry_run INTEGER NOT NULL DEFAULT 1,
       ai_auto_reply INTEGER NOT NULL DEFAULT 1,
       ai_target_thread TEXT DEFAULT '',
+      learned_persona TEXT DEFAULT '',
+      active_persona_id TEXT DEFAULT '',
+      active_persona_name TEXT DEFAULT '',
+      persona_source_thread TEXT DEFAULT '',
+      persona_updated_at TEXT DEFAULT '',
       last_heartbeat TEXT,
       lock_holder_id TEXT,
       updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
-    INSERT INTO bot_state (id, status, session_status, emergency_stop, dry_run, ai_auto_reply, ai_target_thread) VALUES (1, 'RUNNING', 'LOGGED_IN', 0, 1, 1, '');
+    INSERT INTO bot_state (id, status, session_status, emergency_stop, dry_run, ai_auto_reply, ai_target_thread, learned_persona, active_persona_id, active_persona_name, persona_source_thread, persona_updated_at) VALUES (1, 'RUNNING', 'LOGGED_IN', 0, 1, 1, '', '', '', '', '', '');
+
+    CREATE TABLE IF NOT EXISTS persona_profiles (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      persona TEXT NOT NULL,
+      source_thread TEXT DEFAULT '',
+      is_active INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
 
     CREATE TABLE IF NOT EXISTS reminders (
       id TEXT PRIMARY KEY,

@@ -1162,6 +1162,168 @@ export class MessengerClient {
   }
 
   /**
+   * Navigates to a Messenger thread, scrolls up multiple times to load chat history,
+   * and extracts outgoing messages sent by the account owner to analyze persona and style.
+   */
+  async extractOutgoingMessagesForLearning(
+    targetThread: string,
+    scrollCount: number = 4
+  ): Promise<{ outgoingMessages: string[]; contextSnippet: string }> {
+    if (this.isDryRun) {
+      return { outgoingMessages: [], contextSnippet: '' };
+    }
+
+    await this.init();
+    this.page = await this.getActivePage();
+    if (!this.page) {
+      throw new Error('Không thể khởi tạo hoặc truy cập Messenger Web Page');
+    }
+
+    const cleanThreadId = extractThreadId(targetThread.trim());
+    const threadUrl = cleanThreadId.startsWith('http')
+      ? cleanThreadId
+      : `https://www.facebook.com/messages/t/${cleanThreadId}`;
+
+    const isAlreadyOnTarget =
+      cleanThreadId !== 't' &&
+      !cleanThreadId.startsWith('http') &&
+      this.page.url().includes(cleanThreadId);
+
+    if (!isAlreadyOnTarget) {
+      console.log(`[MessengerClient] Navigating to thread for persona learning: ${threadUrl}`);
+      await this.page.goto(threadUrl, {
+        waitUntil: 'domcontentloaded',
+        timeout: 25000
+      });
+      await this.page.waitForTimeout(3000);
+    }
+
+    // Scroll up in the message list to load older messages
+    console.log(`[MessengerClient] Scrolling up ${scrollCount} times to load chat history...`);
+    for (let s = 0; s < scrollCount; s++) {
+      try {
+        await this.page.evaluate(() => {
+          const scrollBox =
+            document.querySelector('div[role="main"] div[role="grid"]') ||
+            document.querySelector('div[role="main"] div[tabindex="0"]') ||
+            document.querySelector('div[role="main"]');
+          if (scrollBox) {
+            scrollBox.scrollTop = 0;
+          }
+        });
+        await this.page.waitForTimeout(1000);
+      } catch (scrollErr: any) {
+        console.warn(`[MessengerClient] Scroll warning at iteration ${s}:`, scrollErr.message);
+      }
+    }
+
+    // Extract text elements and categorize outgoing messages
+    const extractedData = await this.page.evaluate(() => {
+      const main = document.querySelector('div[role="main"]') || document.querySelector('div[role="region"]');
+      if (!main) return { outgoing: [], snippet: '' };
+
+      const textElements = Array.from(main.querySelectorAll('div[dir="auto"]'));
+      const outgoingMessages: string[] = [];
+      const dialogueFlow: string[] = [];
+
+      for (let i = 0; i < textElements.length; i++) {
+        const el = textElements[i] as HTMLElement;
+        const text = (el.textContent || '').trim();
+        if (!text || text.length < 2) continue;
+        if (text.startsWith('http')) continue;
+        if (/^(?:vừa xong|\d+\s*(?:phút|giờ|ngày|giây|tháng)|seen|đã nhận|đã gửi|sent|delivered|active now|đang hoạt động|(?:đã nhỡ|nhỡ)?\s*cuộc gọi)/i.test(text)) continue;
+
+        const lowerText = text.toLowerCase();
+        // Ignore Facebook Messenger system notices and unsent/deleted message notifications
+        if (
+          lowerText.includes('đã xóa') ||
+          lowerText.includes('đã xoá') ||
+          lowerText.includes('đã thu hồi') ||
+          lowerText.includes('thu hồi tin nhắn') ||
+          lowerText.includes('tin nhắn đã bị') ||
+          lowerText.includes('tin nhắn đã được') ||
+          lowerText.includes('đã gỡ') ||
+          lowerText.includes('unsent') ||
+          lowerText.includes('removed a message') ||
+          lowerText.includes('deleted a message') ||
+          lowerText.includes('đã đặt biệt danh') ||
+          lowerText.includes('đã đổi biệt danh') ||
+          lowerText.includes('đã đổi chủ đề') ||
+          lowerText.includes('đã đổi biểu tượng cảm xúc') ||
+          lowerText.includes('đã ghim tin nhắn') ||
+          lowerText.includes('đã bỏ ghim') ||
+          lowerText.includes('cuộc gọi thoại') ||
+          lowerText.includes('cuộc gọi video') ||
+          lowerText.includes('cuộc gọi đã kết thúc') ||
+          lowerText.includes('thời lượng cuộc gọi') ||
+          lowerText.includes('đã bỏ lỡ cuộc gọi') ||
+          lowerText.includes('đã bắt đầu cuộc gọi') ||
+          /^(?:bạn đã (?:xóa|xoá|thu hồi|gỡ)|tin nhắn đã (?:bị|được) (?:xóa|xoá|thu hồi|gỡ)|(?:bạn|đối phương) đã (?:đặt|đổi|ghim|bỏ ghim)|cuộc gọi)/i.test(lowerText)
+        ) {
+          continue;
+        }
+
+        let curr: HTMLElement | null = el;
+        let isOutgoing = false;
+        while (curr && curr !== main) {
+          const ariaLabel = curr.getAttribute('aria-label') || '';
+          if (/^(?:bạn đã gửi|bạn gửi|you sent)/i.test(ariaLabel) || curr.getAttribute('data-testid') === 'outgoing_message') {
+            isOutgoing = true;
+            break;
+          }
+          const style = window.getComputedStyle(curr);
+          const bg = style.backgroundColor;
+          if (bg.includes('0, 132, 255') || bg.includes('0, 100, 224') || bg.includes('24, 119, 242')) {
+            isOutgoing = true;
+            break;
+          }
+          if (style.justifyContent === 'flex-end' || style.alignItems === 'flex-end') {
+            isOutgoing = true;
+            break;
+          }
+          curr = curr.parentElement;
+        }
+
+        if (!isOutgoing) {
+          const mainRect = main.getBoundingClientRect();
+          const elRect = el.getBoundingClientRect();
+          if (mainRect.width > 0 && elRect.width > 0) {
+            const distFromLeft = elRect.left - mainRect.left;
+            const distFromRight = mainRect.right - elRect.right;
+            const elCenter = elRect.left + elRect.width / 2;
+            const mainThreshold = mainRect.left + mainRect.width * 0.5;
+            if (distFromRight < distFromLeft || elCenter > mainThreshold) {
+              isOutgoing = true;
+            }
+          }
+        }
+
+        // Deduplicate consecutive identical messages
+        if (isOutgoing) {
+          const lastAdded = outgoingMessages[outgoingMessages.length - 1];
+          if (!lastAdded || lastAdded !== text) {
+            outgoingMessages.push(text);
+          }
+          dialogueFlow.push(`Tôi (Chủ nick): "${text}"`);
+        } else {
+          dialogueFlow.push(`Đối phương: "${text}"`);
+        }
+      }
+
+      return {
+        outgoing: outgoingMessages,
+        snippet: dialogueFlow.slice(-30).join('\n')
+      };
+    });
+
+    console.log(`[MessengerClient] Extracted ${extractedData.outgoing.length} outgoing messages from thread for persona learning.`);
+    return {
+      outgoingMessages: extractedData.outgoing,
+      contextSnippet: extractedData.snippet
+    };
+  }
+
+  /**
    * Graceful cleanup
    */
   async close(): Promise<void> {
