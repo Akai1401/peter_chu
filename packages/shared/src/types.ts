@@ -53,6 +53,18 @@ export interface PersonaProfile {
   updatedAt: string;
 }
 
+export interface ProactiveChatConfig {
+  enabled: boolean;
+  targetThread: string; // Target thread URL or thread ID
+  minIntervalMinutes: number; // Minimum wait interval in minutes
+  maxIntervalMinutes: number; // Maximum wait interval in minutes
+  activeHoursStart: string; // e.g. "08:00"
+  activeHoursEnd: string; // e.g. "22:30"
+  promptGuidance: string; // Guidance for conversation starter e.g. hỏi thăm đang làm gì, trêu đùa
+  lastSentAt?: string | null;
+  nextScheduledAt?: string | null;
+}
+
 export interface BotState {
   status: BotStatus;
   sessionStatus: SessionStatus;
@@ -65,6 +77,7 @@ export interface BotState {
   activePersonaName?: string | null;
   personaSourceThread?: string;
   personaUpdatedAt?: string;
+  proactiveChat?: ProactiveChatConfig | null;
   lastHeartbeat?: string | null;
   lockHolderId?: string | null;
   updatedAt: string;

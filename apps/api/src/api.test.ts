@@ -256,3 +256,49 @@ test('API Integration - Persona Profiles CRUD and Activation', async () => {
   assert.equal(delProfileRes.body.success, true);
 });
 
+test('API Integration - Proactive Messaging Configuration & Test Trigger', async () => {
+  const app = createApp();
+
+  // 1. Get initial proactive config
+  const getRes = await request(app).get('/api/bot/proactive');
+  assert.equal(getRes.status, 200);
+  assert.equal(getRes.body.success, true);
+  assert.equal(typeof getRes.body.data.enabled, 'boolean');
+
+  // 2. Update proactive config
+  const updateRes = await request(app)
+    .post('/api/bot/proactive')
+    .send({
+      enabled: true,
+      targetThread: 'https://www.facebook.com/messages/t/test_proactive_123',
+      minIntervalMinutes: 60,
+      maxIntervalMinutes: 180,
+      activeHoursStart: '09:00',
+      activeHoursEnd: '21:00',
+      promptGuidance: 'Hỏi thăm đang làm gì hoặc trêu đùa'
+    });
+
+  assert.equal(updateRes.status, 200);
+  assert.equal(updateRes.body.success, true);
+  assert.equal(updateRes.body.data.enabled, true);
+  assert.equal(updateRes.body.data.targetThread, 'https://www.facebook.com/messages/t/test_proactive_123');
+  assert.equal(updateRes.body.data.minIntervalMinutes, 60);
+  assert.equal(updateRes.body.data.maxIntervalMinutes, 180);
+  assert.equal(updateRes.body.data.activeHoursStart, '09:00');
+
+  // 3. Verify bot status includes proactiveChat
+  const statusRes = await request(app).get('/api/bot/status');
+  assert.equal(statusRes.status, 200);
+  assert.equal(statusRes.body.data.proactiveChat.enabled, true);
+  assert.equal(statusRes.body.data.proactiveChat.minIntervalMinutes, 60);
+
+  // 4. Trigger proactive test
+  const testRes = await request(app)
+    .post('/api/bot/proactive/test')
+    .send({ targetThread: 'https://www.facebook.com/messages/t/test_proactive_123' });
+
+  assert.equal(testRes.status, 200);
+  assert.equal(testRes.body.success, true);
+  assert.ok(testRes.body.data.jobId);
+});
+

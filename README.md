@@ -152,6 +152,22 @@ GEMINI_MODEL=gemini-2.5-flash-lite
 ```
 *(Hệ thống hỗ trợ cơ chế Resilient Multi-Model Fallback tự động luân chuyển giữa các model `gemini-2.5-flash-lite`, `gemini-3.6-flash`, `gemini-2.5-flash` khi gặp lỗi quota hoặc rate limit.)*
 
+### 5. Tính Năng Chủ Động Nói Chuyện (Proactive Messaging)
+Hệ thống hỗ trợ AI bot **tự động và chủ động nhắn tin trước** cho khách hàng theo thời gian ngẫu nhiên (random interval) nhằm mục đích hỏi thăm, trêu đùa, hoặc mở màn cuộc trò chuyện mới mà không cần chờ khách nhắn trước:
+- **Thời gian ngẫu nhiên (Random Intervals)**:
+  - Cho phép cấu hình khoảng thời gian ngẫu nhiên giữa 2 lần chủ động nhắn tin (Ví dụ: `minInterval = 120 phút` (2 tiếng), `maxInterval = 360 phút` (6 tiếng)).
+  - Sau mỗi lần gửi hoặc kích hoạt, hệ thống sẽ tự động bốc một mốc thời gian ngẫu nhiên trong khoảng này và lên lịch cho lần kế tiếp (`nextScheduledAt`).
+- **Khung giờ hoạt động an toàn (Active Hours in Day)**:
+  - Cấu hình khung giờ bot được phép chủ động nhắn (mặc định: `08:00` đến `22:30` theo múi giờ `Asia/Ho_Chi_Minh`).
+  - Ngoài khung giờ này (ví dụ ban đêm), bot sẽ giữ im lặng tuyệt đối, tránh làm phiền giấc ngủ của khách.
+- **Định hướng chủ đề & Phong cách (Guidance Prompt & Persona Integration)**:
+  - Cung cấp ô hướng dẫn chủ đề và các tag nhanh tiện lợi: *Hỏi thăm đang làm gì*, *Trêu đùa vui vẻ*, *Rủ rê đi chơi / ăn uống*, *Nhắc nhớ vu vơ*.
+  - Tự động tích hợp bộ **Hồ sơ văn phong (Persona)** đang kích hoạt, giúp câu chào mở màn mang trọn vẹn giọng điệu, từ cửa miệng và cách xưng hô tự nhiên như người thật.
+- **Quản lý & Thử nghiệm trực tiếp trên Admin Dashboard**:
+  - Nhấn nút **"Chủ động nói chuyện"** trên card System Status để mở modal cấu hình.
+  - Hiển thị thông báo badge trạng thái trực quan: *Chủ động: Đang chạy (lần tới: 14:25)* hoặc *Chủ động: Tắt*.
+  - Nút **"Gửi thử nghiệm ngay"**: Gửi tức thì 1 tin nhắn chủ động tới cuộc hội thoại chỉ định để kiểm tra câu chữ và chất lượng câu mở màn do AI sinh ra.
+
 ---
 
 ### 4. Chạy Phát Triển (Development)

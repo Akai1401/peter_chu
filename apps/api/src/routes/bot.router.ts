@@ -421,5 +421,48 @@ export function createBotRouter(botService: BotControlService = new BotControlSe
     }
   });
 
+  // GET /api/bot/proactive (Get proactive messaging config)
+  router.get('/proactive', (_req, res) => {
+    try {
+      const config = botService.getProactiveConfig();
+      res.json({
+        success: true,
+        data: config
+      });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // POST /api/bot/proactive (Update proactive messaging config)
+  router.post('/proactive', (req, res) => {
+    try {
+      const body = req.body || {};
+      const updated = botService.updateProactiveConfig(body);
+      res.json({
+        success: true,
+        data: updated,
+        message: 'Đã lưu cấu hình chủ động nhắn tin thành công!'
+      });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // POST /api/bot/proactive/test (Trigger immediate test proactive message)
+  router.post('/proactive/test', (req, res) => {
+    try {
+      const { targetThread } = req.body || {};
+      const result = botService.triggerProactiveTest(targetThread);
+      res.json({
+        success: true,
+        data: result,
+        message: 'Đã gửi yêu cầu thử nghiệm chủ động nhắn tin đến worker!'
+      });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
   return router;
 }

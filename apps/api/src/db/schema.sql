@@ -14,6 +14,7 @@ CREATE TABLE IF NOT EXISTS bot_state (
   active_persona_name TEXT DEFAULT '',
   persona_source_thread TEXT DEFAULT '',
   persona_updated_at TEXT DEFAULT '',
+  proactive_chat_config TEXT DEFAULT '',
   last_heartbeat TEXT,
   lock_holder_id TEXT,
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP

@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { getDb } from '../db/database.js';
 import { LogService } from './log.service.js';
-import type { BotState, BotStatus, SessionStatus, LearnedPersona, PersonaProfile } from '@messenger/shared';
+import type { BotState, BotStatus, SessionStatus, LearnedPersona, PersonaProfile, ProactiveChatConfig } from '@messenger/shared';
 
 function findWorkspaceRoot(): string {
   let curr = process.cwd();
@@ -38,6 +38,7 @@ export class BotControlService {
              active_persona_name as activePersonaName,
              persona_source_thread as personaSourceThread,
              persona_updated_at as personaUpdatedAt,
+             proactive_chat_config as proactiveChatConfig,
              last_heartbeat as lastHeartbeat, lock_holder_id as lockHolderId, updated_at as updatedAt
       FROM bot_state
       WHERE id = 1
@@ -53,9 +54,22 @@ export class BotControlService {
       activePersonaName?: string;
       personaSourceThread?: string;
       personaUpdatedAt?: string;
+      proactiveChatConfig?: string;
       lastHeartbeat: string | null;
       lockHolderId: string | null;
       updatedAt: string;
+    };
+
+    const defaultProactiveConfig: ProactiveChatConfig = {
+      enabled: false,
+      targetThread: '',
+      minIntervalMinutes: 120,
+      maxIntervalMinutes: 360,
+      activeHoursStart: '08:00',
+      activeHoursEnd: '22:30',
+      promptGuidance: 'Hỏi thăm bạn bè/khách hàng đang làm gì đó, trêu đùa lầy lội hoặc rủ đi cafe/ăn uống',
+      lastSentAt: null,
+      nextScheduledAt: null
     };
 
     if (!row) {
@@ -71,6 +85,7 @@ export class BotControlService {
         activePersonaName: null,
         personaSourceThread: '',
         personaUpdatedAt: '',
+        proactiveChat: defaultProactiveConfig,
         updatedAt: new Date().toISOString()
       };
     }
@@ -79,6 +94,14 @@ export class BotControlService {
     if (row.learnedPersona && row.learnedPersona.trim()) {
       try {
         parsedPersona = JSON.parse(row.learnedPersona);
+      } catch {}
+    }
+
+    let parsedProactive: ProactiveChatConfig = { ...defaultProactiveConfig };
+    if (row.proactiveChatConfig && row.proactiveChatConfig.trim()) {
+      try {
+        const loaded = JSON.parse(row.proactiveChatConfig);
+        parsedProactive = { ...defaultProactiveConfig, ...loaded };
       } catch {}
     }
 
@@ -94,6 +117,7 @@ export class BotControlService {
       activePersonaName: row.activePersonaName || null,
       personaSourceThread: row.personaSourceThread || '',
       personaUpdatedAt: row.personaUpdatedAt || '',
+      proactiveChat: parsedProactive,
       lastHeartbeat: row.lastHeartbeat,
       lockHolderId: row.lockHolderId,
       updatedAt: row.updatedAt
@@ -539,6 +563,71 @@ export class BotControlService {
 
   setAiAutoReply(enabled: boolean, actor: string = 'admin_ui'): BotState {
     return this.setAiConfig({ enabled }, actor);
+  }
+
+  getProactiveConfig(): ProactiveChatConfig {
+    const state = this.getBotState();
+    return state.proactiveChat || {
+      enabled: false,
+      targetThread: '',
+      minIntervalMinutes: 120,
+      maxIntervalMinutes: 360,
+      activeHoursStart: '08:00',
+      activeHoursEnd: '22:30',
+      promptGuidance: 'Hỏi thăm bạn bè/khách hàng đang làm gì đó, trêu đùa lầy lội hoặc rủ đi cafe/ăn uống',
+      lastSentAt: null,
+      nextScheduledAt: null
+    };
+  }
+
+  updateProactiveConfig(updates: Partial<ProactiveChatConfig>, actor: string = 'admin_ui'): ProactiveChatConfig {
+    const current = this.getProactiveConfig();
+    const merged: ProactiveChatConfig = {
+      ...current,
+      ...updates
+    };
+
+    // Safety clamps on intervals
+    if (merged.minIntervalMinutes < 5) merged.minIntervalMinutes = 5;
+    if (merged.maxIntervalMinutes < merged.minIntervalMinutes) {
+      merged.maxIntervalMinutes = merged.minIntervalMinutes + 30;
+    }
+
+    const serialized = JSON.stringify(merged);
+    this.db.prepare(`
+      UPDATE bot_state
+      SET proactive_chat_config = ?, updated_at = CURRENT_TIMESTAMP
+      WHERE id = 1
+    `).run(serialized);
+
+    this.logService.logAudit('PROACTIVE_CONFIG_UPDATED', actor, {
+      enabled: merged.enabled,
+      targetThread: merged.targetThread,
+      minIntervalMinutes: merged.minIntervalMinutes,
+      maxIntervalMinutes: merged.maxIntervalMinutes,
+      activeHoursStart: merged.activeHoursStart,
+      activeHoursEnd: merged.activeHoursEnd
+    });
+
+    return merged;
+  }
+
+  triggerProactiveTest(targetThread?: string, actor: string = 'admin_ui'): { success: boolean; jobId: string } {
+    const config = this.getProactiveConfig();
+    const target = targetThread || config.targetThread || this.getBotState().aiTargetThread || '';
+    const jobId = `test-${Date.now()}`;
+
+    this.db.prepare(`
+      INSERT INTO test_dispatch_queue (id, reminder_id, target_thread_id, content, action_type, status)
+      VALUES (?, ?, ?, ?, 'PROACTIVE_TEST', 'PENDING')
+    `).run(jobId, 'proactive-test', target, config.promptGuidance || 'Hỏi thăm đang làm gì hoặc trêu đùa');
+
+    this.logService.logAudit('PROACTIVE_TEST_TRIGGERED', actor, {
+      jobId,
+      targetThread: target
+    });
+
+    return { success: true, jobId };
   }
 
   heartbeat(holderId?: string): void {

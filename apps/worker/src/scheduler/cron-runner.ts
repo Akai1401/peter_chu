@@ -40,11 +40,13 @@ export class CronRunner {
   private testTimer: NodeJS.Timeout | null = null;
   private sessionTimer: NodeJS.Timeout | null = null;
   private aiTimer: NodeJS.Timeout | null = null;
+  private proactiveTimer: NodeJS.Timeout | null = null;
   private isRunning: boolean = false;
   private isTicking: boolean = false;
   private isProcessingQueue: boolean = false;
   private isCheckingSession: boolean = false;
   private isProcessingAiReply: boolean = false;
+  private isProcessingProactive: boolean = false;
   private hasPendingSchedule: boolean = false;
 
   constructor(
@@ -519,6 +521,80 @@ export class CronRunner {
             pending.id
           );
           this.recordAuditLog('PERSONA_LEARN_FAILED', 'gemini_bot', `Lỗi khi học văn phong: ${learnErr.message}`, 'ERROR');
+        }
+        return;
+      }
+
+      // 4c. Special command: PROACTIVE_TEST
+      if (actionType === 'PROACTIVE_TEST') {
+        const targetThread = pending.target_thread_id || '';
+        console.log(`[ProactiveChat] Running test proactive message to ${targetThread}...`);
+        try {
+          const botRow = this.db.prepare(`
+            SELECT learned_persona as learnedPersona, proactive_chat_config as proactiveConfig
+            FROM bot_state
+            WHERE id = 1
+          `).get() as any;
+
+          let persona = null;
+          if (botRow?.learnedPersona) {
+            try {
+              persona = JSON.parse(botRow.learnedPersona);
+            } catch {}
+          }
+
+          let guidance = pending.content || 'Hỏi thăm xem đang làm gì hoặc trêu đùa lầy lội';
+          if (botRow?.proactiveConfig) {
+            try {
+              const parsedConfig = JSON.parse(botRow.proactiveConfig);
+              if (parsedConfig.promptGuidance) guidance = parsedConfig.promptGuidance;
+            } catch {}
+          }
+
+          const proactiveMsg = await this.geminiService.generateProactiveMessage({
+            persona,
+            guidance
+          });
+
+          console.log(`[ProactiveChat] Generated test message: "${proactiveMsg}"`);
+
+          const sendResult = await this.messengerClient.sendMessage(targetThread, proactiveMsg);
+          if (!sendResult.success) {
+            throw new Error(sendResult.error || 'Failed to send proactive test message');
+          }
+
+          const nowIso = new Date().toISOString();
+          this.db.prepare(`UPDATE test_dispatch_queue SET status = 'COMPLETED', error = NULL, finished_at = ? WHERE id = ?`).run(
+            nowIso,
+            pending.id
+          );
+
+          this.recordExecutionLog({
+            reminderId: 'proactive-test',
+            threadId: targetThread,
+            status: 'SUCCESS',
+            idempotencyKey: `proactive-test-${Date.now()}`,
+            messagePreview: `[Chủ động nhắn tin]: ${proactiveMsg}`,
+            details: {
+              proactive: true,
+              test: true,
+              message: proactiveMsg
+            }
+          });
+
+          this.recordAuditLog(
+            'PROACTIVE_MESSAGE_SENT',
+            'gemini_bot',
+            `Đã gửi tin nhắn chủ động tới "${targetThread}": "${proactiveMsg}"`,
+            'INFO'
+          );
+        } catch (proactiveErr: any) {
+          console.error(`[ProactiveChat] Test failed:`, proactiveErr.message);
+          this.db.prepare(`UPDATE test_dispatch_queue SET status = 'FAILED', error = ?, finished_at = ? WHERE id = ?`).run(
+            proactiveErr.message,
+            new Date().toISOString(),
+            pending.id
+          );
         }
         return;
       }
@@ -1122,6 +1198,145 @@ export class CronRunner {
   }
 
   /**
+   * Periodically checks if proactive messaging schedule is due
+   * and dispatches a spontaneous conversation starter to the target thread.
+   */
+  async checkAndTriggerProactiveMessage(): Promise<void> {
+    if (this.isProcessingProactive || this.isProcessingAiReply || this.isTicking || this.isProcessingQueue) {
+      return;
+    }
+
+    try {
+      const botRow = this.db.prepare(`
+        SELECT status, ai_auto_reply as aiAutoReply, ai_target_thread as aiTargetThread,
+               learned_persona as learnedPersona, proactive_chat_config as proactiveConfig
+        FROM bot_state
+        WHERE id = 1
+      `).get() as any;
+
+      if (!botRow || botRow.status !== 'RUNNING') {
+        return;
+      }
+
+      if (!botRow.proactiveConfig || !botRow.proactiveConfig.trim()) {
+        return;
+      }
+
+      let config: any = null;
+      try {
+        config = JSON.parse(botRow.proactiveConfig);
+      } catch {
+        return;
+      }
+
+      if (!config || !config.enabled) {
+        return;
+      }
+
+      const targetThread = config.targetThread || botRow.aiTargetThread || '';
+      if (!targetThread) {
+        return;
+      }
+
+      // 1. Check active hours in Vietnam Timezone (Asia/Ho_Chi_Minh)
+      const now = new Date();
+      const vnTimeStr = now.toLocaleTimeString('en-US', {
+        timeZone: 'Asia/Ho_Chi_Minh',
+        hour12: false,
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+      const [currH, currM] = vnTimeStr.split(':').map(Number);
+      const currTotalMinutes = (isNaN(currH) ? 0 : currH) * 60 + (isNaN(currM) ? 0 : currM);
+
+      const [startH, startM] = (config.activeHoursStart || '08:00').split(':').map(Number);
+      const startTotalMinutes = (isNaN(startH) ? 8 : startH) * 60 + (isNaN(startM) ? 0 : startM);
+
+      const [endH, endM] = (config.activeHoursEnd || '22:30').split(':').map(Number);
+      const endTotalMinutes = (isNaN(endH) ? 22 : endH) * 60 + (isNaN(endM) ? 30 : endM);
+
+      if (currTotalMinutes < startTotalMinutes || currTotalMinutes > endTotalMinutes) {
+        return;
+      }
+
+      const minInterval = Math.max(5, config.minIntervalMinutes || 120);
+      const maxInterval = Math.max(minInterval + 5, config.maxIntervalMinutes || 360);
+
+      // 2. Check nextScheduledAt
+      if (!config.nextScheduledAt) {
+        const randomMinutes = Math.floor(Math.random() * (maxInterval - minInterval + 1)) + minInterval;
+        const nextAt = new Date(Date.now() + randomMinutes * 60000).toISOString();
+        config.nextScheduledAt = nextAt;
+        this.db.prepare(`UPDATE bot_state SET proactive_chat_config = ? WHERE id = 1`).run(JSON.stringify(config));
+        console.log(`[ProactiveChat] Initialized next random proactive trigger at: ${nextAt} (${randomMinutes}m from now)`);
+        return;
+      }
+
+      const scheduledTime = new Date(config.nextScheduledAt).getTime();
+      if (Date.now() < scheduledTime) {
+        return;
+      }
+
+      // 3. Due for proactive message!
+      this.isProcessingProactive = true;
+      console.log(`[ProactiveChat] Schedule reached! Dispatching proactive message to ${targetThread}...`);
+
+      let persona = null;
+      if (botRow.learnedPersona) {
+        try {
+          persona = JSON.parse(botRow.learnedPersona);
+        } catch {}
+      }
+
+      const proactiveMsg = await this.geminiService.generateProactiveMessage({
+        persona,
+        guidance: config.promptGuidance || 'Hỏi thăm bạn bè/khách hàng xem đang làm gì hoặc trêu đùa lầy lội'
+      });
+
+      console.log(`[ProactiveChat] Generated proactive message: "${proactiveMsg}"`);
+      const sendResult = await this.messengerClient.sendMessage(targetThread, proactiveMsg);
+
+      if (sendResult.success) {
+        const nextRandomMinutes = Math.floor(Math.random() * (maxInterval - minInterval + 1)) + minInterval;
+        const nextScheduledAt = new Date(Date.now() + nextRandomMinutes * 60000).toISOString();
+        const lastSentAt = new Date().toISOString();
+
+        config.lastSentAt = lastSentAt;
+        config.nextScheduledAt = nextScheduledAt;
+        this.db.prepare(`UPDATE bot_state SET proactive_chat_config = ? WHERE id = 1`).run(JSON.stringify(config));
+
+        this.recordExecutionLog({
+          reminderId: 'proactive-chat',
+          threadId: targetThread,
+          status: 'SUCCESS',
+          idempotencyKey: `proactive-${Date.now()}`,
+          messagePreview: `[Chủ động nhắn tin]: ${proactiveMsg}`,
+          details: {
+            proactive: true,
+            message: proactiveMsg,
+            nextScheduledAt
+          }
+        });
+
+        this.recordAuditLog(
+          'PROACTIVE_MESSAGE_SENT',
+          'gemini_bot',
+          `Đã chủ động nhắn tin tới "${targetThread}": "${proactiveMsg}". Lần tiếp theo: ${nextScheduledAt}`,
+          'INFO'
+        );
+      } else {
+        console.warn(`[ProactiveChat] Failed to send message: ${sendResult.error}`);
+        config.nextScheduledAt = new Date(Date.now() + 15 * 60000).toISOString();
+        this.db.prepare(`UPDATE bot_state SET proactive_chat_config = ? WHERE id = 1`).run(JSON.stringify(config));
+      }
+    } catch (err: any) {
+      console.error(`[ProactiveChat] Error during proactive execution:`, err.message);
+    } finally {
+      this.isProcessingProactive = false;
+    }
+  }
+
+  /**
    * Start scheduling loop
    */
   start(intervalMs: number = 30000): void {
@@ -1149,6 +1364,11 @@ export class CronRunner {
     this.aiTimer = setInterval(() => {
       this.checkAndReplyIncomingMessages().catch(console.error);
     }, 5000);
+
+    // Periodically check and trigger proactive random messaging every 30 seconds
+    this.proactiveTimer = setInterval(() => {
+      this.checkAndTriggerProactiveMessage().catch(console.error);
+    }, 30000);
   }
 
   /**
@@ -1171,6 +1391,10 @@ export class CronRunner {
     if (this.aiTimer) {
       clearInterval(this.aiTimer);
       this.aiTimer = null;
+    }
+    if (this.proactiveTimer) {
+      clearInterval(this.proactiveTimer);
+      this.proactiveTimer = null;
     }
     this.lockManager.releaseLock('worker_singleton', this.workerId);
     await this.messengerClient.close();

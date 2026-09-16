@@ -8,7 +8,8 @@ import type {
   CreateReminderInput,
   UpdateReminderInput,
   LearnedPersona,
-  PersonaProfile
+  PersonaProfile,
+  ProactiveChatConfig
 } from '@messenger/shared';
 
 const API_BASE = '/api';
@@ -98,6 +99,19 @@ export const api = {
   deletePersonaProfile: (id: string) =>
     request<{ message: string }>(`/bot/personas/${id}`, {
       method: 'DELETE'
+    }),
+
+  // Proactive Chat
+  getProactiveConfig: () => request<ProactiveChatConfig>('/bot/proactive'),
+  updateProactiveConfig: (config: Partial<ProactiveChatConfig>) =>
+    request<ProactiveChatConfig>('/bot/proactive', {
+      method: 'POST',
+      body: JSON.stringify(config)
+    }),
+  testProactiveMessage: (targetThread?: string) =>
+    request<{ success: boolean; jobId: string }>('/bot/proactive/test', {
+      method: 'POST',
+      body: JSON.stringify({ targetThread })
     }),
 
   // Reminders

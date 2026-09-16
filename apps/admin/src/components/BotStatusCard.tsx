@@ -11,13 +11,15 @@ import {
   RefreshCw,
   SlidersHorizontal,
   Link2,
-  GraduationCap
+  GraduationCap,
+  MessageCircleHeart
 } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { AiConfigModal } from './AiConfigModal';
 import { PersonaConfigModal } from './PersonaConfigModal';
+import { ProactiveChatModal } from './ProactiveChatModal';
 import type { BotState } from '@messenger/shared';
 
 interface Props {
@@ -60,6 +62,7 @@ export const BotStatusCard: React.FC<Props> = ({
   const [isTogglingAi, setIsTogglingAi] = useState(false);
   const [isAiConfigOpen, setIsAiConfigOpen] = useState(false);
   const [isPersonaModalOpen, setIsPersonaModalOpen] = useState(false);
+  const [isProactiveModalOpen, setIsProactiveModalOpen] = useState(false);
 
   const handleRestart = async () => {
     setIsRestarting(true);
@@ -147,6 +150,19 @@ export const BotStatusCard: React.FC<Props> = ({
                   : (state.learnedPersona.tone.length > 22 ? `${state.learnedPersona.tone.slice(0, 22)}…` : state.learnedPersona.tone)}
               </strong>
             </span>
+          </button>
+        )}
+
+        {/* Proactive Chat Active Indicator */}
+        {state.proactiveChat?.enabled && (
+          <button
+            type="button"
+            onClick={() => setIsProactiveModalOpen(true)}
+            className="inline-flex items-center gap-1.5 border rounded-full px-2.5 py-0.5 text-[11px] font-semibold text-pink-700 bg-pink-50 border-pink-200 hover:bg-pink-100 dark:text-pink-300 dark:bg-pink-950/40 dark:border-pink-800 dark:hover:bg-pink-900/50 transition-colors cursor-pointer"
+            title="Chế độ chủ động nhắn tin ngẫu nhiên đang BẬT. Bấm để xem hoặc chỉnh sửa cấu hình"
+          >
+            <MessageCircleHeart className="w-3 h-3 text-pink-600 dark:text-pink-400 animate-pulse" />
+            <span>Chủ động: <strong>BẬT</strong></span>
           </button>
         )}
       </div>
@@ -246,6 +262,23 @@ export const BotStatusCard: React.FC<Props> = ({
             )}
           </Button>
 
+          {/* Proactive Chat Button */}
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={loading}
+            onClick={() => setIsProactiveModalOpen(true)}
+            className="gap-1.5 h-9 px-3 text-xs font-medium text-pink-700 dark:text-pink-300 border-pink-200 dark:border-pink-800 bg-pink-50/50 dark:bg-pink-950/30 hover:bg-pink-100 dark:hover:bg-pink-900/50"
+            title="Cấu hình bot tự động random thời gian chủ động nhắn tin hỏi thăm hoặc trêu đùa"
+          >
+            <MessageCircleHeart className="w-3.5 h-3.5 text-pink-600 dark:text-pink-400" />
+            <span className="hidden sm:inline">Chủ động nói chuyện</span>
+            {state.proactiveChat?.enabled && (
+              <span className="w-1.5 h-1.5 rounded-full bg-pink-600 animate-pulse" />
+            )}
+          </Button>
+
           {/* Configured Thread Indicator / Quick Edit Badge */}
           {state.aiTargetThread && state.aiTargetThread.trim() && (
             <button
@@ -306,6 +339,15 @@ export const BotStatusCard: React.FC<Props> = ({
         isOpen={isPersonaModalOpen}
         onClose={() => setIsPersonaModalOpen(false)}
         defaultThreadUrl={state.personaSourceThread || state.aiTargetThread || ''}
+        onNotify={onNotify}
+        onSuccess={onPersonaUpdated}
+      />
+
+      {/* Proactive Chat Configuration Modal */}
+      <ProactiveChatModal
+        isOpen={isProactiveModalOpen}
+        onClose={() => setIsProactiveModalOpen(false)}
+        defaultThreadUrl={state.aiTargetThread || ''}
         onNotify={onNotify}
         onSuccess={onPersonaUpdated}
       />

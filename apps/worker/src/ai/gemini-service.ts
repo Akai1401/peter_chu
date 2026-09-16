@@ -385,6 +385,107 @@ Chỉ trả về DUY NHẤT một khối JSON hợp lệ theo đúng cấu trúc
     throw lastError || new Error('Không thể phân tích phong cách hội thoại từ Gemini');
   }
 
+  /**
+   * Generates a spontaneous, natural conversation starter (proactive message)
+   * to check in, ask what they're doing, tease them, or invite them to hangout,
+   * fully reflecting the active learned persona.
+   */
+  async generateProactiveMessage(options: {
+    persona?: LearnedPersona | null;
+    contextSnippet?: string;
+    guidance?: string;
+    targetName?: string;
+  }): Promise<string> {
+    if (!this.isConfigured()) {
+      throw new Error('Gemini API key is not configured');
+    }
+
+    const { persona, contextSnippet, guidance, targetName } = options;
+    const sender = targetName || 'đối phương';
+    const now = new Date();
+    const timeParts = getLocalTimeParts(now);
+    const timeFormatted = `${String(timeParts.hour).padStart(2, '0')}:${String(timeParts.minute).padStart(2, '0')}`;
+
+    let prompt = `Bạn đang đóng vai "Tôi (Chủ tài khoản)" trên Facebook Messenger.
+Hiện tại là ${timeFormatted} (Giờ Việt Nam).
+Bạn muốn CHỦ ĐỘNG nhắn một tin nhắn cho "${sender}" để bắt chuyện/hỏi thăm hoặc trêu đùa.
+
+YÊU CẦU NỘI DUNG CHỦ ĐỘNG:
+${guidance ? `• Định hướng chủ đề: ${guidance}` : '• Hỏi thăm xem đang làm gì, trêu đùa lầy lội hoặc rủ đi chơi/cafe/ăn uống.'}
+• Tin nhắn phải cực kỳ TỰ NHIÊN, chân thật, đời thường như bạn bè nhắn tin cho nhau trên Messenger (ví dụ: "Ê đang làm gì đấy?", "Alo có nhà không?", "Dạo này lặn đâu kỹ thế", "Nay rảnh ko cafe tí =))").
+• CHỈ TRẢ VỀ DUY NHẤT 1 CÂU TIN NHẮN (ngắn gọn 1-2 dòng), KHÔNG kèm lời giải thích, KHÔNG đóng dấu ngoặc kép, KHÔNG dùng markdown in đậm/tiêu đề.
+`;
+
+    if (persona && persona.styleSummary) {
+      prompt += `\n--- HỒ SƠ PHONG CÁCH CỦA TÔI ---
+• Tóm tắt phong cách: ${persona.styleSummary}
+• Giọng điệu chủ đạo: ${persona.tone}
+• Quy tắc xưng hô: ${persona.pronouns}
+• Từ cửa miệng hay dùng: ${persona.catchphrases.join(', ')}
+${persona.sampleMessages && persona.sampleMessages.length > 0 ? `• Các câu nói mẫu tiêu biểu:\n${persona.sampleMessages.map((m) => `  - "${m}"`).join('\n')}\n` : ''}• Chỉ dẫn bổ sung: ${persona.rawPromptInstruction}
+YÊU CẦU: Áp dụng chuẩn xác cách xưng hô và các từ cửa miệng trên để câu mở đầu tự nhiên 100%!
+--- HẾT HỒ SƠ PHONG CÁCH ---\n`;
+    }
+
+    if (contextSnippet && contextSnippet.trim()) {
+      prompt += `\n--- BỐI CẢNH VÀI TIN NHẮN GẦN ĐÂY TRONG HỘI THOẠI ---
+${contextSnippet}
+--- HẾT BỐI CẢNH (Lưu ý: Không lặp lại y hệt câu vừa nhắn trong quá khứ) ---\n`;
+    }
+
+    const candidateModels = Array.from(new Set([
+      this.model,
+      'gemini-2.5-flash-lite',
+      'gemini-3.5-flash-lite',
+      'gemini-3.1-flash-lite'
+    ])).filter(Boolean);
+
+    let lastError: Error | null = null;
+
+    for (const modelName of candidateModels) {
+      const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${this.apiKey}`;
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 20000);
+
+      try {
+        const response = await fetch(endpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          signal: controller.signal,
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: prompt }] }],
+            generationConfig: {
+              temperature: 0.85,
+              maxOutputTokens: 200
+            }
+          })
+        });
+
+        if (!response.ok) {
+          const errorBody = await response.text().catch(() => '');
+          lastError = new Error(`Gemini API error (HTTP ${response.status}): ${errorBody}`);
+          continue;
+        }
+
+        const data = (await response.json()) as any;
+        const parts: any[] = data?.candidates?.[0]?.content?.parts || [];
+        const responsePart = parts.filter((p: any) => !p.thought).pop();
+        let reply = (responsePart?.text || '').trim();
+
+        reply = reply.replace(/^["'«“]/, '').replace(/["'»”]$/, '').trim();
+        if (reply) {
+          return reply;
+        }
+      } catch (err: any) {
+        lastError = err;
+      } finally {
+        clearTimeout(timeout);
+      }
+    }
+
+    throw lastError || new Error('Không thể sinh tin nhắn chủ động từ Gemini');
+  }
+
   private buildPrompt(
     incomingMessage: string,
     senderName?: string,
