@@ -28,7 +28,7 @@ export class ReminderService {
              interval_minutes as intervalMinutes,
              created_at as createdAt, updated_at as updatedAt
       FROM reminders
-      ORDER BY created_at DESC
+      ORDER BY datetime(created_at) DESC, rowid DESC
     `);
     const rows = stmt.all() as Array<{
       id: string;

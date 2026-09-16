@@ -225,4 +225,13 @@ Hệ thống cung cấp đầy đủ các scripts chạy đồng thời trên to
 3. **Gửi tin nhắn & Minh bạch hoá Log**:
    - Gửi câu trả lời trực tiếp vào ô chat Messenger của khách hàng.
    - Ghi nhận chi tiết vào Execution Logs (`📩 [Tin nhắn đến]`, `🤖 [AI Reply]` hoặc `⚠️ [AI Hết Quota]`) hiển thị trực quan theo thời gian thực trên giao diện Admin Dashboard.
+4. **Trợ lý AI Tự Động Lên Lịch Nhắc Nhở (AI Auto-Scheduling)**:
+   - **Nhận diện ý định**: Tự động nhận diện khi khách nhắn các từ khóa muốn được nhắc việc (*"nhắc nhở"*, *"hẹn giờ"*, *"lên lịch"*, *"nhớ nhắc"*,...).
+   - **Đối thoại đa lượt (Multi-turn context)**: Nếu khách chưa nói rõ thời gian (giờ, ngày) hoặc việc cần nhắc, AI sẽ tự động hỏi khéo để khách cung cấp đầy đủ thông tin.
+   - **Phân loại hành động**:
+     - Khách yêu cầu gọi điện (*"gọi"*, *"call"*, *"nhá máy"*): Tạo lịch với `action_type = 'MESSAGE_AND_CALL'` (vừa gọi vừa nhắn tin).
+     - Khách không yêu cầu gọi: Tạo lịch với `action_type = 'MESSAGE'` (chỉ nhắn tin).
+   - **Tự động lưu vào SQLite**: Tạo bản ghi mới vào bảng `reminders` với đầy đủ ngày giờ, số lần lặp, thread ID của khách.
+   - **Phản hồi xác nhận**: Gửi tin nhắn xác nhận lịch hẹn thành công thân thiện cho khách ngay trong đoạn chat và ghi nhận log `AI_REMINDER_CREATED`.
+
 

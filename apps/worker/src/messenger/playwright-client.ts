@@ -29,11 +29,17 @@ export interface CallResult {
   timestamp: string;
 }
 
+export interface ImageAttachment {
+  mimeType: string;
+  data: string; // base64 representation
+}
+
 export interface IncomingMessage {
   threadId: string;
   senderName?: string;
   messageText: string;
   conversationHistory?: Array<{ role: 'user' | 'model'; text: string }>;
+  imageAttachments?: ImageAttachment[];
 }
 
 /**
@@ -918,8 +924,7 @@ export class MessengerClient {
           const el = textElements[i] as HTMLElement;
           const text = (el.textContent || '').trim();
           if (!text || text.length === 0) continue;
-          if (text.startsWith('http')) continue;
-          if (/^(?:vừa xong|\d+\s*(?:phút|giờ|ngày|giây|tháng)|seen|đã nhận|đã gửi|sent|delivered|active now|đang hoạt động)/i.test(text)) continue;
+          if (/^(?:vừa xong|\d+\s*(?:phút|giờ|ngày|giây|tháng)|seen|đã nhận|đã gửi|sent|delivered|active now|đang hoạt động|(?:đã nhỡ|nhỡ)?\s*cuộc gọi(?: thoại| video)?(?:\s+\d{1,2}:\d{2})?|missed (?:audio |video |voice )?call)/i.test(text)) continue;
 
           let curr: HTMLElement | null = el;
           let isOutgoing = false;
@@ -1014,23 +1019,139 @@ export class MessengerClient {
         const incomingText = trailingCustomer.map((m) => m.text).join('\n');
         const history = historyBefore.map((m) => ({ role: m.role, text: m.text }));
 
+        // Scan for images sent by customer in the active thread
+        const allImgs = Array.from(main.querySelectorAll('img')) as HTMLImageElement[];
+        const customerImages: Array<{ index: number; base64?: string }> = [];
+
+        for (let idx = 0; idx < allImgs.length; idx++) {
+          const img = allImgs[idx];
+          const rect = img.getBoundingClientRect();
+          // Filter out small avatars, icons, reaction emojis
+          if (rect.width < 60 || rect.height < 60) continue;
+          if (img.closest('div[role="form"]') || img.closest('div[role="navigation"]')) continue;
+
+          let curr: HTMLElement | null = img;
+          let isOutgoing = false;
+          while (curr && curr !== main) {
+            const ariaLabel = curr.getAttribute('aria-label') || '';
+            if (/^(?:bạn đã gửi|bạn gửi|you sent)/i.test(ariaLabel)) {
+              isOutgoing = true;
+              break;
+            }
+            if (curr.getAttribute('data-testid') === 'outgoing_message') {
+              isOutgoing = true;
+              break;
+            }
+            curr = curr.parentElement;
+          }
+
+          if (!isOutgoing) {
+            const mainRect = main.getBoundingClientRect();
+            const elCenter = rect.left + rect.width / 2;
+            const mainThreshold = mainRect.left + mainRect.width * 0.5;
+            if (elCenter > mainThreshold) {
+              isOutgoing = true;
+            }
+          }
+
+          if (!isOutgoing) {
+            // Attempt canvas downscale (max 800px) & JPEG 80% compression inside browser
+            let base64Data: string | undefined;
+            try {
+              const canvas = document.createElement('canvas');
+              let w = img.naturalWidth || rect.width || 400;
+              let h = img.naturalHeight || rect.height || 400;
+              const maxDim = 800;
+              if (w > maxDim || h > maxDim) {
+                if (w > h) {
+                  h = Math.round((h * maxDim) / w);
+                  w = maxDim;
+                } else {
+                  w = Math.round((w * maxDim) / h);
+                  h = maxDim;
+                }
+              }
+              canvas.width = w;
+              canvas.height = h;
+              const ctx = canvas.getContext('2d');
+              if (ctx) {
+                ctx.drawImage(img, 0, 0, w, h);
+                base64Data = canvas.toDataURL('image/jpeg', 0.8);
+              }
+            } catch {}
+
+            customerImages.push({
+              index: idx,
+              base64: base64Data
+            });
+          }
+        }
+
         return {
           isOutgoingLast: false,
           incomingText,
-          history
+          history,
+          customerImages: customerImages.slice(-2) // Take up to 2 latest customer images
         };
       });
 
-      console.log(`[MessengerClient] Evaluated active thread (${threadId}, ${senderName}):`, JSON.stringify(messageInfo));
+      console.log(`[MessengerClient] Evaluated active thread (${threadId}, ${senderName}):`, JSON.stringify({
+        isOutgoingLast: messageInfo?.isOutgoingLast,
+        incomingTextPreview: messageInfo?.incomingText?.slice(0, 50),
+        imagesFound: messageInfo?.customerImages?.length || 0
+      }));
 
-      if (messageInfo && !messageInfo.error && !messageInfo.isOutgoingLast && messageInfo.incomingText) {
-        console.log(`[MessengerClient] Found incoming customer message in thread ${threadId}: "${messageInfo.incomingText.slice(0, 50)}" with ${messageInfo.history?.length || 0} context messages.`);
-        return {
-          threadId,
-          senderName: senderName || undefined,
-          messageText: messageInfo.incomingText,
-          conversationHistory: messageInfo.history
-        };
+      if (messageInfo && !messageInfo.error && !messageInfo.isOutgoingLast) {
+        const textContent = (messageInfo.incomingText || '').trim();
+        const rawImages = messageInfo.customerImages || [];
+        const imageAttachments: ImageAttachment[] = [];
+
+        // Collect optimized images (using canvas dataURL or falling back to Playwright screenshot)
+        if (rawImages.length > 0) {
+          const imgLocators = this.page.locator('div[role="main"] img');
+          for (const rawImg of rawImages) {
+            if (rawImg.base64 && rawImg.base64.startsWith('data:image/')) {
+              imageAttachments.push({
+                mimeType: 'image/jpeg',
+                data: rawImg.base64.replace(/^data:[^;]+;base64,/, '')
+              });
+            } else {
+              // Fallback: screenshot element directly via Playwright compositor (immune to CORS)
+              try {
+                const targetLocator = imgLocators.nth(rawImg.index);
+                if ((await targetLocator.count()) > 0) {
+                  const screenshotBuf = await targetLocator.screenshot({
+                    type: 'jpeg',
+                    quality: 80,
+                    timeout: 4000
+                  });
+                  if (screenshotBuf && screenshotBuf.length > 0) {
+                    imageAttachments.push({
+                      mimeType: 'image/jpeg',
+                      data: screenshotBuf.toString('base64')
+                    });
+                    console.log(`[MessengerClient] Captured customer image via screenshot fallback (${Math.round(screenshotBuf.length / 1024)} KB).`);
+                  }
+                }
+              } catch (ssErr: any) {
+                console.warn('[MessengerClient] Failed to screenshot customer image element:', ssErr.message);
+              }
+            }
+          }
+        }
+
+        const effectiveText = textContent || (imageAttachments.length > 0 ? '[Khách đã gửi một hình ảnh]' : '');
+
+        if (effectiveText) {
+          console.log(`[MessengerClient] Found incoming customer message in thread ${threadId}: "${effectiveText.slice(0, 50)}" with ${messageInfo.history?.length || 0} context messages, ${imageAttachments.length} images.`);
+          return {
+            threadId,
+            senderName: senderName || undefined,
+            messageText: effectiveText,
+            conversationHistory: messageInfo.history,
+            imageAttachments: imageAttachments.length > 0 ? imageAttachments : undefined
+          };
+        }
       }
 
       return null;

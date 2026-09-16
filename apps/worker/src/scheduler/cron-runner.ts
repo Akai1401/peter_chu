@@ -11,7 +11,7 @@ import {
 import { MessengerClient } from '../messenger/playwright-client.js';
 import { LockManager } from '../safety/lock-manager.js';
 import { RateLimiter } from '../safety/rate-limiter.js';
-import { GeminiService } from '../ai/gemini-service.js';
+import { GeminiService, extractReminderPayload } from '../ai/gemini-service.js';
 
 export interface ReminderRow {
   id: string;
@@ -643,11 +643,12 @@ export class CronRunner {
 
       const { threadId, messageText, senderName, conversationHistory } = incoming;
 
-      // 2. Deduplication: skip if we successfully processed this exact message recently (30 min)
+      // 2. Deduplication: skip if we successfully processed this exact message recently (45 seconds)
+      // to avoid re-triggering while the DOM updates or on consecutive fast scan cycles.
       const alreadyHandled = this.db.prepare(`
         SELECT id FROM ai_processed_messages
         WHERE thread_id = ? AND message_text = ?
-          AND created_at >= datetime('now', '-30 minutes')
+          AND created_at >= datetime('now', '-45 seconds')
           AND reply_text NOT LIKE '[ERROR:%' AND reply_text NOT LIKE '[SEND_FAILED:%'
         LIMIT 1
       `).get(threadId, messageText);
@@ -741,12 +742,44 @@ export class CronRunner {
         return false;
       }
 
-      // 5. Generate response using Gemini with multi-turn context
-      console.log(`[AI-AutoReply] Generating Gemini reply for message from ${senderDisplay} with ${conversationHistory?.length || 0} context messages...`);
+      // 5. Gather existing active / upcoming reminders for this conversation thread
+      const existingRemindersRows = this.db.prepare(`
+        SELECT title, action_type, target_date, window_start, active, run_count, max_runs
+        FROM reminders
+        WHERE target_thread_id = ? OR target_thread_id LIKE ?
+        ORDER BY created_at DESC
+        LIMIT 5
+      `).all(threadId, `%${threadId}%`) as Array<{
+        title: string;
+        action_type: string;
+        target_date?: string;
+        window_start: string;
+        active: number;
+        run_count: number;
+        max_runs: number;
+      }>;
+
+      let existingRemindersInfo = '';
+      if (existingRemindersRows.length > 0) {
+        existingRemindersInfo = existingRemindersRows.map((r, i) => {
+          const status = r.active === 1 ? 'ĐANG CHỜ CHẠY' : `ĐÃ HOÀN TẤT (${r.run_count}/${r.max_runs} lần)`;
+          return `${i + 1}. "${r.title}" (${r.action_type}) - Ngày: ${r.target_date || 'Hàng ngày'}, Giờ: ${r.window_start} - Trạng thái: ${status}`;
+        }).join('\n');
+      }
+
+      // Generate response using Gemini with multi-turn context, database reminder state, and image attachments
+      const imgCount = incoming.imageAttachments?.length || 0;
+      console.log(`[AI-AutoReply] Generating Gemini reply for message from ${senderDisplay} with ${conversationHistory?.length || 0} context messages, ${imgCount} images...`);
       let replyText = '';
       let isQuotaFallback = false;
       try {
-        replyText = await this.geminiService.generateReply(messageText, senderName, conversationHistory);
+        replyText = await this.geminiService.generateReply(
+          messageText,
+          senderName,
+          conversationHistory,
+          existingRemindersInfo,
+          incoming.imageAttachments
+        );
       } catch (geminiErr: any) {
         const errMessage = String(geminiErr?.message || '');
         const isQuotaExhausted =
@@ -791,6 +824,50 @@ export class CronRunner {
           });
           // Don't save failed attempts - allow retry on next cycle
           return false;
+        }
+      }
+
+      // 5b. Check if AI detected scheduling intent and generated a reminder payload
+      const { cleanReplyText, reminderPayload } = extractReminderPayload(replyText);
+      replyText = cleanReplyText;
+
+      let createdReminderId: string | null = null;
+      if (reminderPayload) {
+        try {
+          createdReminderId = randomUUID();
+          const nowIso = new Date().toISOString();
+          this.db.prepare(`
+            INSERT INTO reminders (
+              id, title, content, target_thread_id, action_type, call_duration_seconds,
+              max_runs, run_count, active, window_start, window_end, interval_minutes, target_date,
+              created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, 0, 1, ?, ?, ?, ?, ?, ?)
+          `).run(
+            createdReminderId,
+            reminderPayload.title,
+            reminderPayload.content,
+            threadId,
+            reminderPayload.actionType,
+            25,
+            reminderPayload.maxRuns,
+            reminderPayload.windowStart,
+            reminderPayload.windowEnd,
+            reminderPayload.intervalMinutes,
+            reminderPayload.targetDate,
+            nowIso,
+            nowIso
+          );
+
+          console.log(`[AI-AutoReply] Auto-created reminder "${reminderPayload.title}" (${reminderPayload.actionType}) at ${reminderPayload.windowStart} ${reminderPayload.targetDate} for ${threadId}`);
+
+          this.recordAuditLog(
+            'AI_REMINDER_CREATED',
+            'gemini_bot',
+            `Tự động tạo lịch nhắc "${reminderPayload.title}" cho khách ${senderDisplay} lúc ${reminderPayload.windowStart} ngày ${reminderPayload.targetDate} (Hình thức: ${reminderPayload.actionType})`,
+            'INFO'
+          );
+        } catch (dbErr: any) {
+          console.error('[AI-AutoReply] Failed to insert auto-created reminder:', dbErr.message);
         }
       }
 
@@ -840,24 +917,36 @@ export class CronRunner {
 
       // 8. Record AI Reply in execution logs & audit logs
       const idempotencyKey = `ai-reply-${replyRecordId}`;
-      const previewText = isQuotaFallback
-        ? `⚠️ [AI Hết Quota] Khách: "${createMessagePreview(messageText)}" ➔ Phản hồi: "${createMessagePreview(replyText)}"`
-        : `🤖 [AI Reply] Khách: "${createMessagePreview(messageText)}" ➔ AI: "${createMessagePreview(replyText)}"`;
+      let previewText: string;
+      let actionType: string;
+
+      if (reminderPayload && createdReminderId) {
+        actionType = 'AI_REMINDER_CREATED';
+        previewText = `📅 [Tự Tạo Lịch Nhắc] "${reminderPayload.title}" (${reminderPayload.windowStart} ${reminderPayload.targetDate} - ${reminderPayload.actionType}) ➔ Khách: "${createMessagePreview(replyText)}"`;
+      } else if (isQuotaFallback) {
+        actionType = 'AI_QUOTA_REPLY';
+        previewText = `⚠️ [AI Hết Quota] Khách: "${createMessagePreview(messageText)}" ➔ Phản hồi: "${createMessagePreview(replyText)}"`;
+      } else {
+        actionType = 'AI_REPLY';
+        previewText = `🤖 [AI Reply] Khách: "${createMessagePreview(messageText)}" ➔ AI: "${createMessagePreview(replyText)}"`;
+      }
 
       this.recordExecutionLog({
-        reminderId: 'ai_auto_reply',
+        reminderId: createdReminderId || 'ai_auto_reply',
         threadId,
         status: 'SUCCESS',
         idempotencyKey,
         messagePreview: previewText,
         details: {
-          actionType: isQuotaFallback ? 'AI_QUOTA_REPLY' : 'AI_REPLY',
+          actionType,
           senderName: senderName || 'Khách Messenger',
           threadId,
           incomingMessage: messageText,
           replyContent: replyText,
           model: this.geminiService.getModel(),
           isQuotaFallback,
+          createdReminderId: createdReminderId || undefined,
+          createdReminder: reminderPayload || undefined,
           contextMessagesCount: conversationHistory?.length || 0,
           targetThread: botState.aiTargetThread || undefined,
           timestamp: new Date().toISOString()

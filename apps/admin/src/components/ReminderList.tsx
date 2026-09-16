@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   Bell,
   Clock,
@@ -57,6 +57,17 @@ export const ReminderList: React.FC<Props> = ({
   const [testingId, setTestingId] = useState<string | null>(null);
   const [callingState, setCallingState] = useState<{ id: string; type: 'AUDIO' | 'VIDEO' } | null>(null);
 
+  const sortedReminders = useMemo(() => {
+    return [...reminders].sort((a, b) => {
+      const timeA = new Date(a.createdAt).getTime();
+      const timeB = new Date(b.createdAt).getTime();
+      if (isNaN(timeA) || isNaN(timeB)) {
+        return (b.createdAt || '').localeCompare(a.createdAt || '');
+      }
+      return timeB - timeA;
+    });
+  }, [reminders]);
+
   const handleTestClick = async (id: string) => {
     setTestingId(id);
     try {
@@ -105,7 +116,7 @@ export const ReminderList: React.FC<Props> = ({
           </div>
         ) : (
           <div className="grid gap-3">
-            {reminders.map((reminder) => {
+            {sortedReminders.map((reminder) => {
               const isTesting = testingId === reminder.id;
               const isCallingAudio = callingState?.id === reminder.id && callingState.type === 'AUDIO';
               const isCallingVideo = callingState?.id === reminder.id && callingState.type === 'VIDEO';
