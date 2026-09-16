@@ -359,6 +359,7 @@ export function App() {
             <div className="lg:col-span-2">
               <ReminderList
                 reminders={reminders}
+                botState={botState}
                 onToggle={handleToggleReminder}
                 onTest={handleTestReminder}
                 onCall={handleCallReminder}
@@ -371,6 +372,7 @@ export function App() {
                   setEditingReminder(null);
                   setIsModalOpen(true);
                 }}
+                onNotify={showToast}
                 loading={loading}
               />
             </div>
@@ -378,8 +380,14 @@ export function App() {
             <div>
               <UpcomingScheduleCard
                 slots={upcomingSlots}
+                reminders={reminders}
+                botState={botState}
                 isEngineRunning={botState?.status === 'RUNNING'}
                 loading={loading}
+                onEditReminder={(reminder) => {
+                  setEditingReminder(reminder);
+                  setIsModalOpen(true);
+                }}
               />
             </div>
           </div>

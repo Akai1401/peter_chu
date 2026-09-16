@@ -28,6 +28,7 @@ import { MessengerClient } from './messenger/playwright-client.js';
 import { LockManager } from './safety/lock-manager.js';
 import { RateLimiter } from './safety/rate-limiter.js';
 import { CronRunner } from './scheduler/cron-runner.js';
+import { acquireProcessLock } from '@messenger/shared/node';
 
 function getDbPath(): string {
   const envPath = process.env.DATABASE_PATH || './data/messenger_bot.db';
@@ -144,6 +145,12 @@ function initWorkerDatabase(dbPath: string): Database.Database {
 }
 
 async function bootstrapWorker() {
+  // Acquire single-instance worker lock
+  const { release: releaseWorkerLock } = acquireProcessLock({
+    lockName: 'worker.lock',
+    serviceTitle: 'Worker Scheduler Bot'
+  });
+
   const dbPath = getDbPath();
   const db = initWorkerDatabase(dbPath);
 

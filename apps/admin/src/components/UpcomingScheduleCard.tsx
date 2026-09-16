@@ -2,12 +2,15 @@ import React from 'react';
 import { CalendarClock, Hash } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import type { UpcomingSlot } from '@messenger/shared';
+import type { UpcomingSlot, Reminder, BotState } from '@messenger/shared';
 
 interface Props {
   slots: UpcomingSlot[];
+  reminders?: Reminder[];
+  botState?: BotState | null;
   isEngineRunning?: boolean;
   loading: boolean;
+  onEditReminder?: (reminder: Reminder) => void;
 }
 
 const formatTimeRemaining = (minutes: number) => {
@@ -21,8 +24,14 @@ const formatTimeRemaining = (minutes: number) => {
   return `In ~${hours}h ${remainingMins}m`;
 };
 
-export const UpcomingScheduleCard: React.FC<Props> = ({ slots, isEngineRunning = true, loading }) => {
+export const UpcomingScheduleCard: React.FC<Props> = ({
+  slots,
+  reminders = [],
+  isEngineRunning = true,
+  loading
+}) => {
   const effectiveSlots = isEngineRunning ? slots : [];
+  const activeReminders = reminders.filter((r) => r.active);
 
   return (
     <Card className="flex flex-col">
@@ -49,8 +58,16 @@ export const UpcomingScheduleCard: React.FC<Props> = ({ slots, isEngineRunning =
             <span className="text-xs text-muted-foreground">Start engine to activate upcoming schedules</span>
           </div>
         ) : effectiveSlots.length === 0 ? (
-          <div className="py-10 text-center text-sm font-medium text-muted-foreground bg-muted/30 rounded-lg border border-dashed">
-            No upcoming schedules.
+          <div className="py-8 px-4 text-center text-xs bg-muted/20 rounded-lg border border-dashed flex flex-col items-center justify-center gap-2">
+            <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center text-muted-foreground">
+              <CalendarClock className="w-4 h-4" />
+            </div>
+            <span className="font-semibold text-foreground">Không có lịch chạy sắp tới</span>
+            <p className="text-[11px] text-muted-foreground">
+              {activeReminders.length === 0
+                ? 'Tất cả nhắc nhở đang tạm dừng. Bấm Start để kích hoạt lịch chạy.'
+                : 'Đã lên lịch nhưng chưa đến khung giờ chạy tiếp theo.'}
+            </p>
           </div>
         ) : (
           <div className="max-h-[350px] overflow-y-auto pr-2 -mr-2 pb-2">

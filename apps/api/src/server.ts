@@ -13,6 +13,7 @@ import { createBotRouter } from './routes/bot.router.js';
 import { createReminderRouter } from './routes/reminder.router.js';
 import { createLogRouter } from './routes/log.router.js';
 import { createScheduleRouter } from './routes/schedule.router.js';
+import { acquireProcessLock } from '@messenger/shared/node';
 
 export function createApp() {
   // Ensure DB initialized
@@ -54,6 +55,12 @@ const isDirectRun =
   process.env.NODE_ENV !== 'test';
 
 if (isDirectRun) {
+  // Acquire single-instance API lock
+  acquireProcessLock({
+    lockName: 'api.lock',
+    serviceTitle: 'API Server'
+  });
+
   const port = parseInt(process.env.PORT || '4000', 10);
   const app = createApp();
   app.listen(port, () => {

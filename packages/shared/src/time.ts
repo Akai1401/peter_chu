@@ -171,3 +171,139 @@ export function getUpcomingSlots(
 
   return slots;
 }
+
+export type ReminderQueueStatus =
+  | 'QUEUED'              // Ready and in upcoming queue
+  | 'PAST_DUE'            // Lịch chạy đã quá thời gian
+  | 'COMPLETED'           // Đã chạy đủ số lần tối đa
+  | 'BOT_STOPPED'         // Bot Engine đang tắt
+  | 'SESSION_DISCONNECTED'// Chưa kết nối Messenger
+  | 'PAUSED';             // Đang tạm dừng
+
+export interface ReminderDiagnosis {
+  status: ReminderQueueStatus;
+  isPastDue: boolean;
+  isCompleted: boolean;
+  canQueue: boolean;
+  reason: string;
+}
+
+/**
+ * Check if a reminder schedule is already in the past (expired).
+ */
+export function isSchedulePastDue(
+  targetDate?: string | null,
+  windowEnd: string = '23:59',
+  maxRuns: number = 0,
+  windowStart: string = '00:00',
+  fromDate: Date = new Date()
+): boolean {
+  const parts = getLocalTimeParts(fromDate);
+  const pad = (n: number) => n.toString().padStart(2, '0');
+  const todayStr = `${parts.year}-${pad(parts.month)}-${pad(parts.day)}`;
+  const currentMinutes = parts.hour * 60 + parts.minute;
+  const endMinutes = timeStringToMinutes(windowEnd);
+
+  // If specific target date is set
+  if (targetDate) {
+    if (targetDate < todayStr) return true;
+    if (targetDate === todayStr && endMinutes < currentMinutes) return true;
+    return false;
+  }
+
+  // If no target date, but it's a single run (maxRuns === 1 or windowStart === windowEnd)
+  const isSingleRun = maxRuns === 1 || windowStart === windowEnd;
+  if (isSingleRun && endMinutes < currentMinutes) {
+    return true;
+  }
+
+  return false;
+}
+
+/**
+ * Audit and diagnose why a reminder is or is not queuing/running
+ */
+export function diagnoseReminder(
+  reminder: {
+    active: boolean;
+    maxRuns?: number;
+    runCount?: number;
+    targetDate?: string | null;
+    windowStart: string;
+    windowEnd: string;
+  },
+  botStatus?: string,
+  sessionStatus?: string,
+  now: Date = new Date()
+): ReminderDiagnosis {
+  const isCompleted = Boolean(
+    reminder.maxRuns && reminder.maxRuns > 0 && (reminder.runCount || 0) >= reminder.maxRuns
+  );
+
+  const isPastDue = isSchedulePastDue(
+    reminder.targetDate,
+    reminder.windowEnd,
+    reminder.maxRuns || 0,
+    reminder.windowStart,
+    now
+  );
+
+  if (isCompleted) {
+    return {
+      status: 'COMPLETED',
+      isPastDue,
+      isCompleted: true,
+      canQueue: false,
+      reason: `Đã hoàn thành ${reminder.runCount || 0}/${reminder.maxRuns} lần chạy`
+    };
+  }
+
+  if (isPastDue) {
+    return {
+      status: 'PAST_DUE',
+      isPastDue: true,
+      isCompleted: false,
+      canQueue: false,
+      reason: `Lịch chạy (${reminder.windowStart}${reminder.targetDate ? ` ngày ${reminder.targetDate}` : ''}) đã quá thời gian hiện tại`
+    };
+  }
+
+  if (!reminder.active) {
+    return {
+      status: 'PAUSED',
+      isPastDue: false,
+      isCompleted: false,
+      canQueue: false,
+      reason: 'Nhắc nhở đang tạm dừng (Paused)'
+    };
+  }
+
+  if (botStatus && botStatus !== 'RUNNING') {
+    return {
+      status: 'BOT_STOPPED',
+      isPastDue: false,
+      isCompleted: false,
+      canQueue: false,
+      reason: 'Bot Engine đang tắt (Cần bấm "Start Engine")'
+    };
+  }
+
+  if (sessionStatus && sessionStatus !== 'LOGGED_IN') {
+    return {
+      status: 'SESSION_DISCONNECTED',
+      isPastDue: false,
+      isCompleted: false,
+      canQueue: false,
+      reason: 'Chưa kết nối tài khoản Messenger hợp lệ'
+    };
+  }
+
+  return {
+    status: 'QUEUED',
+    isPastDue: false,
+    isCompleted: false,
+    canQueue: true,
+    reason: 'Đang sẵn sàng trong hàng đợi (Upcoming)'
+  };
+}
+

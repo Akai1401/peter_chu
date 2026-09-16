@@ -19,7 +19,9 @@ export const CreateReminderSchema = z.object({
   intervalMinutes: z.number().int().min(1).max(1440).default(10)
 });
 
-export const UpdateReminderSchema = CreateReminderSchema.partial();
+export const UpdateReminderSchema = CreateReminderSchema.partial().extend({
+  resetRunCount: z.boolean().optional()
+});
 
 export const BotActionSchema = z.object({
   action: z.enum(['START', 'STOP', 'RESTART', 'EMERGENCY_STOP']),

@@ -2,10 +2,11 @@ import { randomUUID } from 'node:crypto';
 import type { Database } from 'better-sqlite3';
 import { getDb } from '../db/database.js';
 import { LogService } from './log.service.js';
-import type {
-  Reminder,
-  CreateReminderInput,
-  UpdateReminderInput
+import {
+  type Reminder,
+  type CreateReminderInput,
+  type UpdateReminderInput,
+  isSchedulePastDue
 } from '@messenger/shared';
 
 export class ReminderService {
@@ -48,15 +49,24 @@ export class ReminderService {
       updatedAt: string;
     }>;
 
-    return rows.map((r) => ({
-      ...r,
-      actionType: r.actionType || 'MESSAGE',
-      callDurationSeconds: r.callDurationSeconds || 30,
-      maxRuns: r.maxRuns || 0,
-      runCount: r.runCount || 0,
-      targetDate: r.targetDate || null,
-      active: Boolean(r.active)
-    }));
+    return rows.map((r) => {
+      let activeBool = Boolean(r.active);
+      const isPast = isSchedulePastDue(r.targetDate, r.windowEnd, r.maxRuns, r.windowStart);
+      if (activeBool && isPast) {
+        this.db.prepare('UPDATE reminders SET active = 0, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(r.id);
+        activeBool = false;
+      }
+
+      return {
+        ...r,
+        actionType: r.actionType || 'MESSAGE',
+        callDurationSeconds: r.callDurationSeconds || 30,
+        maxRuns: r.maxRuns || 0,
+        runCount: r.runCount || 0,
+        targetDate: r.targetDate || null,
+        active: activeBool
+      };
+    });
   }
 
   getReminderById(id: string): Reminder | null {
@@ -165,10 +175,28 @@ export class ReminderService {
     const intervalMinutes = data.intervalMinutes ?? existing.intervalMinutes;
     const now = new Date().toISOString();
 
+    // Auto-reset run_count when:
+    // 1. Explicitly requested via resetRunCount
+    // 2. Schedule changed (maxRuns, targetDate, windowStart, windowEnd)
+    // 3. Reminder is re-activated when it was already completed (runCount >= maxRuns)
+    const isCompleted = Boolean(existing.maxRuns && existing.maxRuns > 0 && (existing.runCount || 0) >= existing.maxRuns);
+    const scheduleChanged =
+      (data.maxRuns !== undefined && data.maxRuns !== existing.maxRuns) ||
+      (data.targetDate !== undefined && data.targetDate !== existing.targetDate) ||
+      (data.windowStart !== undefined && data.windowStart !== existing.windowStart) ||
+      (data.windowEnd !== undefined && data.windowEnd !== existing.windowEnd);
+
+    const shouldResetRunCount =
+      data.resetRunCount === true ||
+      scheduleChanged ||
+      (data.active === true && isCompleted);
+
+    const runCount = shouldResetRunCount ? 0 : (existing.runCount || 0);
+
     const stmt = this.db.prepare(`
       UPDATE reminders
       SET title = ?, content = ?, target_thread_id = ?, action_type = ?,
-          call_duration_seconds = ?, max_runs = ?, schedule_cron = ?, target_date = ?,
+          call_duration_seconds = ?, max_runs = ?, run_count = ?, schedule_cron = ?, target_date = ?,
           active = ?, window_start = ?, window_end = ?, interval_minutes = ?,
           updated_at = ?
       WHERE id = ?
@@ -181,6 +209,7 @@ export class ReminderService {
       actionType,
       callDurationSeconds,
       maxRuns,
+      runCount,
       scheduleCron,
       targetDate,
       activeInt,
@@ -191,7 +220,11 @@ export class ReminderService {
       id
     );
 
-    this.logService.logAudit('REMINDER_UPDATE', actor, { reminderId: id, changes: data });
+    this.logService.logAudit('REMINDER_UPDATE', actor, {
+      reminderId: id,
+      changes: data,
+      resetRunCount: shouldResetRunCount
+    });
     return this.getReminderById(id);
   }
 
@@ -202,16 +235,36 @@ export class ReminderService {
     const nextActive = !existing.active;
     const now = new Date().toISOString();
 
-    this.db.prepare(`
-      UPDATE reminders
-      SET active = ?, updated_at = ?
-      WHERE id = ?
-    `).run(nextActive ? 1 : 0, now, id);
+    if (nextActive) {
+      const isPastDue = isSchedulePastDue(existing.targetDate, existing.windowEnd, existing.maxRuns, existing.windowStart);
+      if (isPastDue) {
+        throw new Error(`Lịch chạy (${existing.windowStart}) đã quá thời gian hiện tại. Vui lòng chọn thời gian mới!`);
+      }
+    }
+
+    // If restarting an already completed reminder, reset run_count to 0 so it can run again
+    const isCompleted = Boolean(existing.maxRuns && existing.maxRuns > 0 && (existing.runCount || 0) >= existing.maxRuns);
+    const shouldResetRunCount = nextActive && isCompleted;
+
+    if (shouldResetRunCount) {
+      this.db.prepare(`
+        UPDATE reminders
+        SET active = ?, run_count = 0, updated_at = ?
+        WHERE id = ?
+      `).run(1, now, id);
+    } else {
+      this.db.prepare(`
+        UPDATE reminders
+        SET active = ?, updated_at = ?
+        WHERE id = ?
+      `).run(nextActive ? 1 : 0, now, id);
+    }
 
     this.logService.logAudit('REMINDER_TOGGLE', actor, {
       reminderId: id,
       previous: existing.active,
-      current: nextActive
+      current: nextActive,
+      resetRunCount: shouldResetRunCount
     });
 
     return this.getReminderById(id);

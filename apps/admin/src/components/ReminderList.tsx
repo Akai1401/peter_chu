@@ -12,7 +12,8 @@ import {
   MoreVertical,
   Power,
   Repeat,
-  Calendar
+  Calendar,
+  RotateCcw
 } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -24,27 +25,33 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import type { Reminder } from '@messenger/shared';
+import type { Reminder, BotState } from '@messenger/shared';
+import { diagnoseReminder } from '@messenger/shared';
+import { cn } from '@/lib/utils';
 
 interface Props {
   reminders: Reminder[];
+  botState?: BotState | null;
   onToggle: (id: string) => Promise<void>;
   onTest: (id: string) => Promise<void>;
   onCall: (id: string, callType?: 'AUDIO' | 'VIDEO') => Promise<void>;
   onEdit: (reminder: Reminder) => void;
   onDelete: (id: string) => Promise<void>;
   onAddNew: () => void;
+  onNotify?: (msg: string, type?: 'info' | 'warning' | 'error') => void;
   loading: boolean;
 }
 
 export const ReminderList: React.FC<Props> = ({
   reminders,
+  botState,
   onToggle,
   onTest,
   onCall,
   onEdit,
   onDelete,
   onAddNew,
+  onNotify,
   loading
 }) => {
   const [testingId, setTestingId] = useState<string | null>(null);
@@ -104,11 +111,31 @@ export const ReminderList: React.FC<Props> = ({
               const isCallingVideo = callingState?.id === reminder.id && callingState.type === 'VIDEO';
               const isAnyActionBusy = isTesting || isCallingAudio || isCallingVideo;
 
+              const diagnosis = diagnoseReminder(reminder, botState?.status, botState?.sessionStatus);
+              const isCompleted = diagnosis.isCompleted;
+              const isPastDue = diagnosis.isPastDue;
+
+              const handleToggleClick = () => {
+                if (isPastDue && !reminder.active) {
+                  onNotify?.(
+                    `Không thể kích hoạt: Lịch chạy (${reminder.windowStart}) đã quá thời gian hiện tại. Vui lòng chọn thời gian mới!`,
+                    'warning'
+                  );
+                  onEdit(reminder);
+                  return;
+                }
+                onToggle(reminder.id);
+              };
+
               return (
                 <div
                   key={reminder.id}
                   className={`overflow-hidden rounded-lg border transition-colors ${
-                    reminder.active ? 'bg-card' : 'bg-muted/30 opacity-80'
+                    isPastDue
+                      ? 'border-destructive/40 bg-card shadow-sm'
+                      : reminder.active
+                      ? 'bg-card'
+                      : 'bg-muted/30 opacity-80'
                   }`}
                 >
                   {/* ── Header: title / badges / action menu ── */}
@@ -116,12 +143,28 @@ export const ReminderList: React.FC<Props> = ({
                     <div className="flex flex-col gap-1.5 min-w-0 flex-1">
                       <div className="flex items-center gap-2 flex-wrap">
                         <h3 className="text-sm font-semibold truncate">{reminder.title}</h3>
-                        <Badge
-                          variant={reminder.active ? 'success' : 'secondary'}
-                          className="text-[10px] px-1.5 py-0 shrink-0"
-                        >
-                          {reminder.active ? 'Active' : 'Paused'}
-                        </Badge>
+                        {isPastDue ? (
+                          <Badge
+                            variant="outline"
+                            className="text-[10px] px-1.5 py-0 shrink-0 border-destructive/40 text-destructive bg-destructive/10 font-semibold"
+                          >
+                            Đã quá giờ
+                          </Badge>
+                        ) : isCompleted ? (
+                          <Badge
+                            variant="outline"
+                            className="text-[10px] px-1.5 py-0 shrink-0 border-amber-500/30 text-amber-600 bg-amber-500/10 font-semibold"
+                          >
+                            Done ({reminder.runCount || 0}/{reminder.maxRuns})
+                          </Badge>
+                        ) : (
+                          <Badge
+                            variant={reminder.active ? 'success' : 'secondary'}
+                            className="text-[10px] px-1.5 py-0 shrink-0"
+                          >
+                            {reminder.active ? 'Active' : 'Paused'}
+                          </Badge>
+                        )}
                       </div>
                       <div className="flex flex-wrap gap-1.5">
                         {(!reminder.actionType || reminder.actionType === 'MESSAGE') && (
@@ -151,17 +194,34 @@ export const ReminderList: React.FC<Props> = ({
                         <Button
                           variant="outline"
                           size="sm"
-                          onClick={() => onToggle(reminder.id)}
+                          onClick={handleToggleClick}
                           disabled={loading}
                           className={`h-8 px-2.5 text-xs gap-1.5 ${
                             reminder.active
                               ? 'text-amber-600 hover:text-amber-700 hover:bg-amber-50 dark:hover:bg-amber-950/30'
                               : 'text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 dark:hover:bg-emerald-950/30'
                           }`}
-                          title={reminder.active ? 'Pause Schedule' : 'Start Schedule'}
+                          title={
+                            reminder.active
+                              ? 'Pause Schedule'
+                              : isPastDue
+                              ? 'Lịch chạy đã quá giờ. Bấm để sửa giờ mới.'
+                              : isCompleted
+                              ? 'Restart Schedule (Run count resets to 0)'
+                              : 'Start Schedule'
+                          }
                         >
-                          <Power className="h-3.5 w-3.5" />
-                          <span>{reminder.active ? 'Pause' : 'Start'}</span>
+                          {isCompleted && !reminder.active ? (
+                            <>
+                              <RotateCcw className="h-3.5 w-3.5" />
+                              <span>Restart</span>
+                            </>
+                          ) : (
+                            <>
+                              <Power className="h-3.5 w-3.5" />
+                              <span>{reminder.active ? 'Pause' : 'Start'}</span>
+                            </>
+                          )}
                         </Button>
 
                         <Button
@@ -201,9 +261,17 @@ export const ReminderList: React.FC<Props> = ({
                         <DropdownMenuContent align="end" className="w-48">
                           {/* Mobile: management actions */}
                           <div className="sm:hidden">
-                            <DropdownMenuItem onClick={() => onToggle(reminder.id)} className="gap-2">
-                              <Power className="h-4 w-4" />
-                              {reminder.active ? 'Pause Schedule' : 'Start Schedule'}
+                            <DropdownMenuItem onClick={handleToggleClick} className="gap-2">
+                              {isCompleted && !reminder.active ? (
+                                <>
+                                  <RotateCcw className="h-4 w-4 text-emerald-600" /> Restart Schedule
+                                </>
+                              ) : (
+                                <>
+                                  <Power className="h-4 w-4" />
+                                  {reminder.active ? 'Pause Schedule' : 'Start Schedule'}
+                                </>
+                              )}
                             </DropdownMenuItem>
                             <DropdownMenuItem onClick={() => onEdit(reminder)} className="gap-2">
                               <Edit2 className="h-4 w-4 text-muted-foreground" /> Edit
@@ -257,25 +325,31 @@ export const ReminderList: React.FC<Props> = ({
                       <Hash className="h-3 w-3 shrink-0 mt-0.5" />
                       <span className="break-all">{reminder.targetThreadId}</span>
                     </div>
-                    <div className="flex items-center gap-1 border px-2 py-1 rounded-md bg-muted whitespace-nowrap">
-                      <Clock className="h-3 w-3 shrink-0" />
+                    <div className={cn(
+                      "flex items-center gap-1 border px-2 py-1 rounded-md whitespace-nowrap",
+                      isPastDue ? "bg-destructive/10 border-destructive/30 text-destructive font-medium" : "bg-muted"
+                    )}>
+                      <Clock className={cn("h-3 w-3 shrink-0", isPastDue && "text-destructive")} />
                       {reminder.maxRuns === 1 || reminder.windowStart === reminder.windowEnd ? (
-                        <span>{reminder.windowStart} (1 lần)</span>
+                        <span>{reminder.windowStart} (1 lần){isPastDue ? ' - Đã quá giờ' : ''}</span>
                       ) : (
-                        <span>{reminder.windowStart}–{reminder.windowEnd} ({reminder.intervalMinutes}m)</span>
+                        <span>{reminder.windowStart}–{reminder.windowEnd} ({reminder.intervalMinutes}m){isPastDue ? ' - Đã quá giờ' : ''}</span>
                       )}
                     </div>
                     {Boolean(reminder.targetDate) && (
-                      <div className="flex items-center gap-1 border px-2 py-1 rounded-md bg-muted whitespace-nowrap">
-                        <Calendar className="h-3 w-3 shrink-0" />
+                      <div className={cn(
+                        "flex items-center gap-1 border px-2 py-1 rounded-md whitespace-nowrap",
+                        isPastDue ? "bg-destructive/10 border-destructive/30 text-destructive font-medium" : "bg-muted"
+                      )}>
+                        <Calendar className={cn("h-3 w-3 shrink-0", isPastDue && "text-destructive")} />
                         <span>{reminder.targetDate}</span>
                       </div>
                     )}
-                    {Boolean(reminder.maxRuns && reminder.maxRuns > 1) && (
+                    {Boolean(reminder.maxRuns && reminder.maxRuns > 0) && (
                       <div className="flex items-center gap-1 border px-2 py-1 rounded-md bg-muted whitespace-nowrap">
                         <Repeat className="h-3 w-3 shrink-0" />
-                        {reminder.runCount || 0}/{reminder.maxRuns} runs
-                        {(reminder.runCount || 0) >= (reminder.maxRuns || 0) && (
+                        <span>{reminder.runCount || 0}/{reminder.maxRuns} {reminder.maxRuns === 1 ? 'lần' : 'runs'}</span>
+                        {isCompleted && (
                           <span className="text-[10px] text-amber-500 font-semibold ml-1">(Done)</span>
                         )}
                       </div>

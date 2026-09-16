@@ -17,12 +17,13 @@ import { Badge } from '@/components/ui/badge';
 import { DatePicker } from '@/components/ui/date-picker';
 import { TimePicker } from '@/components/ui/time-picker';
 import type { Reminder, CreateReminderInput } from '@messenger/shared';
+import { getLocalTimeParts } from '@messenger/shared';
 
 interface Props {
   isOpen: boolean;
   initialData?: Reminder | null;
   onClose: () => void;
-  onSubmit: (data: CreateReminderInput) => Promise<void>;
+  onSubmit: (data: CreateReminderInput & { resetRunCount?: boolean }) => Promise<void>;
   loading: boolean;
 }
 
@@ -48,18 +49,32 @@ export const ReminderModal: React.FC<Props> = ({
   const [active, setActive] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  const nowParts = getLocalTimeParts();
+  const pad = (n: number) => n.toString().padStart(2, '0');
+  const todayStr = `${nowParts.year}-${pad(nowParts.month)}-${pad(nowParts.day)}`;
+  const currentTimeStr = `${pad(nowParts.hour)}:${pad(nowParts.minute)}`;
+
+  // For minTime constraint: current time + 1 min
+  const nextMinDate = new Date();
+  nextMinDate.setMinutes(nextMinDate.getMinutes() + 1);
+  const nextMinParts = getLocalTimeParts(nextMinDate);
+  const minTimeForToday = `${pad(nextMinParts.hour)}:${pad(nextMinParts.minute)}`;
+
+  const isSelectedDateToday = !targetDate.trim() || targetDate.trim() === todayStr;
+  const effectiveMinTime = (!isRepeat && isSelectedDateToday) ? minTimeForToday : undefined;
+
   useEffect(() => {
-    if (initialData && isOpen) {
+    if (initialData) {
       setTitle(initialData.title);
       setContent(initialData.content);
       setTargetThreadId(initialData.targetThreadId);
       setActionType(initialData.actionType || 'MESSAGE');
       setCallDurationSeconds(initialData.callDurationSeconds || 25);
-
-      const isSingle = initialData.maxRuns === 1 && (initialData.windowStart === initialData.windowEnd || !initialData.windowEnd);
+      
+      const isSingle = initialData.maxRuns === 1 || initialData.windowStart === initialData.windowEnd;
       setIsRepeat(!isSingle);
       setTargetDate(initialData.targetDate || '');
-      setRunTime(initialData.windowStart || '09:00');
+      setRunTime(initialData.windowStart || minTimeForToday);
       setMaxRuns(initialData.maxRuns || 0);
       setWindowStart(initialData.windowStart || '08:00');
       setWindowEnd(initialData.windowEnd || '22:00');
@@ -73,10 +88,15 @@ export const ReminderModal: React.FC<Props> = ({
       setCallDurationSeconds(25);
       setIsRepeat(false);
 
-      const today = new Date();
-      const pad = (n: number) => n.toString().padStart(2, '0');
-      setTargetDate(`${today.getFullYear()}-${pad(today.getMonth() + 1)}-${pad(today.getDate())}`);
-      setRunTime('09:00');
+      setTargetDate(todayStr);
+
+      // Default to 10 minutes in the future, rounded up to next 5 minutes
+      const future = new Date(Date.now() + 10 * 60 * 1000);
+      const roundedM = Math.ceil(future.getMinutes() / 5) * 5;
+      future.setMinutes(roundedM, 0, 0);
+      const fParts = getLocalTimeParts(future);
+      setRunTime(`${pad(fParts.hour)}:${pad(fParts.minute)}`);
+
       setMaxRuns(0);
       setWindowStart('08:00');
       setWindowEnd('22:00');
@@ -115,6 +135,12 @@ export const ReminderModal: React.FC<Props> = ({
     const finalInterval = isRepeat ? (Number(intervalMinutes) || 10) : 1;
     const finalTargetDate = targetDate.trim() ? targetDate.trim() : null;
 
+    // Validate that single-run time today is NOT in the past
+    if (!isRepeat && isSelectedDateToday && finalWindowStart < minTimeForToday) {
+      setError(`Thời gian chạy (${finalWindowStart}) đã nhỏ hơn thời gian hiện tại (${currentTimeStr}). Vui lòng chọn giờ trong tương lai!`);
+      return;
+    }
+
     try {
       await onSubmit({
         title: title.trim(),
@@ -127,7 +153,8 @@ export const ReminderModal: React.FC<Props> = ({
         windowStart: finalWindowStart,
         windowEnd: finalWindowEnd,
         intervalMinutes: finalInterval,
-        active
+        active,
+        resetRunCount: true
       });
     } catch (err: any) {
       setError(err.message || 'Lỗi khi lưu cấu hình');
@@ -264,6 +291,7 @@ export const ReminderModal: React.FC<Props> = ({
                 <TimePicker
                   value={runTime}
                   onChange={setRunTime}
+                  minTime={effectiveMinTime}
                   className="w-full"
                 />
               </div>
@@ -364,7 +392,10 @@ export const ReminderModal: React.FC<Props> = ({
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="w-[95vw] sm:max-w-lg max-h-[90vh] flex flex-col p-0 gap-0 overflow-hidden rounded-xl">
+      <DialogContent
+        className="w-[95vw] sm:max-w-lg max-h-[90vh] flex flex-col p-0 gap-0 overflow-hidden rounded-xl"
+        onOpenAutoFocus={(e) => e.preventDefault()}
+      >
         <DialogHeader className="px-5 py-3.5 sm:px-6 sm:py-4 border-b shrink-0 text-left space-y-1">
           <DialogTitle className="text-base font-semibold">{initialData ? 'Sửa cấu hình' : 'Tạo nhắc nhở mới'}</DialogTitle>
           <DialogDescription className="text-xs text-muted-foreground">

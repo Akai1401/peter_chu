@@ -9,7 +9,7 @@ import {
   UpdateReminderSchema,
   createMessagePreview,
   generateIdempotencyKey
-} from '@messenger/shared';
+} from '@messenger/shared/node';
 
 export function createReminderRouter(
   reminderService: ReminderService = new ReminderService(),

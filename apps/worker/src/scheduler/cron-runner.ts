@@ -5,8 +5,9 @@ import {
   getCurrentSlotKey,
   generateIdempotencyKey,
   createMessagePreview,
+  isSchedulePastDue,
   type BotStatus
-} from '@messenger/shared';
+} from '@messenger/shared/node';
 import { MessengerClient } from '../messenger/playwright-client.js';
 import { LockManager } from '../safety/lock-manager.js';
 import { RateLimiter } from '../safety/rate-limiter.js';
@@ -127,7 +128,20 @@ export class CronRunner {
     for (const reminder of reminders) {
       // Check if max runs already reached
       if (reminder.max_runs && reminder.max_runs > 0 && (reminder.run_count || 0) >= reminder.max_runs) {
-        this.db.prepare('UPDATE reminders SET active = 0 WHERE id = ?').run(reminder.id);
+        this.db.prepare('UPDATE reminders SET active = 0, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(reminder.id);
+        stats.skipped += 1;
+        continue;
+      }
+
+      // Auto-stop if schedule is already past due (expired)
+      if (isSchedulePastDue(reminder.target_date, reminder.window_end, reminder.max_runs, reminder.window_start, now)) {
+        this.db.prepare('UPDATE reminders SET active = 0, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(reminder.id);
+        this.recordAuditLog(
+          'REMINDER_EXPIRED',
+          'cron_runner',
+          `Reminder "${reminder.title}" đã quá giờ chạy (${reminder.window_start}${reminder.target_date ? ` ngày ${reminder.target_date}` : ''}). Hệ thống tự động tắt (stop).`,
+          'INFO'
+        );
         stats.skipped += 1;
         continue;
       }
@@ -315,6 +329,18 @@ export class CronRunner {
       executedAt,
       detailsJson
     );
+  }
+
+  private recordAuditLog(action: string, actor: string, details: string, level: string = 'INFO'): void {
+    try {
+      const id = randomUUID();
+      this.db.prepare(`
+        INSERT INTO audit_logs (id, timestamp, action, actor, details, level)
+        VALUES (?, CURRENT_TIMESTAMP, ?, ?, ?, ?)
+      `).run(id, action, actor, details, level);
+    } catch (e) {
+      console.error('[Worker] Failed to write audit log:', e);
+    }
   }
 
   /**

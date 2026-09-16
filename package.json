@@ -8,6 +8,7 @@
     "apps/*"
   ],
   "scripts": {
+    "dev": "bun scripts/dev-runner.ts",
     "dev:api": "bun --filter=@messenger/api run dev",
     "dev:worker": "bun --filter=@messenger/worker run dev",
     "dev:admin": "bun --filter=@messenger/admin run dev",
