@@ -706,26 +706,48 @@ export class MessengerClient {
       console.log(`[Messenger] Call is ringing. Waiting for ${effectiveDuration} seconds...`);
       await new Promise((r) => setTimeout(r, effectiveDuration * 1000));
 
-      // End the call
+      // End the call cleanly across all popup windows and in-page overlays
       try {
         const endCallSelectors = [
           'div[aria-label*="Kết thúc cuộc gọi" i]',
           'div[aria-label*="Kết thúc" i]',
           'div[aria-label*="End call" i]',
-          'div[aria-label*="Rời khỏi" i]',
           'div[aria-label*="Leave call" i]',
           'div[aria-label*="Gác máy" i]',
           'div[aria-label*="Hang up" i]',
+          '[data-testid="end_call_button"]',
+          'div[role="button"][aria-label*="Kết thúc" i]',
+          'div[role="button"][aria-label*="End" i]',
           'button[aria-label*="End" i]',
           'button[aria-label*="Kết thúc" i]'
         ].join(', ');
 
-        const endBtn = callPage.locator(endCallSelectors).first();
-        if ((await endBtn.count()) > 0 && (await endBtn.isVisible().catch(() => false))) {
-          console.log('[Messenger] Hanging up call...');
-          await endBtn.click({ force: true }).catch(() => {});
-        } else if (callPage !== this.page) {
-          await callPage.close().catch(() => {});
+        // 1. Check all open pages in context (including any call popup windows)
+        const allPages = this.context ? this.context.pages() : [this.page];
+        for (const p of allPages) {
+          try {
+            if (p.isClosed()) continue;
+            const endBtn = p.locator(endCallSelectors).first();
+            if ((await endBtn.count()) > 0 && (await endBtn.isVisible().catch(() => false))) {
+              console.log(`[Messenger] Hanging up call on page (${p === this.page ? 'main' : 'popup'})...`);
+              await endBtn.click({ force: true }).catch(() => {});
+              await p.waitForTimeout(500);
+            }
+            // Close secondary popup windows
+            if (p !== this.page) {
+              console.log('[Messenger] Closing call popup window...');
+              await p.close().catch(() => {});
+            }
+          } catch (pageErr: any) {
+            console.warn('[Messenger] Error while terminating call page:', pageErr.message);
+          }
+        }
+
+        // 2. If call was embedded in main page, check if call overlay remains and dismiss or reload
+        const remainingEndBtn = this.page.locator(endCallSelectors).first();
+        if ((await remainingEndBtn.count()) > 0 && (await remainingEndBtn.isVisible().catch(() => false))) {
+          await remainingEndBtn.click({ force: true }).catch(() => {});
+          await this.page.waitForTimeout(1000);
         }
       } catch (err: any) {
         console.warn('[Messenger] Could not cleanly hang up call:', err.message);

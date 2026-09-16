@@ -92,20 +92,18 @@ export const PersonaConfigModal: React.FC<Props> = ({
     setIsLoading(true);
     try {
       const list = await api.getPersonaProfiles();
-      // On modal open, sort so active profile is at the very top
       const sorted = [...list].sort((a, b) => {
         if (a.isActive && !b.isActive) return -1;
         if (!a.isActive && b.isActive) return 1;
         return 0;
       });
       setProfiles(sorted);
-
       const active = sorted.find((p) => p.isActive);
       if (active) {
         setFocusedProfileId(active.id);
       }
     } catch (err: any) {
-      console.warn('Could not load persona profiles:', err.message);
+      onNotify?.(err.message || 'Lỗi khi tải danh sách bộ văn phong', 'error');
     } finally {
       setIsLoading(false);
     }
@@ -113,15 +111,35 @@ export const PersonaConfigModal: React.FC<Props> = ({
 
   useEffect(() => {
     if (isOpen) {
+      loadProfilesInitial();
       setIsCreatingNew(false);
       setEditingProfileId(null);
-      loadProfilesInitial();
     }
   }, [isOpen]);
 
-  // Open "Tạo bộ mới" with completely empty / blank form
+  // Activate profile
+  const handleActivateProfile = async (id: string) => {
+    setIsActivatingId(id);
+    try {
+      await api.activatePersonaProfile(id);
+      setProfiles((prev) =>
+        prev.map((p) => ({
+          ...p,
+          isActive: p.id === id
+        }))
+      );
+      setFocusedProfileId(id);
+      onNotify?.('Đã kích hoạt áp dụng bộ văn phong thành công!', 'success');
+      onSuccess?.();
+    } catch (err: any) {
+      onNotify?.(err.message || 'Lỗi khi kích hoạt bộ cấu hình', 'error');
+    } finally {
+      setIsActivatingId(null);
+    }
+  };
+
+  // Open Create Form (Blank)
   const handleOpenCreateNew = () => {
-    setEditingProfileId(null);
     setFormName('');
     setFormThreadUrl(defaultThreadUrl || '');
     setFormTone('');
@@ -132,18 +150,13 @@ export const PersonaConfigModal: React.FC<Props> = ({
     setFormInstruction('');
     setNewCatchphraseInput('');
     setNewSampleMessageInput('');
+    setEditingProfileId(null);
     setIsCreatingNew(true);
   };
 
-  // Open "Sửa" for a specific profile
+  // Open Edit Form
   const handleOpenEdit = (profile: PersonaProfile) => {
-    if (editingProfileId === profile.id) {
-      // Toggle off if already editing
-      setEditingProfileId(null);
-      return;
-    }
     setIsCreatingNew(false);
-    setFocusedProfileId(profile.id);
     setFormName(profile.name);
     setFormThreadUrl(profile.sourceThread || defaultThreadUrl || '');
     setFormTone(profile.persona?.tone || '');
@@ -167,7 +180,7 @@ export const PersonaConfigModal: React.FC<Props> = ({
     setEditingProfileId(profile.id);
   };
 
-  // Tag / Catchphrase editor helpers
+  // Catchphrase helpers
   const handleAddCatchphrase = () => {
     const raw = newCatchphraseInput.trim();
     if (!raw) return;
@@ -192,7 +205,7 @@ export const PersonaConfigModal: React.FC<Props> = ({
     setFormCatchphrases((prev) => prev.filter((_, idx) => idx !== indexToRemove));
   };
 
-  // Sample Messages editor helpers
+  // Sample Messages helpers
   const handleAddSampleMessage = () => {
     const raw = newSampleMessageInput.trim();
     if (!raw) return;
@@ -249,7 +262,7 @@ export const PersonaConfigModal: React.FC<Props> = ({
         onSuccess?.();
       }
     } catch (err: any) {
-      onNotify?.(err.message || 'Học văn phong thất bại. Vui lòng kiểm tra lại link hội thoại!', 'error');
+      onNotify?.(err.message || 'Lỗi khi học văn phong', 'error');
     } finally {
       clearTimeout(stepTimer1);
       clearTimeout(stepTimer2);
@@ -258,45 +271,23 @@ export const PersonaConfigModal: React.FC<Props> = ({
     }
   };
 
-  // Activate specific profile without moving its position in the list
-  const handleActivateProfile = async (profileId: string) => {
-    setIsActivatingId(profileId);
-    try {
-      const activated = await api.activatePersonaProfile(profileId);
-      // Keep existing list order! Only update isActive flag and focus
-      setProfiles((prev) =>
-        prev.map((p) => ({
-          ...p,
-          isActive: p.id === profileId
-        }))
-      );
-      setFocusedProfileId(profileId);
-      onNotify?.(`Đã áp dụng bộ văn phong "${activated.name}" cho AI Bot!`, 'success');
-      onSuccess?.();
-    } catch (err: any) {
-      onNotify?.(err.message || 'Lỗi khi kích hoạt bộ cấu hình', 'error');
-    } finally {
-      setIsActivatingId(null);
-    }
-  };
-
   // Delete profile
-  const handleDeleteProfile = async (profileId: string, name: string) => {
-    if (!confirm(`Bạn có chắc chắn muốn xóa bộ cấu hình "${name}" không?`)) {
+  const handleDeleteProfile = async (id: string, name: string) => {
+    if (!window.confirm(`Bạn có chắc chắn muốn xóa bộ văn phong "${name}"?`)) {
       return;
     }
 
-    setIsDeletingId(profileId);
+    setIsDeletingId(id);
     try {
-      await api.deletePersonaProfile(profileId);
-      setProfiles((prev) => prev.filter((p) => p.id !== profileId));
-      if (editingProfileId === profileId) {
+      await api.deletePersonaProfile(id);
+      setProfiles((prev) => prev.filter((p) => p.id !== id));
+      if (editingProfileId === id) {
         setEditingProfileId(null);
       }
-      onNotify?.(`Đã xóa bộ cấu hình "${name}".`, 'info');
+      onNotify?.(`Đã xóa bộ văn phong "${name}"!`, 'success');
       onSuccess?.();
     } catch (err: any) {
-      onNotify?.(err.message || 'Lỗi khi xóa bộ cấu hình', 'error');
+      onNotify?.(err.message || 'Lỗi khi xóa bộ văn phong', 'error');
     } finally {
       setIsDeletingId(null);
     }
@@ -345,7 +336,7 @@ export const PersonaConfigModal: React.FC<Props> = ({
           name: finalName,
           persona: personaData,
           sourceThread: formThreadUrl.trim(),
-          makeActive: profiles.length === 0 // Active by default only if first one
+          makeActive: profiles.length === 0
         });
         setProfiles((prev) => [...prev, created]);
         setFocusedProfileId(created.id);
@@ -373,26 +364,23 @@ export const PersonaConfigModal: React.FC<Props> = ({
 
   // Reusable sub-component for the editor form
   const renderEditorForm = (isNew: boolean) => (
-    <div className="p-4 bg-muted/40 rounded-xl border border-purple-200 dark:border-purple-800/80 space-y-3.5 animate-in fade-in-50 duration-200 shadow-xs">
-      <div className="flex items-center justify-between pb-2 border-b border-border/60">
+    <div className="p-4 bg-muted/30 rounded-lg border border-border space-y-3.5 shadow-2xs">
+      <div className="flex items-center justify-between pb-2 border-b border-border/80">
         <button
           type="button"
           onClick={() => {
             setIsCreatingNew(false);
             setEditingProfileId(null);
           }}
-          className="inline-flex items-center gap-1.5 text-xs text-purple-600 hover:text-purple-700 dark:text-purple-400 font-semibold hover:underline"
+          className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground font-medium transition-colors"
         >
           <ArrowLeft className="w-3.5 h-3.5" />
           <span>Quay lại danh sách</span>
         </button>
 
-        <div className="flex items-center gap-2">
-          <span className="w-2 h-2 rounded-full bg-purple-600 animate-pulse" />
-          <h4 className="text-xs font-bold text-foreground truncate max-w-[280px]">
-            {isNew ? 'Tạo bộ văn phong mới hoàn toàn' : `Chỉnh sửa: ${formName || 'Bộ văn phong'}`}
-          </h4>
-        </div>
+        <h4 className="text-xs font-semibold text-foreground truncate max-w-[280px]">
+          {isNew ? 'Tạo bộ văn phong mới' : `Chỉnh sửa: ${formName || 'Bộ văn phong'}`}
+        </h4>
 
         <Button
           type="button"
@@ -411,36 +399,36 @@ export const PersonaConfigModal: React.FC<Props> = ({
 
       {/* Profile Name */}
       <div className="space-y-1">
-        <Label className="text-xs font-semibold text-foreground flex items-center gap-1.5">
-          <User className="w-3.5 h-3.5 text-purple-600" />
-          Tên bộ văn phong: <span className="text-red-500">*</span>
+        <Label className="text-xs font-medium text-foreground flex items-center gap-1.5">
+          <User className="w-3.5 h-3.5 text-muted-foreground" />
+          Tên bộ văn phong: <span className="text-destructive">*</span>
         </Label>
         <Input
           value={formName}
           onChange={(e) => setFormName(e.target.value)}
-          placeholder="Ví dụ: Thân mật (anh - em), Tư vấn bán hàng, Lầy lội bạn bè..."
+          placeholder="VD: Thân mật (anh - em), Tư vấn bán hàng, Bạn bè lầy lội..."
           className="text-xs h-8 bg-background font-medium"
           autoFocus={isNew}
         />
       </div>
 
       {/* Auto-learn from thread link */}
-      <div className="p-3 bg-background/80 rounded-lg border border-border/80 space-y-2">
-        <Label className="text-[11px] font-semibold flex items-center justify-between text-muted-foreground">
-          <span className="flex items-center gap-1.5">
-            <Link2 className="w-3 h-3 text-purple-600" />
+      <div className="p-3 bg-muted/20 rounded-lg border border-border/80 space-y-2">
+        <div className="flex items-center justify-between">
+          <Label className="text-[11px] font-medium flex items-center gap-1.5 text-muted-foreground">
+            <Link2 className="w-3 h-3 text-muted-foreground" />
             Học tự động từ link Messenger (tùy chọn):
-          </span>
+          </Label>
           {defaultThreadUrl && defaultThreadUrl !== formThreadUrl && (
             <button
               type="button"
               onClick={() => setFormThreadUrl(defaultThreadUrl)}
-              className="text-[10px] text-purple-600 hover:underline font-normal"
+              className="text-[10px] text-muted-foreground hover:text-foreground underline underline-offset-2"
             >
               Dùng link đang theo dõi
             </button>
           )}
-        </Label>
+        </div>
         <div className="flex gap-2">
           <Input
             placeholder="Dán link đoạn chat Messenger để AI tự quét câu chữ..."
@@ -452,17 +440,18 @@ export const PersonaConfigModal: React.FC<Props> = ({
           <Button
             type="button"
             size="sm"
+            variant="secondary"
             onClick={handleStartLearning}
             disabled={isLearning || !formThreadUrl.trim()}
-            className="gap-1.5 h-8 px-3 shrink-0 text-xs bg-purple-600 hover:bg-purple-700 text-white shadow-2xs font-medium"
+            className="gap-1.5 h-8 px-3 shrink-0 text-xs font-medium"
           >
             <RefreshCw className={`w-3 h-3 ${isLearning ? 'animate-spin' : ''}`} />
             <span>{isLearning ? 'Đang học...' : 'Học tự động'}</span>
           </Button>
         </div>
         {isLearning && (
-          <div className="p-2 bg-purple-50 dark:bg-purple-950/40 rounded border border-purple-200 dark:border-purple-800 text-xs text-purple-700 dark:text-purple-300 flex items-center gap-2">
-            <div className="w-3 h-3 border-2 border-purple-600 border-t-transparent rounded-full animate-spin" />
+          <div className="p-2 bg-muted rounded border border-border text-xs text-foreground flex items-center gap-2">
+            <div className="w-3 h-3 border-2 border-foreground border-t-transparent rounded-full animate-spin" />
             <span className="animate-pulse">{learningStep}</span>
           </div>
         )}
@@ -475,7 +464,7 @@ export const PersonaConfigModal: React.FC<Props> = ({
           <Input
             value={formTone}
             onChange={(e) => setFormTone(e.target.value)}
-            placeholder="Ví dụ: Vui vẻ, ấm áp, thân thiện, lịch sự..."
+            placeholder="VD: Hài hước, gần gũi, thân thiện, lịch sự..."
             className="text-xs h-8 bg-background"
           />
         </div>
@@ -484,7 +473,7 @@ export const PersonaConfigModal: React.FC<Props> = ({
           <Input
             value={formPronouns}
             onChange={(e) => setFormPronouns(e.target.value)}
-            placeholder="Ví dụ: anh - em, mình - bạn, tao - mày..."
+            placeholder="VD: anh - em, mình - bạn, tao - mày..."
             className="text-xs h-8 bg-background"
           />
         </div>
@@ -504,28 +493,28 @@ export const PersonaConfigModal: React.FC<Props> = ({
       {/* Catchphrases (Interactive Tag Editor) */}
       <div className="space-y-2 p-2.5 bg-background rounded-lg border border-border/80">
         <div className="flex items-center justify-between">
-          <Label className="text-[11px] font-semibold text-foreground flex items-center gap-1.5">
-            <Sparkles className="w-3 h-3 text-purple-600" />
-            Từ ngữ cửa miệng, icon & thói quen câu chữ ({formCatchphrases.length}):
+          <Label className="text-[11px] font-medium text-foreground flex items-center gap-1.5">
+            <Sparkles className="w-3 h-3 text-muted-foreground" />
+            Từ ngữ cửa miệng & thói quen câu chữ ({formCatchphrases.length}):
           </Label>
-          <span className="text-[10px] text-muted-foreground">Bấm dấu × để xóa</span>
+          <span className="text-[10px] text-muted-foreground">Bấm × để xóa</span>
         </div>
 
         {/* Tag Cloud */}
-        <div className="flex flex-wrap gap-1.5 min-h-[30px] p-1.5 bg-muted/30 rounded-md border border-border/60 items-center">
+        <div className="flex flex-wrap gap-1.5 min-h-[30px] p-1.5 bg-muted/20 rounded-md border border-border/60 items-center">
           {formCatchphrases.length === 0 ? (
             <span className="text-[11px] text-muted-foreground italic px-1">Chưa có từ cửa miệng nào. Nhập thêm phía dưới!</span>
           ) : (
             formCatchphrases.map((phrase, i) => (
               <span
                 key={i}
-                className="inline-flex items-center gap-1 pl-2 pr-1 py-0.5 rounded-md text-[11px] font-medium bg-purple-50 text-purple-700 dark:bg-purple-950/50 dark:text-purple-300 border border-purple-200 dark:border-purple-800"
+                className="inline-flex items-center gap-1 pl-2 pr-1 py-0.5 rounded-md text-[11px] font-medium bg-muted text-foreground border border-border/80"
               >
                 <span>{phrase}</span>
                 <button
                   type="button"
                   onClick={() => handleRemoveCatchphrase(i)}
-                  className="w-3.5 h-3.5 rounded-full hover:bg-purple-200 dark:hover:bg-purple-800 flex items-center justify-center text-purple-600 dark:text-purple-400 hover:text-red-500 transition-colors"
+                  className="w-3.5 h-3.5 rounded hover:bg-muted-foreground/20 flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors"
                   title="Xóa từ này"
                 >
                   <X className="w-2.5 h-2.5" />
@@ -546,7 +535,7 @@ export const PersonaConfigModal: React.FC<Props> = ({
                 handleAddCatchphrase();
               }
             }}
-            placeholder="Gõ từ cửa miệng mới rồi nhấn Enter (ví dụ: ok em nhé, đợi tí, =))..."
+            placeholder="Gõ từ mới rồi nhấn Enter (ví dụ: ok em nhé, đợi tí, =))..."
             className="text-xs h-7 bg-background"
           />
           <Button
@@ -555,7 +544,7 @@ export const PersonaConfigModal: React.FC<Props> = ({
             size="sm"
             onClick={handleAddCatchphrase}
             disabled={!newCatchphraseInput.trim()}
-            className="h-7 px-2.5 text-xs gap-1 font-medium shrink-0 text-purple-700 dark:text-purple-300 border-purple-200 dark:border-purple-800 hover:bg-purple-50"
+            className="h-7 px-2.5 text-xs gap-1 font-medium shrink-0"
           >
             <Plus className="w-3 h-3" />
             <span>Thêm</span>
@@ -566,11 +555,11 @@ export const PersonaConfigModal: React.FC<Props> = ({
       {/* Sample Messages (Interactive Editor) */}
       <div className="space-y-2 p-2.5 bg-background rounded-lg border border-border/80">
         <div className="flex items-center justify-between">
-          <Label className="text-[11px] font-semibold text-foreground flex items-center gap-1.5">
-            <Quote className="w-3.5 h-3.5 text-purple-600" />
+          <Label className="text-[11px] font-medium text-foreground flex items-center gap-1.5">
+            <Quote className="w-3.5 h-3.5 text-muted-foreground" />
             Câu nói mẫu tiêu biểu ({formSampleMessages.length}):
           </Label>
-          <span className="text-[10px] text-muted-foreground">Sửa trực tiếp câu chữ hoặc bấm × để xóa</span>
+          <span className="text-[10px] text-muted-foreground">Sửa trực tiếp hoặc bấm × để xóa</span>
         </div>
 
         {/* List of sample quotes */}
@@ -585,19 +574,18 @@ export const PersonaConfigModal: React.FC<Props> = ({
             formSampleMessages.map((msg, i) => (
               <div
                 key={i}
-                className="group flex items-center gap-1.5 p-1 bg-muted/30 hover:bg-muted/50 rounded-md border border-border/60 transition-colors"
+                className="group flex items-center gap-1.5 p-1 bg-muted/20 hover:bg-muted/40 rounded-md border border-border/60 transition-colors"
               >
-                <div className="w-1 h-5 bg-purple-500 rounded-full shrink-0 ml-1" />
                 <Input
                   value={msg}
                   onChange={(e) => handleUpdateSampleMessage(i, e.target.value)}
-                  className="text-xs h-7 bg-background border-none focus-visible:ring-1 focus-visible:ring-purple-500 text-foreground/90 font-sans"
+                  className="text-xs h-7 bg-background border border-border/50 text-foreground font-sans"
                   placeholder="Nội dung câu nói mẫu..."
                 />
                 <button
                   type="button"
                   onClick={() => handleRemoveSampleMessage(i)}
-                  className="w-6 h-6 rounded-md hover:bg-red-100 dark:hover:bg-red-950/50 flex items-center justify-center text-muted-foreground hover:text-red-600 transition-colors shrink-0"
+                  className="w-6 h-6 rounded hover:bg-destructive/10 flex items-center justify-center text-muted-foreground hover:text-destructive transition-colors shrink-0"
                   title="Xóa câu nói mẫu này"
                 >
                   <X className="w-3.5 h-3.5" />
@@ -618,7 +606,7 @@ export const PersonaConfigModal: React.FC<Props> = ({
                 handleAddSampleMessage();
               }
             }}
-            placeholder="Gõ câu nói mẫu mới rồi nhấn Enter (ví dụ: Alo check tin nhắn tao gửi nhé!)..."
+            placeholder="Gõ câu nói mẫu mới rồi nhấn Enter..."
             className="text-xs h-7 bg-background"
           />
           <Button
@@ -627,7 +615,7 @@ export const PersonaConfigModal: React.FC<Props> = ({
             size="sm"
             onClick={handleAddSampleMessage}
             disabled={!newSampleMessageInput.trim()}
-            className="h-7 px-2.5 text-xs gap-1 font-medium shrink-0 text-purple-700 dark:text-purple-300 border-purple-200 dark:border-purple-800 hover:bg-purple-50"
+            className="h-7 px-2.5 text-xs gap-1 font-medium shrink-0"
           >
             <Plus className="w-3 h-3" />
             <span>Thêm câu</span>
@@ -638,8 +626,8 @@ export const PersonaConfigModal: React.FC<Props> = ({
       {/* Prompt Instruction */}
       <div className="space-y-1">
         <Label className="text-[11px] font-medium text-muted-foreground flex items-center gap-1.5">
-          <Bot className="w-3 h-3 text-purple-600" />
-          Chỉ thị bổ sung trực tiếp vào System Prompt:
+          <Bot className="w-3 h-3 text-muted-foreground" />
+          Chỉ thị bổ sung vào System Prompt:
         </Label>
         <Textarea
           rows={2}
@@ -667,11 +655,10 @@ export const PersonaConfigModal: React.FC<Props> = ({
 
         <Button
           type="button"
-          variant="default"
           size="sm"
           onClick={handleSaveForm}
           disabled={isSaving || isLearning || !formName.trim()}
-          className="text-xs h-8 px-4 gap-1.5 bg-purple-600 hover:bg-purple-700 text-white shadow-2xs font-semibold"
+          className="text-xs h-8 px-3.5 gap-1.5 font-medium shadow-xs"
         >
           <CheckCircle2 className="w-3.5 h-3.5" />
           <span>{isSaving ? 'Đang lưu...' : isNew ? 'Lưu bộ cấu hình' : 'Lưu thay đổi'}</span>
@@ -682,17 +669,17 @@ export const PersonaConfigModal: React.FC<Props> = ({
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && !isLearning && onClose()}>
-      <DialogContent className="sm:max-w-[700px] max-h-[92vh] overflow-y-auto p-5">
-        <DialogHeader className="space-y-1.5 pb-3 border-b">
+      <DialogContent className="sm:max-w-[660px] max-h-[92vh] overflow-y-auto p-5">
+        <DialogHeader className="space-y-1.5 pb-2.5 border-b">
           <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-purple-500 to-indigo-600 flex items-center justify-center text-white shadow-sm shadow-purple-500/20">
-              <Sparkles className="w-5 h-5" />
+            <div className="w-8 h-8 rounded-lg bg-muted border border-border flex items-center justify-center text-foreground shrink-0">
+              <Sparkles className="w-4 h-4" />
             </div>
             <div>
-              <DialogTitle className="text-base font-semibold flex items-center gap-2">
-                Quản Lý & Học Văn Phong Nói Chuyện
-                <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 border-purple-200 text-purple-700 dark:border-purple-800 dark:text-purple-300 font-mono">
-                  AI Persona
+              <DialogTitle className="text-sm font-semibold flex items-center gap-2">
+                Quản lý Văn phong Hội thoại (Persona)
+                <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 font-normal text-muted-foreground border-border">
+                  AI Voice
                 </Badge>
               </DialogTitle>
               <DialogDescription className="text-xs text-muted-foreground">
@@ -700,14 +687,14 @@ export const PersonaConfigModal: React.FC<Props> = ({
                   ? 'Tạo mới bộ phong cách trò chuyện và huấn luyện AI.'
                   : editingProfileId !== null
                   ? 'Chỉnh sửa chi tiết ngữ điệu, từ ngữ cửa miệng và câu mẫu.'
-                  : 'Danh sách các bộ phong cách trò chuyện. Chọn áp dụng, chỉnh sửa hoặc tạo mới.'}
+                  : 'Danh sách các bộ phong cách trò chuyện. Chọn áp dụng hoặc chỉnh sửa.'}
               </DialogDescription>
             </div>
           </div>
         </DialogHeader>
 
-        <div className="py-2 space-y-4">
-          {/* If creating new or editing an existing profile, ONLY render that editor form! */}
+        <div className="py-2 space-y-3.5">
+          {/* If creating new or editing an existing profile, ONLY render that editor form */}
           {isCreatingNew ? (
             renderEditorForm(true)
           ) : editingProfileId !== null ? (
@@ -718,11 +705,11 @@ export const PersonaConfigModal: React.FC<Props> = ({
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <span className="text-xs font-semibold text-foreground">
-                    Danh sách bộ văn phong ({profiles.length})
+                    Bộ văn phong ({profiles.length})
                   </span>
                   {isLoading && (
                     <span className="text-[11px] text-muted-foreground flex items-center gap-1">
-                      <RefreshCw className="w-3 h-3 animate-spin text-purple-600" />
+                      <RefreshCw className="w-3 h-3 animate-spin text-muted-foreground" />
                       Đang tải...
                     </span>
                   )}
@@ -732,15 +719,15 @@ export const PersonaConfigModal: React.FC<Props> = ({
                   type="button"
                   size="sm"
                   onClick={handleOpenCreateNew}
-                  className="h-8 px-3 text-xs gap-1.5 font-semibold bg-purple-600 hover:bg-purple-700 text-white shadow-2xs"
+                  className="h-7 px-2.5 text-xs gap-1 font-medium shadow-xs"
                 >
                   <Plus className="w-3.5 h-3.5" />
-                  <span>+ Tạo bộ mới</span>
+                  <span>Tạo bộ mới</span>
                 </Button>
               </div>
 
-              {/* Vertical List of Profiles (1 list dọc) */}
-              <div className="space-y-2.5">
+              {/* Vertical List of Profiles */}
+              <div className="space-y-2">
                 {profiles.map((profile) => {
                   const isActive = profile.isActive;
                   const isFocused = focusedProfileId === profile.id;
@@ -748,146 +735,144 @@ export const PersonaConfigModal: React.FC<Props> = ({
                   const catchphrases = (profile.persona?.catchphrases || []).filter((p) => !isSystemNotice(p));
 
                   return (
-                    <div key={profile.id} className="space-y-2">
-                      {/* The Profile Card Row */}
-                      <div
-                        onClick={() => setFocusedProfileId(profile.id)}
-                        className={`rounded-xl p-3.5 border transition-all cursor-pointer ${
-                          isActive
-                            ? 'border-purple-300 dark:border-purple-700 bg-purple-50/50 dark:bg-purple-950/30 ring-2 ring-purple-500/30 shadow-xs'
-                            : isFocused
-                            ? 'border-purple-200 dark:border-purple-800 bg-muted/30 ring-1 ring-purple-300/40'
-                            : 'border-border bg-card hover:border-purple-200/80 dark:hover:border-purple-800/80 shadow-2xs'
-                        }`}
-                      >
-                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                          {/* Left: Info details */}
-                          <div className="space-y-1.5 flex-1 min-w-0">
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <h4 className="text-xs font-bold text-foreground truncate" title={profile.name}>
-                                {profile.name}
-                              </h4>
+                    <div
+                      key={profile.id}
+                      onClick={() => setFocusedProfileId(profile.id)}
+                      className={`rounded-lg p-3 border transition-colors cursor-pointer ${
+                        isActive
+                          ? 'border-foreground/30 bg-muted/30 shadow-2xs'
+                          : isFocused
+                          ? 'border-border bg-muted/20'
+                          : 'border-border/80 bg-card hover:bg-muted/15'
+                      }`}
+                    >
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                        {/* Left: Info details */}
+                        <div className="space-y-1 flex-1 min-w-0">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <h4 className="text-xs font-semibold text-foreground truncate" title={profile.name}>
+                              {profile.name}
+                            </h4>
 
-                              {isActive ? (
-                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/70 dark:text-emerald-300">
-                                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                                  ĐANG DÙNG
-                                </span>
-                              ) : (
-                                <span className="inline-flex items-center px-1.5 py-0.5 rounded-md text-[10px] font-medium bg-muted text-muted-foreground">
-                                  Sẵn sàng
-                                </span>
-                              )}
-
-                              {profile.persona?.tone && (
-                                <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-medium bg-purple-100/70 text-purple-800 dark:bg-purple-950/50 dark:text-purple-300">
-                                  {profile.persona.tone}
-                                </span>
-                              )}
-
-                              {profile.persona?.pronouns && (
-                                <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-medium bg-indigo-100/70 text-indigo-800 dark:bg-indigo-950/50 dark:text-indigo-300">
-                                  {profile.persona.pronouns}
-                                </span>
-                              )}
-                            </div>
-
-                            {profile.persona?.styleSummary && (
-                              <p className="text-[11px] text-muted-foreground line-clamp-1 leading-relaxed">
-                                {profile.persona.styleSummary}
-                              </p>
+                            {isActive ? (
+                              <Badge variant="default" className="text-[10px] px-1.5 py-0 h-4 font-medium gap-1">
+                                <span className="w-1.5 h-1.5 rounded-full bg-background animate-pulse" />
+                                Đang dùng
+                              </Badge>
+                            ) : (
+                              <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-4 font-normal text-muted-foreground">
+                                Sẵn sàng
+                              </Badge>
                             )}
 
-                            {catchphrases.length > 0 && (
-                              <div className="flex flex-wrap gap-1 items-center pt-0.5">
-                                <span className="text-[10px] font-semibold text-muted-foreground mr-1">Từ cửa miệng:</span>
-                                {catchphrases.slice(0, 5).map((phrase, idx) => (
-                                  <span
-                                    key={idx}
-                                    className="inline-block px-1.5 py-0.2 rounded text-[10px] bg-muted/80 text-foreground/80 font-medium"
-                                  >
-                                    {phrase}
-                                  </span>
-                                ))}
-                                {catchphrases.length > 5 && (
-                                  <span className="inline-block px-1.5 py-0.2 rounded text-[10px] bg-muted/70 text-muted-foreground font-mono">
-                                    +{catchphrases.length - 5}
-                                  </span>
-                                )}
-                              </div>
+                            {profile.persona?.tone && (
+                              <span className="inline-flex items-center px-1.5 py-0.2 rounded text-[10px] font-medium bg-muted text-muted-foreground">
+                                {profile.persona.tone}
+                              </span>
+                            )}
+
+                            {profile.persona?.pronouns && (
+                              <span className="inline-flex items-center px-1.5 py-0.2 rounded text-[10px] font-medium bg-muted text-muted-foreground">
+                                {profile.persona.pronouns}
+                              </span>
                             )}
                           </div>
 
-                          {/* Right: Actions */}
-                          <div className="flex items-center gap-1.5 shrink-0 self-end sm:self-center">
+                          {profile.persona?.styleSummary && (
+                            <p className="text-[11px] text-muted-foreground line-clamp-1 leading-normal">
+                              {profile.persona.styleSummary}
+                            </p>
+                          )}
+
+                          {catchphrases.length > 0 && (
+                            <div className="flex flex-wrap gap-1 items-center pt-0.5">
+                              <span className="text-[10px] text-muted-foreground mr-0.5">Cửa miệng:</span>
+                              {catchphrases.slice(0, 4).map((phrase, idx) => (
+                                <span
+                                  key={idx}
+                                  className="inline-block px-1.5 py-0.2 rounded text-[10px] bg-muted/80 text-foreground font-medium"
+                                >
+                                  {phrase}
+                                </span>
+                              ))}
+                              {catchphrases.length > 4 && (
+                                <span className="inline-block px-1 py-0.2 rounded text-[10px] bg-muted/60 text-muted-foreground font-mono">
+                                  +{catchphrases.length - 4}
+                                </span>
+                              )}
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Right: Actions */}
+                        <div className="flex items-center gap-1 shrink-0 self-end sm:self-center">
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleOpenEdit(profile);
+                            }}
+                            className="h-7 px-2 text-xs gap-1 font-medium"
+                            title="Chỉnh sửa chi tiết bộ văn phong này"
+                          >
+                            <Pencil className="w-3 h-3 text-muted-foreground" />
+                            <span>Sửa</span>
+                          </Button>
+
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="ghost"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDuplicateProfile(profile);
+                            }}
+                            className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
+                            title="Nhân bản bộ cấu hình này"
+                          >
+                            <Copy className="w-3 h-3" />
+                          </Button>
+
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="ghost"
+                            disabled={isDeletingId === profile.id}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDeleteProfile(profile.id, profile.name);
+                            }}
+                            className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
+                            title="Xóa bộ cấu hình này"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </Button>
+
+                          {/* Apply button */}
+                          {!isActive ? (
                             <Button
                               type="button"
                               size="sm"
                               variant="outline"
+                              disabled={isActivating}
                               onClick={(e) => {
                                 e.stopPropagation();
-                                handleOpenEdit(profile);
+                                handleActivateProfile(profile.id);
                               }}
-                              className="h-7 px-2.5 text-xs gap-1 font-medium hover:border-purple-300 hover:text-purple-700"
-                              title="Chỉnh sửa chi tiết bộ văn phong này"
+                              className="h-7 px-2.5 text-xs gap-1 font-medium hover:bg-primary hover:text-primary-foreground transition-colors shrink-0 ml-1"
+                              title="Kích hoạt áp dụng bộ này cho Bot"
                             >
-                              <Pencil className="w-3 h-3 text-purple-600" />
-                              <span>Sửa</span>
+                              <Check className="w-3 h-3" />
+                              <span>{isActivating ? 'Đang áp dụng...' : 'Áp dụng'}</span>
                             </Button>
-
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="ghost"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleDuplicateProfile(profile);
-                              }}
-                              className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground"
-                              title="Nhân bản bộ cấu hình này"
-                            >
-                              <Copy className="w-3 h-3" />
-                            </Button>
-
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="ghost"
-                              disabled={isDeletingId === profile.id}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleDeleteProfile(profile.id, profile.name);
-                              }}
-                              className="h-7 px-2 text-xs text-muted-foreground hover:text-destructive"
-                              title="Xóa bộ cấu hình này"
-                            >
-                              <Trash2 className="w-3 h-3" />
-                            </Button>
-
-                            {/* Apply button */}
-                            {!isActive ? (
-                              <Button
-                                type="button"
-                                size="sm"
-                                variant="default"
-                                disabled={isActivating}
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleActivateProfile(profile.id);
-                                }}
-                                className="h-7 px-3 text-xs gap-1 font-semibold bg-emerald-600 hover:bg-emerald-700 text-white shadow-2xs shrink-0"
-                                title="Bấm để kích hoạt áp dụng bộ này cho Bot"
-                              >
-                                <Check className="w-3 h-3" />
-                                <span>{isActivating ? 'Đang áp dụng...' : 'Chọn áp dụng'}</span>
-                              </Button>
-                            ) : (
-                              <span className="text-[11px] font-semibold text-emerald-700 dark:text-emerald-400 flex items-center gap-1 px-2 shrink-0">
-                                <CheckCircle2 className="w-3.5 h-3.5" />
-                                <span>Đang dùng</span>
-                              </span>
-                            )}
-                          </div>
+                          ) : (
+                            <span className="text-[11px] font-medium text-muted-foreground flex items-center gap-1 px-1.5 shrink-0 ml-1">
+                              <CheckCircle2 className="w-3.5 h-3.5 text-foreground" />
+                              <span>Đang dùng</span>
+                            </span>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -895,11 +880,11 @@ export const PersonaConfigModal: React.FC<Props> = ({
                 })}
 
                 {profiles.length === 0 && !isLoading && (
-                  <div className="py-8 text-center bg-muted/20 rounded-xl border border-dashed p-4 space-y-2">
-                    <Bot className="w-8 h-8 text-muted-foreground mx-auto stroke-1" />
-                    <p className="text-xs font-semibold text-foreground">Chưa có bộ văn phong nào</p>
+                  <div className="py-8 text-center bg-muted/20 rounded-lg border border-dashed p-4 space-y-2">
+                    <Bot className="w-7 h-7 text-muted-foreground mx-auto stroke-1" />
+                    <p className="text-xs font-medium text-foreground">Chưa có bộ văn phong nào</p>
                     <p className="text-[11px] text-muted-foreground">
-                      Bấm vào nút <strong>"+ Tạo bộ mới"</strong> ở góc trên để tạo bộ phong cách trò chuyện bạn nhé!
+                      Bấm vào nút <strong>"Tạo bộ mới"</strong> để bắt đầu cá nhân hoá AI.
                     </p>
                   </div>
                 )}
@@ -909,16 +894,16 @@ export const PersonaConfigModal: React.FC<Props> = ({
         </div>
 
         {/* Modal Footer */}
-        <DialogFooter className="pt-3 border-t sm:justify-between items-center">
-          <span className="text-xs text-muted-foreground">
-            Tổng cộng: <strong className="font-semibold text-foreground">{profiles.length}</strong> bộ cấu hình
+        <DialogFooter className="pt-2.5 border-t sm:justify-between items-center">
+          <span className="text-[11px] text-muted-foreground">
+            Tổng cộng: <strong className="font-medium text-foreground">{profiles.length}</strong> bộ văn phong
           </span>
           <Button
             type="button"
             variant="outline"
             size="sm"
             onClick={onClose}
-            className="text-xs h-8 px-4"
+            className="text-xs h-8 px-3"
           >
             Đóng
           </Button>

@@ -9,14 +9,16 @@ import {
   FlaskConical,
   Sparkles,
   RefreshCw,
-  SlidersHorizontal,
   Link2,
   GraduationCap,
-  MessageCircleHeart
+  MessageCircleHeart,
+  Bot,
+  Pencil
 } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Switch } from '@/components/ui/switch';
 import { AiConfigModal } from './AiConfigModal';
 import { PersonaConfigModal } from './PersonaConfigModal';
 import { ProactiveChatModal } from './ProactiveChatModal';
@@ -39,13 +41,11 @@ interface Props {
 }
 
 const ENGINE_STATUS_CONFIG: Record<string, { label: string; dot: string; badge: string }> = {
-  RUNNING:          { label: 'Running',          dot: 'bg-emerald-500 animate-pulse', badge: 'text-emerald-700 bg-emerald-50 border-emerald-200 dark:text-emerald-400 dark:bg-emerald-950/40 dark:border-emerald-800' },
-  STOPPED:          { label: 'Stopped',          dot: 'bg-slate-400',                badge: 'text-slate-600 bg-slate-100 border-slate-200 dark:text-slate-400 dark:bg-slate-800/40 dark:border-slate-700' },
-  PAUSED:           { label: 'Paused',           dot: 'bg-amber-400 animate-pulse',  badge: 'text-amber-700 bg-amber-50 border-amber-200 dark:text-amber-400 dark:bg-amber-950/40 dark:border-amber-800' },
-  EMERGENCY_STOPPED:{ label: 'Emergency Stop',   dot: 'bg-red-500 animate-pulse',    badge: 'text-red-700 bg-red-50 border-red-200 dark:text-red-400 dark:bg-red-950/40 dark:border-red-800' },
+  RUNNING:           { label: 'Running',        dot: 'bg-emerald-500 animate-pulse', badge: 'text-emerald-700 bg-emerald-50 border-emerald-200 dark:text-emerald-400 dark:bg-emerald-950/40 dark:border-emerald-800' },
+  STOPPED:           { label: 'Stopped',        dot: 'bg-muted-foreground',          badge: 'text-muted-foreground bg-muted border-border' },
+  PAUSED:            { label: 'Paused',         dot: 'bg-amber-400 animate-pulse',  badge: 'text-amber-700 bg-amber-50 border-amber-200 dark:text-amber-400 dark:bg-amber-950/40 dark:border-amber-800' },
+  EMERGENCY_STOPPED: { label: 'Emergency Stop', dot: 'bg-destructive animate-pulse', badge: 'text-destructive bg-destructive/10 border-destructive/30' },
 };
-
-
 
 export const BotStatusCard: React.FC<Props> = ({
   state,
@@ -77,10 +77,10 @@ export const BotStatusCard: React.FC<Props> = ({
 
   if (!state) {
     return (
-      <Card className="p-4 flex items-center justify-center min-h-[64px]">
+      <Card className="p-4 flex items-center justify-center min-h-[64px] border-border shadow-xs">
         <div className="flex items-center gap-3 text-muted-foreground">
           <div className="w-4 h-4 border-2 border-muted-foreground/20 border-t-muted-foreground rounded-full animate-spin" />
-          <span className="text-xs font-medium">Loading Engine State...</span>
+          <span className="text-xs font-medium">Đang tải trạng thái hệ thống...</span>
         </div>
       </Card>
     );
@@ -89,96 +89,60 @@ export const BotStatusCard: React.FC<Props> = ({
   const isRunning = state.status === 'RUNNING';
   const aiEnabled = state.aiAutoReply !== false;
   const engineCfg = ENGINE_STATUS_CONFIG[state.status] ?? ENGINE_STATUS_CONFIG['STOPPED'];
+  const isAnyAiActive = aiEnabled || Boolean(state.proactiveChat?.enabled);
 
   return (
-    <Card className="p-3 sm:p-4 shadow-sm space-y-3">
-      {/* ── System Status Row ── */}
-      <div className="flex flex-wrap items-center gap-2">
-        <div className="flex items-center gap-1.5 text-xs text-muted-foreground font-medium shrink-0">
-          <Cpu className="w-3.5 h-3.5" />
-          <span>System Status</span>
+    <Card className="p-3.5 sm:p-4 md:p-5 shadow-xs border-border space-y-3.5 md:space-y-4 bg-card">
+      {/* ── Top Row: System Status & Core Engine Controls ── */}
+      <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3">
+        {/* Left: System state, warnings & Last Heartbreak */}
+        <div className="flex items-center gap-2 md:gap-2.5 flex-wrap">
+          <div className="flex items-center gap-1.5 text-xs md:text-sm text-muted-foreground font-medium shrink-0">
+            <Cpu className="w-3.5 h-3.5 md:w-4 md:h-4 text-foreground" />
+            <span>Hệ thống:</span>
+          </div>
+
+          <span className={`inline-flex items-center gap-1.5 border rounded-full px-2.5 md:px-3 py-0.5 md:py-1 text-[11px] md:text-xs font-semibold ${engineCfg.badge}`}>
+            <span className={`w-1.5 h-1.5 md:w-2 md:h-2 rounded-full shrink-0 ${engineCfg.dot}`} />
+            {engineCfg.label}
+          </span>
+
+          {/* Last Heartbreak right next to system status */}
+          <div
+            className="inline-flex items-center gap-1.5 text-[11px] md:text-xs text-muted-foreground bg-muted/50 border border-border/80 px-2.5 md:px-3 py-0.5 md:py-1 rounded-full shrink-0"
+            title="Thời điểm kiểm tra nhịp đập hệ thống gần nhất (Last Heartbreak)"
+          >
+            <Clock className="w-3 h-3 md:w-3.5 md:h-3.5 shrink-0 text-foreground" />
+            <span>Last heartbreak:</span>
+            <strong className="font-mono text-foreground font-[500]">
+              {state.lastHeartbeat ? new Date(state.lastHeartbeat).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : 'N/A'}
+            </strong>
+          </div>
+
+          {state.dryRun && (
+            <Badge variant="outline" className="text-[10px] md:text-xs px-1.5 md:px-2 py-0 h-5 md:h-6 gap-1 font-medium text-muted-foreground border-border bg-muted/30">
+              <FlaskConical className="w-3 h-3 md:w-3.5 md:h-3.5" /> Dry Run
+            </Badge>
+          )}
+
+          {state.emergencyStop && (
+            <Badge variant="destructive" className="text-[10px] md:text-xs px-1.5 md:px-2 py-0 h-5 md:h-6 gap-1 font-semibold">
+              <AlertTriangle className="w-3 h-3 md:w-3.5 md:h-3.5" /> Emergency Stop
+            </Badge>
+          )}
         </div>
 
-        {/* Engine status */}
-        <span className={`inline-flex items-center gap-1.5 border rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${engineCfg.badge}`}>
-          <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${engineCfg.dot}`} />
-          {engineCfg.label}
-        </span>
-
-        {/* Dry-run indicator */}
-        {state.dryRun && (
-          <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-5 gap-1 font-semibold text-purple-600 border-purple-300 bg-purple-50 dark:bg-purple-950/30 dark:border-purple-800 dark:text-purple-400">
-            <FlaskConical className="w-3 h-3" /> Dry Run
-          </Badge>
-        )}
-
-        {/* Emergency stop warning */}
-        {state.emergencyStop && (
-          <Badge variant="destructive" className="text-[10px] px-1.5 py-0 h-5 gap-1 font-semibold">
-            <AlertTriangle className="w-3 h-3" /> Emergency Stop
-          </Badge>
-        )}
-
-        {/* Gemini AI Auto-Reply indicator */}
-        <Badge
-          variant="outline"
-          className={`text-[10px] px-2 py-0 h-5 gap-1 font-semibold transition-colors ${
-            !aiEnabled
-              ? 'text-slate-400 border-slate-200 bg-slate-50 dark:text-slate-500 dark:bg-slate-800/40 dark:border-slate-700'
-              : isRunning
-              ? 'text-purple-700 border-purple-300 bg-purple-50 dark:text-purple-300 dark:bg-purple-950/40 dark:border-purple-800'
-              : 'text-amber-600 border-amber-200 bg-amber-50 dark:text-amber-400 dark:bg-amber-950/40 dark:border-amber-800'
-          }`}
-        >
-          <Sparkles className={`w-3 h-3 ${aiEnabled && isRunning ? 'text-purple-500 animate-pulse' : 'text-slate-400'}`} />
-          <span>Gemini AI: {!aiEnabled ? 'Tắt' : isRunning ? 'Hoạt động' : 'Chờ bật Engine'}</span>
-        </Badge>
-
-        {/* Learned Persona Active Indicator */}
-        {state.learnedPersona && (
-          <button
-            type="button"
-            onClick={() => setIsPersonaModalOpen(true)}
-            className="inline-flex items-center gap-1.5 border rounded-full px-2.5 py-0.5 text-[11px] font-semibold text-purple-700 bg-purple-50 border-purple-200 hover:bg-purple-100 dark:text-purple-300 dark:bg-purple-950/40 dark:border-purple-800 dark:hover:bg-purple-900/50 transition-colors cursor-pointer"
-            title="Văn phong cá nhân hóa đang được áp dụng. Bấm để xem chi tiết hoặc chuyển đổi"
-          >
-            <GraduationCap className="w-3 h-3 text-purple-600 dark:text-purple-400" />
-            <span>
-              Văn phong: <strong className="font-medium">
-                {state.activePersonaName
-                  ? (state.activePersonaName.length > 22 ? `${state.activePersonaName.slice(0, 22)}…` : state.activePersonaName)
-                  : (state.learnedPersona.tone.length > 22 ? `${state.learnedPersona.tone.slice(0, 22)}…` : state.learnedPersona.tone)}
-              </strong>
-            </span>
-          </button>
-        )}
-
-        {/* Proactive Chat Active Indicator */}
-        {state.proactiveChat?.enabled && (
-          <button
-            type="button"
-            onClick={() => setIsProactiveModalOpen(true)}
-            className="inline-flex items-center gap-1.5 border rounded-full px-2.5 py-0.5 text-[11px] font-semibold text-pink-700 bg-pink-50 border-pink-200 hover:bg-pink-100 dark:text-pink-300 dark:bg-pink-950/40 dark:border-pink-800 dark:hover:bg-pink-900/50 transition-colors cursor-pointer"
-            title="Chế độ chủ động nhắn tin ngẫu nhiên đang BẬT. Bấm để xem hoặc chỉnh sửa cấu hình"
-          >
-            <MessageCircleHeart className="w-3 h-3 text-pink-600 dark:text-pink-400 animate-pulse" />
-            <span>Chủ động: <strong>BẬT</strong></span>
-          </button>
-        )}
-      </div>
-
-      {/* ── Engine Controls + Heartbeat ── */}
-      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 pt-2 border-t">
-        {/* Engine Controls + AI Toggle */}
-        <div className="flex flex-wrap items-center gap-2">
+        {/* Right: Engine Actions */}
+        <div className="flex items-center gap-2 justify-end shrink-0">
           {!isRunning ? (
             <Button
               onClick={() => onAction('START')}
               disabled={loading || isRestarting}
               size="sm"
-              className="gap-2 h-9 px-4 font-medium shadow-sm"
+              className="gap-1.5 h-8 md:h-9 px-3 md:px-4 text-xs md:text-sm font-medium shadow-xs"
             >
-              <Play className="w-3.5 h-3.5 fill-current" /> Start Engine
+              <Play className="w-3 h-3 md:w-3.5 md:h-3.5 fill-current" />
+              <span>Start Engine</span>
             </Button>
           ) : (
             <Button
@@ -186,9 +150,10 @@ export const BotStatusCard: React.FC<Props> = ({
               disabled={loading || isRestarting}
               variant="destructive"
               size="sm"
-              className="gap-2 h-9 px-4 font-medium shadow-sm"
+              className="gap-1.5 h-8 md:h-9 px-3 md:px-4 text-xs md:text-sm font-medium shadow-xs"
             >
-              <Square className="w-3.5 h-3.5 fill-current" /> Stop Engine
+              <Square className="w-3 h-3 md:w-3.5 md:h-3.5 fill-current" />
+              <span>Stop Engine</span>
             </Button>
           )}
 
@@ -197,102 +162,27 @@ export const BotStatusCard: React.FC<Props> = ({
             disabled={loading || isRestarting}
             variant="outline"
             size="sm"
-            className="gap-2 h-9 px-3 text-xs font-medium"
+            className="gap-1.5 h-8 md:h-9 px-2.5 md:px-3 text-xs md:text-sm font-medium"
           >
-            <RotateCcw className={`w-3.5 h-3.5 ${isRestarting ? 'animate-spin' : ''}`} /> Restart
+            <RotateCcw className={`w-3 h-3 md:w-3.5 md:h-3.5 ${isRestarting ? 'animate-spin' : ''}`} />
+            <span>Restart</span>
           </Button>
+        </div>
+      </div>
 
-          {/* AI Auto-Reply Toggle Button right next to Engine controls */}
-          {onToggleAiAutoReply && (
-            <Button
-              type="button"
-              variant={aiEnabled ? 'default' : 'outline'}
-              size="sm"
-              disabled={loading || isTogglingAi}
-              onClick={async () => {
-                setIsTogglingAi(true);
-                try {
-                  await onToggleAiAutoReply(!aiEnabled);
-                } finally {
-                  setIsTogglingAi(false);
-                }
-              }}
-              className={`gap-2 h-9 px-3.5 text-xs font-medium transition-all ${
-                aiEnabled
-                  ? 'bg-purple-600 hover:bg-purple-700 text-white border-transparent shadow-xs'
-                  : 'text-muted-foreground hover:text-foreground border-border bg-background'
-              }`}
-              title={`Bấm để ${aiEnabled ? 'Tắt' : 'Bật'} tự động trả lời bằng Gemini AI`}
-            >
-              <Sparkles className={`w-3.5 h-3.5 ${aiEnabled ? 'text-amber-300 animate-pulse' : 'text-muted-foreground'}`} />
-              <span>AI Reply: <strong className="font-semibold">{aiEnabled ? 'BẬT' : 'TẮT'}</strong></span>
-            </Button>
-          )}
-
-          {/* AI Thread Configuration Button */}
-          {onUpdateAiConfig && (
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              disabled={loading}
-              onClick={() => setIsAiConfigOpen(true)}
-              className="gap-1.5 h-9 px-3 text-xs font-medium text-muted-foreground hover:text-foreground border-border bg-background"
-              title="Cấu hình liên kết cuộc hội thoại Messenger để AI theo dõi"
-            >
-              <SlidersHorizontal className="w-3.5 h-3.5 text-purple-600" />
-              <span className="hidden sm:inline">Cấu hình hội thoại</span>
-            </Button>
-          )}
-
-          {/* Persona Learning Button */}
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            disabled={loading}
-            onClick={() => setIsPersonaModalOpen(true)}
-            className="gap-1.5 h-9 px-3 text-xs font-medium text-purple-700 dark:text-purple-300 border-purple-200 dark:border-purple-800 bg-purple-50/50 dark:bg-purple-950/30 hover:bg-purple-100 dark:hover:bg-purple-900/50"
-            title="Học văn phong nói chuyện Messenger từ link hội thoại"
-          >
-            <GraduationCap className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400" />
-            <span className="hidden sm:inline">Học văn phong</span>
-            {state.learnedPersona && (
-              <span className="w-1.5 h-1.5 rounded-full bg-purple-600 animate-pulse" />
+      {/* ── Dedicated AI Copilot & Automation Hub ── */}
+      <div className="pt-2 md:pt-3 border-t border-border/60 space-y-2.5 md:space-y-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Sparkles className="w-3.5 h-3.5 md:w-4 md:h-4 text-foreground" />
+            <h3 className="text-xs md:text-sm font-semibold text-foreground tracking-tight">
+              Trợ lý AI & Tự động hoá
+            </h3>
+            {isAnyAiActive && isRunning && (
+              <span className="w-1.5 h-1.5 md:w-2 md:h-2 rounded-full bg-emerald-500 animate-pulse" title="AI đang hoạt động" />
             )}
-          </Button>
+          </div>
 
-          {/* Proactive Chat Button */}
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            disabled={loading}
-            onClick={() => setIsProactiveModalOpen(true)}
-            className="gap-1.5 h-9 px-3 text-xs font-medium text-pink-700 dark:text-pink-300 border-pink-200 dark:border-pink-800 bg-pink-50/50 dark:bg-pink-950/30 hover:bg-pink-100 dark:hover:bg-pink-900/50"
-            title="Cấu hình bot tự động random thời gian chủ động nhắn tin hỏi thăm hoặc trêu đùa"
-          >
-            <MessageCircleHeart className="w-3.5 h-3.5 text-pink-600 dark:text-pink-400" />
-            <span className="hidden sm:inline">Chủ động nói chuyện</span>
-            {state.proactiveChat?.enabled && (
-              <span className="w-1.5 h-1.5 rounded-full bg-pink-600 animate-pulse" />
-            )}
-          </Button>
-
-          {/* Configured Thread Indicator / Quick Edit Badge */}
-          {state.aiTargetThread && state.aiTargetThread.trim() && (
-            <button
-              type="button"
-              onClick={() => setIsAiConfigOpen(true)}
-              className="inline-flex items-center gap-1.5 h-9 px-2.5 rounded-md text-[11px] font-mono bg-purple-50 hover:bg-purple-100 dark:bg-purple-950/40 dark:hover:bg-purple-900/50 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800 transition-colors shadow-2xs max-w-[200px] sm:max-w-[260px]"
-              title={`Cuộc hội thoại mục tiêu: ${state.aiTargetThread} (Bấm để thay đổi)`}
-            >
-              <Link2 className="w-3 h-3 text-purple-600 shrink-0" />
-              <span className="truncate">{state.aiTargetThread}</span>
-            </button>
-          )}
-
-          {/* Compact manual scan button */}
           {onCheckIncoming && (
             <Button
               type="button"
@@ -300,28 +190,144 @@ export const BotStatusCard: React.FC<Props> = ({
               size="sm"
               disabled={loading || isCheckingIncoming}
               onClick={onCheckIncoming}
-              className="h-9 px-2.5 text-xs gap-1.5 font-medium text-muted-foreground hover:text-foreground"
+              className="h-7 md:h-8 px-2 md:px-2.5 text-xs md:text-sm gap-1.5 font-medium text-muted-foreground hover:text-foreground"
               title="Quét tin nhắn Messenger mới ngay lập tức"
             >
-              <RefreshCw className={`w-3 h-3 ${isCheckingIncoming ? 'animate-spin text-primary' : ''}`} />
-              <span className="inline">{isCheckingIncoming ? 'Đang quét...' : 'Quét tin nhắn'}</span>
+              <RefreshCw className={`w-3 h-3 md:w-3.5 md:h-3.5 ${isCheckingIncoming ? 'animate-spin text-foreground' : ''}`} />
+              <span>{isCheckingIncoming ? 'Đang quét...' : 'Quét tin nhắn'}</span>
             </Button>
           )}
         </div>
 
-        {/* Heartbeat Display */}
-        <div className="flex items-center gap-2 text-xs text-muted-foreground bg-muted/40 border px-3 py-2 rounded-md justify-center sm:justify-start">
-          <Clock className="w-3.5 h-3.5 shrink-0" />
-          <span className="truncate">
-            Heartbeat:{' '}
-            <strong className="font-mono text-foreground font-medium">
-              {state.lastHeartbeat ? new Date(state.lastHeartbeat).toLocaleTimeString() : 'N/A'}
-            </strong>
-          </span>
+        {/* 3-Column AI Capabilities Grid */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 md:gap-4">
+          {/* 1. Auto-Reply Card */}
+          <div className="p-3 md:p-3.5 rounded-lg border border-border/80 bg-muted/20 space-y-2 md:space-y-2.5 transition-colors">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-1.5 text-xs md:text-sm font-semibold text-foreground">
+                <Bot className="w-3.5 h-3.5 md:w-4 md:h-4 text-muted-foreground" />
+                <span>Tự động trả lời</span>
+              </div>
+              {onToggleAiAutoReply && (
+                <Switch
+                  checked={aiEnabled}
+                  disabled={loading || isTogglingAi}
+                  onCheckedChange={async (checked) => {
+                    setIsTogglingAi(true);
+                    try {
+                      await onToggleAiAutoReply(checked);
+                    } finally {
+                      setIsTogglingAi(false);
+                    }
+                  }}
+                  title={`Bấm để ${aiEnabled ? 'Tắt' : 'Bật'} tự động trả lời`}
+                />
+              )}
+            </div>
+
+            <div className="space-y-1 md:space-y-1.5">
+              <div className="flex items-center gap-1.5 text-[11px] md:text-xs">
+                <span className={`w-1.5 h-1.5 rounded-full ${aiEnabled ? (isRunning ? 'bg-emerald-500' : 'bg-amber-400') : 'bg-muted-foreground'}`} />
+                <span className="font-medium text-foreground">
+                  {!aiEnabled ? 'Đang tắt' : isRunning ? 'Đang hoạt động' : 'Chờ bật Engine'}
+                </span>
+              </div>
+
+              {/* Target thread selector / badge */}
+              <div className="flex items-center justify-between gap-1 pt-0.5 text-[11px] md:text-xs text-muted-foreground">
+                <span className="truncate flex items-center gap-1 min-w-0">
+                  <Link2 className="w-3 h-3 md:w-3.5 md:h-3.5 shrink-0 text-muted-foreground" />
+                  {state.aiTargetThread ? (
+                    <span className="font-mono truncate" title={state.aiTargetThread}>
+                      ID: {state.aiTargetThread.match(/\/t\/([^/?#]+)/i)?.[1] || state.aiTargetThread.replace(/^https?:\/\/(www\.)?facebook\.com\/messages\//i, '')}
+                    </span>
+                  ) : (
+                    <span>Quét toàn bộ hộp thư</span>
+                  )}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setIsAiConfigOpen(true)}
+                  className="text-foreground hover:underline text-[10px] md:text-xs font-medium shrink-0 ml-1"
+                >
+                  {state.aiTargetThread ? 'Đổi' : 'Chỉ định'}
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* 2. Persona Card */}
+          <div className="p-3 md:p-3.5 rounded-lg border border-border/80 bg-muted/20 space-y-2 md:space-y-2.5 transition-colors">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-1.5 text-xs md:text-sm font-semibold text-foreground">
+                <GraduationCap className="w-3.5 h-3.5 md:w-4 md:h-4 text-muted-foreground" />
+                <span>Văn phong hội thoại</span>
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setIsPersonaModalOpen(true)}
+                className="h-6 md:h-7 px-2 md:px-2.5 text-[10px] md:text-xs gap-1 font-medium"
+              >
+                <Pencil className="w-2.5 h-2.5 md:w-3 md:h-3 text-muted-foreground" />
+                <span>Quản lý</span>
+              </Button>
+            </div>
+
+            <div className="space-y-0.5 md:space-y-1">
+              <p className="text-xs md:text-sm font-semibold text-foreground truncate" title={state.activePersonaName || state.learnedPersona?.tone}>
+                {state.activePersonaName || (state.learnedPersona?.tone ? `Văn phong: ${state.learnedPersona.tone}` : 'Mặc định (Tự nhiên)')}
+              </p>
+              <p className="text-[11px] md:text-xs text-muted-foreground truncate">
+                {state.learnedPersona?.pronouns
+                  ? `Xưng hô: ${state.learnedPersona.pronouns}`
+                  : 'Chưa thiết lập cá nhân hoá'}
+              </p>
+            </div>
+          </div>
+
+          {/* 3. Proactive Chat Card */}
+          <div className="p-3 md:p-3.5 rounded-lg border border-border/80 bg-muted/20 space-y-2 md:space-y-2.5 transition-colors">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-1.5 text-xs md:text-sm font-semibold text-foreground">
+                <MessageCircleHeart className="w-3.5 h-3.5 md:w-4 md:h-4 text-muted-foreground" />
+                <span>Chủ động nhắn tin</span>
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setIsProactiveModalOpen(true)}
+                className="h-6 md:h-7 px-2 md:px-2.5 text-[10px] md:text-xs gap-1 font-medium"
+              >
+                <span>Cấu hình</span>
+              </Button>
+            </div>
+
+            <div className="space-y-0.5 md:space-y-1">
+              <div className="flex items-center gap-1.5 text-[11px] md:text-xs">
+                <span className={`w-1.5 h-1.5 rounded-full ${state.proactiveChat?.enabled ? 'bg-emerald-500 animate-pulse' : 'bg-muted-foreground'}`} />
+                <span className="font-medium text-foreground">
+                  {state.proactiveChat?.enabled ? 'Đang bật' : 'Đang tắt'}
+                </span>
+                {state.proactiveChat?.enabled && (
+                  <span className="text-muted-foreground text-[10px] md:text-[11px]">
+                    ({(state.proactiveChat.minIntervalMinutes || 120) / 60}h-{(state.proactiveChat.maxIntervalMinutes || 360) / 60}h)
+                  </span>
+                )}
+              </div>
+              <p className="text-[11px] md:text-xs text-muted-foreground truncate">
+                {state.proactiveChat?.enabled && state.proactiveChat.nextScheduledAt
+                  ? `Lần tới: ${new Date(state.proactiveChat.nextScheduledAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
+                  : 'Tự động mở lời khi rảnh'}
+              </p>
+            </div>
+          </div>
         </div>
       </div>
 
-      {/* AI Conversation Thread Configuration Modal */}
+      {/* ── Modals ── */}
       {onUpdateAiConfig && (
         <AiConfigModal
           isOpen={isAiConfigOpen}
@@ -334,7 +340,6 @@ export const BotStatusCard: React.FC<Props> = ({
         />
       )}
 
-      {/* Persona Learning & Management Modal */}
       <PersonaConfigModal
         isOpen={isPersonaModalOpen}
         onClose={() => setIsPersonaModalOpen(false)}
@@ -343,7 +348,6 @@ export const BotStatusCard: React.FC<Props> = ({
         onSuccess={onPersonaUpdated}
       />
 
-      {/* Proactive Chat Configuration Modal */}
       <ProactiveChatModal
         isOpen={isProactiveModalOpen}
         onClose={() => setIsProactiveModalOpen(false)}
