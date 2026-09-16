@@ -1,7 +1,6 @@
 import React from 'react';
 import { CalendarClock, Hash } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import type { UpcomingSlot } from '@messenger/shared';
 
 interface Props {
@@ -11,15 +10,15 @@ interface Props {
 
 export const UpcomingScheduleCard: React.FC<Props> = ({ slots, loading }) => {
   return (
-    <Card className="h-full flex flex-col">
+    <Card className="flex flex-col">
       <CardHeader className="flex flex-row items-center justify-between pb-4 border-b">
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-lg bg-muted border flex items-center justify-center">
-            <CalendarClock className="w-4 h-4 text-foreground" />
+        <div className="flex items-center gap-2">
+          <div className="w-8 h-8 rounded bg-primary/10 flex items-center justify-center text-primary">
+            <CalendarClock size={16} />
           </div>
           <CardTitle className="text-lg">Upcoming</CardTitle>
         </div>
-        <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground bg-muted px-2 py-1 rounded">
+        <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground bg-muted px-2 py-1 rounded">
           Next {slots.length}
         </span>
       </CardHeader>
@@ -34,7 +33,7 @@ export const UpcomingScheduleCard: React.FC<Props> = ({ slots, loading }) => {
             No upcoming schedules.
           </div>
         ) : (
-          <ScrollArea className="h-[350px] pr-4 -mr-4">
+          <div className="max-h-[350px] overflow-y-auto pr-2 -mr-2 pb-2">
             <div className="space-y-3">
               {slots.map((slot, index) => (
                 <div key={index} className="p-3 rounded-lg border bg-card hover:bg-muted/30 transition-colors flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -57,7 +56,7 @@ export const UpcomingScheduleCard: React.FC<Props> = ({ slots, loading }) => {
                 </div>
               ))}
             </div>
-          </ScrollArea>
+          </div>
         )}
       </CardContent>
     </Card>

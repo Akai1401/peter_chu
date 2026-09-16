@@ -4,7 +4,6 @@ import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import type { AuditLog, ExecutionLog } from '@messenger/shared';
 
 interface Props {
@@ -139,7 +138,7 @@ export const LogViewer: React.FC<Props> = ({
       </CardHeader>
 
       <CardContent className="pt-4 sm:pt-6">
-        <ScrollArea className="h-[500px] pr-4 -mr-4">
+        <div className="max-h-[500px] overflow-y-auto pr-2 -mr-2 pb-2">
           <div className="space-y-3">
             {tab === 'execution' ? (
               filteredExecLogs.length === 0 ? (
@@ -237,7 +236,7 @@ export const LogViewer: React.FC<Props> = ({
               )
             )}
           </div>
-        </ScrollArea>
+        </div>
       </CardContent>
     </Card>
   );
