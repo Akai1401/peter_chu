@@ -25,6 +25,7 @@ export interface Reminder {
   maxRuns?: number;
   runCount?: number;
   scheduleCron?: string | null;
+  targetDate?: string | null; // e.g. "2026-09-17"
   active: boolean;
   windowStart: string; // e.g. "18:00"
   windowEnd: string; // e.g. "22:00"

@@ -12,6 +12,7 @@ export const CreateReminderSchema = z.object({
   callDurationSeconds: z.number().int().min(5).max(300).default(30),
   maxRuns: z.number().int().min(0).default(0),
   scheduleCron: z.string().optional().nullable(),
+  targetDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().nullable(),
   active: z.boolean().default(true),
   windowStart: TimeStringSchema.default('00:00'),
   windowEnd: TimeStringSchema.default('23:59'),

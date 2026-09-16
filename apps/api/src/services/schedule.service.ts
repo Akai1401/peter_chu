@@ -36,7 +36,8 @@ export class ScheduleService {
         reminder.windowStart,
         reminder.windowEnd,
         reminder.intervalMinutes,
-        maxSlotsForReminder
+        maxSlotsForReminder,
+        reminder.targetDate
       );
 
       for (const slot of slots) {

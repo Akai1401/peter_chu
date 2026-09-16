@@ -11,7 +11,8 @@ import {
   Video,
   MoreVertical,
   Power,
-  Repeat
+  Repeat,
+  Calendar
 } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -258,9 +259,19 @@ export const ReminderList: React.FC<Props> = ({
                     </div>
                     <div className="flex items-center gap-1 border px-2 py-1 rounded-md bg-muted whitespace-nowrap">
                       <Clock className="h-3 w-3 shrink-0" />
-                      {reminder.windowStart}–{reminder.windowEnd} ({reminder.intervalMinutes}m)
+                      {reminder.maxRuns === 1 || reminder.windowStart === reminder.windowEnd ? (
+                        <span>{reminder.windowStart} (1 lần)</span>
+                      ) : (
+                        <span>{reminder.windowStart}–{reminder.windowEnd} ({reminder.intervalMinutes}m)</span>
+                      )}
                     </div>
-                    {Boolean(reminder.maxRuns && reminder.maxRuns > 0) && (
+                    {Boolean(reminder.targetDate) && (
+                      <div className="flex items-center gap-1 border px-2 py-1 rounded-md bg-muted whitespace-nowrap">
+                        <Calendar className="h-3 w-3 shrink-0" />
+                        <span>{reminder.targetDate}</span>
+                      </div>
+                    )}
+                    {Boolean(reminder.maxRuns && reminder.maxRuns > 1) && (
                       <div className="flex items-center gap-1 border px-2 py-1 rounded-md bg-muted whitespace-nowrap">
                         <Repeat className="h-3 w-3 shrink-0" />
                         {reminder.runCount || 0}/{reminder.maxRuns} runs

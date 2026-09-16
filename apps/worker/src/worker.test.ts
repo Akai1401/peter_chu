@@ -41,6 +41,7 @@ function setupTestDb(): Database.Database {
       max_runs INTEGER NOT NULL DEFAULT 0,
       run_count INTEGER NOT NULL DEFAULT 0,
       schedule_cron TEXT,
+      target_date TEXT,
       active INTEGER NOT NULL DEFAULT 1,
       window_start TEXT NOT NULL DEFAULT '18:00',
       window_end TEXT NOT NULL DEFAULT '22:00',

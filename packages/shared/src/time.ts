@@ -111,7 +111,8 @@ export function getUpcomingSlots(
   windowStart: string = '00:00',
   windowEnd: string = '23:59',
   intervalMinutes: number = 10,
-  maxSlots: number = 10
+  maxSlots: number = 10,
+  targetDate?: string | null
 ): Array<{ slotLocal: string; slotIso: string; minutesFromNow: number }> {
   const slots: Array<{ slotLocal: string; slotIso: string; minutesFromNow: number }> = [];
   const startMinutes = timeStringToMinutes(windowStart);
@@ -141,14 +142,25 @@ export function getUpcomingSlots(
     }
 
     if (inWindow) {
-      const diff = (currMin >= startMinutes ? currMin - startMinutes : currMin + 24 * 60 - startMinutes);
-      if (diff % intervalMinutes === 0) {
-        const minutesDiff = Math.round((cursor.getTime() - fromDate.getTime()) / (60 * 1000));
-        slots.push({
-          slotLocal: `${parts.formatted.substring(0, 16)} ICT`,
-          slotIso: cursor.toISOString(),
-          minutesFromNow: Math.max(0, minutesDiff)
-        });
+      let dateMatch = true;
+      if (targetDate) {
+        const pad = (n: number) => n.toString().padStart(2, '0');
+        const cursorDateStr = `${parts.year}-${pad(parts.month)}-${pad(parts.day)}`;
+        if (cursorDateStr !== targetDate) {
+          dateMatch = false;
+        }
+      }
+
+      if (dateMatch) {
+        const diff = (currMin >= startMinutes ? currMin - startMinutes : currMin + 24 * 60 - startMinutes);
+        if (diff % intervalMinutes === 0) {
+          const minutesDiff = Math.round((cursor.getTime() - fromDate.getTime()) / (60 * 1000));
+          slots.push({
+            slotLocal: `${parts.formatted.substring(0, 16)} ICT`,
+            slotIso: cursor.toISOString(),
+            minutesFromNow: Math.max(0, minutesDiff)
+          });
+        }
       }
     }
 

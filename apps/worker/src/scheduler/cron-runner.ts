@@ -20,6 +20,7 @@ export interface ReminderRow {
   call_duration_seconds?: number;
   max_runs?: number;
   run_count?: number;
+  target_date?: string | null;
   active: number;
   window_start: string;
   window_end: string;
@@ -118,7 +119,7 @@ export class CronRunner {
     // 3. Query active reminders
     const reminders = this.db.prepare(`
       SELECT id, title, content, target_thread_id, action_type, call_duration_seconds, active,
-             max_runs, run_count, window_start, window_end, interval_minutes
+             max_runs, run_count, target_date, window_start, window_end, interval_minutes
       FROM reminders
       WHERE active = 1
     `).all() as ReminderRow[];
@@ -129,6 +130,15 @@ export class CronRunner {
         this.db.prepare('UPDATE reminders SET active = 0 WHERE id = ?').run(reminder.id);
         stats.skipped += 1;
         continue;
+      }
+
+      // Check if specific target date is set and does not match today's date in ICT
+      if (reminder.target_date) {
+        const todayIct = getCurrentSlotKey(now).substring(0, 10);
+        if (reminder.target_date !== todayIct) {
+          stats.skipped += 1;
+          continue;
+        }
       }
 
       stats.processed += 1;

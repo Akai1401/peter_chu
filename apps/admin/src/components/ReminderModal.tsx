@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Sparkles, MessageCircle, PhoneCall, Video, Settings2 } from 'lucide-react';
+import { MessageCircle, PhoneCall, Video, Settings2 } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -13,6 +13,9 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Switch } from '@/components/ui/switch';
+import { Badge } from '@/components/ui/badge';
+import { DatePicker } from '@/components/ui/date-picker';
+import { TimePicker } from '@/components/ui/time-picker';
 import type { Reminder, CreateReminderInput } from '@messenger/shared';
 
 interface Props {
@@ -35,9 +38,12 @@ export const ReminderModal: React.FC<Props> = ({
   const [targetThreadId, setTargetThreadId] = useState('');
   const [actionType, setActionType] = useState<any>('MESSAGE');
   const [callDurationSeconds, setCallDurationSeconds] = useState(25);
+  const [isRepeat, setIsRepeat] = useState(false);
+  const [targetDate, setTargetDate] = useState('');
+  const [runTime, setRunTime] = useState('09:00');
   const [maxRuns, setMaxRuns] = useState<number>(0);
-  const [windowStart, setWindowStart] = useState('00:00');
-  const [windowEnd, setWindowEnd] = useState('23:59');
+  const [windowStart, setWindowStart] = useState('08:00');
+  const [windowEnd, setWindowEnd] = useState('22:00');
   const [intervalMinutes, setIntervalMinutes] = useState(10);
   const [active, setActive] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -49,9 +55,14 @@ export const ReminderModal: React.FC<Props> = ({
       setTargetThreadId(initialData.targetThreadId);
       setActionType(initialData.actionType || 'MESSAGE');
       setCallDurationSeconds(initialData.callDurationSeconds || 25);
+
+      const isSingle = initialData.maxRuns === 1 && (initialData.windowStart === initialData.windowEnd || !initialData.windowEnd);
+      setIsRepeat(!isSingle);
+      setTargetDate(initialData.targetDate || '');
+      setRunTime(initialData.windowStart || '09:00');
       setMaxRuns(initialData.maxRuns || 0);
-      setWindowStart(initialData.windowStart || '00:00');
-      setWindowEnd(initialData.windowEnd || '23:59');
+      setWindowStart(initialData.windowStart || '08:00');
+      setWindowEnd(initialData.windowEnd || '22:00');
       setIntervalMinutes(initialData.intervalMinutes || 10);
       setActive(initialData.active);
     } else if (isOpen) {
@@ -60,9 +71,15 @@ export const ReminderModal: React.FC<Props> = ({
       setTargetThreadId('');
       setActionType('MESSAGE');
       setCallDurationSeconds(25);
+      setIsRepeat(false);
+
+      const today = new Date();
+      const pad = (n: number) => n.toString().padStart(2, '0');
+      setTargetDate(`${today.getFullYear()}-${pad(today.getMonth() + 1)}-${pad(today.getDate())}`);
+      setRunTime('09:00');
       setMaxRuns(0);
-      setWindowStart('00:00');
-      setWindowEnd('23:59');
+      setWindowStart('08:00');
+      setWindowEnd('22:00');
       setIntervalMinutes(10);
       setActive(true);
     }
@@ -72,15 +89,31 @@ export const ReminderModal: React.FC<Props> = ({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!title.trim() || !targetThreadId.trim()) {
-      setError('Please fill in all required fields');
+      setError('Vui lòng điền tiêu đề và Thread ID');
       return;
     }
 
     const isMessageRequired = actionType === 'MESSAGE' || actionType === 'MESSAGE_AND_CALL';
     if (isMessageRequired && !content.trim()) {
-      setError('Please enter message content');
+      setError('Vui lòng nhập nội dung tin nhắn');
       return;
     }
+
+    if (!isRepeat && !runTime.trim()) {
+      setError('Vui lòng chọn giờ chạy');
+      return;
+    }
+
+    if (isRepeat && (!windowStart.trim() || !windowEnd.trim())) {
+      setError('Vui lòng chọn khung giờ bắt đầu và kết thúc');
+      return;
+    }
+
+    const finalMaxRuns = isRepeat ? (Number(maxRuns) || 0) : 1;
+    const finalWindowStart = isRepeat ? windowStart.trim() : runTime.trim();
+    const finalWindowEnd = isRepeat ? windowEnd.trim() : runTime.trim();
+    const finalInterval = isRepeat ? (Number(intervalMinutes) || 10) : 1;
+    const finalTargetDate = targetDate.trim() ? targetDate.trim() : null;
 
     try {
       await onSubmit({
@@ -89,14 +122,15 @@ export const ReminderModal: React.FC<Props> = ({
         targetThreadId: targetThreadId.trim(),
         actionType,
         callDurationSeconds: Number(callDurationSeconds),
-        maxRuns: Number(maxRuns) || 0,
-        windowStart,
-        windowEnd,
-        intervalMinutes: Number(intervalMinutes),
+        maxRuns: finalMaxRuns,
+        targetDate: finalTargetDate,
+        windowStart: finalWindowStart,
+        windowEnd: finalWindowEnd,
+        intervalMinutes: finalInterval,
         active
       });
     } catch (err: any) {
-      setError(err.message || 'Failed to save reminder');
+      setError(err.message || 'Lỗi khi lưu cấu hình');
     }
   };
 
@@ -109,39 +143,40 @@ export const ReminderModal: React.FC<Props> = ({
 
   const formContentNode = (
     <form id="reminder-form" onSubmit={handleSubmit} className="flex flex-col">
-      <div className="px-5 py-3.5 sm:px-6 sm:py-4 space-y-4 sm:space-y-5">
+      <div className="px-5 py-3.5 sm:px-6 sm:py-4 space-y-4">
         {error && (
-          <div className="p-3 bg-destructive/10 border border-destructive/20 text-destructive rounded-md text-sm font-medium">
+          <div className="p-2.5 bg-destructive/10 border border-destructive/20 text-destructive rounded-lg text-xs font-medium">
             {error}
           </div>
         )}
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div className="space-y-2">
-            <Label htmlFor="title">Title</Label>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+          <div className="space-y-1.5">
+            <Label htmlFor="title" className="text-xs font-medium">Tiêu đề</Label>
             <Input
               id="title"
               required
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              placeholder="e.g. Daily Standup"
+              placeholder="e.g. Nhắc việc hàng ngày"
+              className="h-9 text-xs"
             />
           </div>
-          <div className="space-y-2">
-            <Label htmlFor="target">Target Thread ID</Label>
+          <div className="space-y-1.5">
+            <Label htmlFor="target" className="text-xs font-medium">Target Thread ID / Link</Label>
             <Input
               id="target"
               required
               value={targetThreadId}
               onChange={(e) => setTargetThreadId(e.target.value)}
               placeholder="e.g. 1000123456789"
-              className="font-mono text-sm"
+              className="font-mono text-xs h-9"
             />
           </div>
         </div>
 
-        <div className="space-y-3">
-          <Label>Action Type</Label>
+        <div className="space-y-1.5">
+          <Label className="text-xs font-medium">Hành động</Label>
           <div className="grid grid-cols-4 gap-2">
             {actionTypes.map(type => (
               <Button
@@ -149,7 +184,7 @@ export const ReminderModal: React.FC<Props> = ({
                 type="button"
                 variant={actionType === type.id ? "default" : "outline"}
                 onClick={() => setActionType(type.id)}
-                className="h-auto py-2.5 sm:py-3 flex flex-col items-center justify-center gap-1.5 rounded-lg border transition-all"
+                className="h-auto py-2 flex flex-col items-center justify-center gap-1 rounded-lg border transition-all"
               >
                 {type.icon}
                 <span className="text-[10px] font-semibold uppercase tracking-wider">{type.label}</span>
@@ -158,13 +193,10 @@ export const ReminderModal: React.FC<Props> = ({
           </div>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          {actionType !== 'MESSAGE' && (
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 bg-muted/50 rounded-lg border">
-              <div>
-                <Label htmlFor="duration" className="font-semibold text-xs sm:text-sm">Ring Duration</Label>
-                <p className="text-[11px] text-muted-foreground">Seconds (5 - 180s)</p>
-              </div>
+        {actionType !== 'MESSAGE' && (
+          <div className="flex items-center justify-between p-2.5 bg-muted/30 rounded-lg border">
+            <Label htmlFor="duration" className="text-xs font-medium">Thời lượng chuông</Label>
+            <div className="flex items-center gap-1.5">
               <Input
                 id="duration"
                 type="number"
@@ -172,33 +204,18 @@ export const ReminderModal: React.FC<Props> = ({
                 max={180}
                 value={callDurationSeconds}
                 onChange={(e) => setCallDurationSeconds(Number(e.target.value))}
-                className="w-full sm:w-20 bg-background text-center font-mono"
+                className="w-16 bg-background text-center font-mono h-8 text-xs"
               />
+              <span className="text-xs text-muted-foreground font-medium">giây</span>
             </div>
-          )}
-
-          <div className={`flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 bg-muted/50 rounded-lg border ${actionType === 'MESSAGE' ? 'sm:col-span-2' : ''}`}>
-            <div>
-              <Label htmlFor="maxRuns" className="font-semibold text-xs sm:text-sm">Max Runs</Label>
-              <p className="text-[11px] text-muted-foreground">0 = unlimited action executions</p>
-            </div>
-            <Input
-              id="maxRuns"
-              type="number"
-              min={0}
-              max={9999}
-              value={maxRuns}
-              onChange={(e) => setMaxRuns(Math.max(0, parseInt(e.target.value) || 0))}
-              className="w-full sm:w-24 bg-background text-center font-mono"
-            />
           </div>
-        </div>
+        )}
 
         {(actionType === 'MESSAGE' || actionType === 'MESSAGE_AND_CALL') && (
-          <div className="space-y-2">
+          <div className="space-y-1.5">
             <div className="flex justify-between items-center">
-              <Label htmlFor="content">Message Content</Label>
-              <span className="text-xs text-muted-foreground">{content.length}/2000</span>
+              <Label htmlFor="content" className="text-xs font-medium">Nội dung tin nhắn</Label>
+              <span className="text-[11px] text-muted-foreground">{content.length}/2000</span>
             </div>
             <Textarea
               id="content"
@@ -206,67 +223,139 @@ export const ReminderModal: React.FC<Props> = ({
               rows={3}
               value={content}
               onChange={(e) => setContent(e.target.value)}
-              placeholder="Enter message content..."
-              className="resize-y min-h-[80px]"
+              placeholder="Nhập nội dung tin nhắn gửi..."
+              className="resize-y min-h-[75px] text-xs"
             />
           </div>
         )}
 
-        <div className="p-3 sm:p-4 bg-muted/30 rounded-lg border space-y-4">
+        {/* ── Repeat & Schedule Section ── */}
+        <div className="p-3.5 sm:p-4 bg-muted/30 rounded-xl border space-y-3.5">
+          {/* Header toggle */}
           <div className="flex items-center justify-between">
-            <h4 className="text-sm font-semibold">Schedule Window</h4>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="h-7 text-[10px] uppercase tracking-wider gap-1"
-              onClick={() => { setWindowStart('00:00'); setWindowEnd('23:59'); setIntervalMinutes(10); }}
-            >
-              <Sparkles className="h-3 w-3" /> All Day (Default)
-            </Button>
+            <div className="flex items-center gap-2">
+              <Label htmlFor="repeat-toggle" className="text-xs font-semibold cursor-pointer">
+                Lặp lại
+              </Label>
+              <Badge variant={isRepeat ? "info" : "secondary"} className="text-[10px] px-1.5 py-0 h-4 font-medium">
+                {isRepeat ? 'Bật' : 'Tắt (Chạy 1 lần)'}
+              </Badge>
+            </div>
+            <Switch
+              id="repeat-toggle"
+              checked={isRepeat}
+              onCheckedChange={setIsRepeat}
+            />
           </div>
-          <div className="grid grid-cols-3 gap-2 sm:gap-3">
-            <div className="space-y-2">
-              <Label htmlFor="start" className="text-xs sm:text-sm">Start</Label>
-              <Input
-                id="start"
-                type="text"
-                value={windowStart}
-                onChange={(e) => setWindowStart(e.target.value)}
-                className="text-center font-mono text-xs sm:text-sm px-1 sm:px-3"
-              />
+
+          {!isRepeat ? (
+            /* Chạy 1 lần: Chọn Ngày & Giờ chạy */
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1 border-t">
+              <div className="space-y-1.5">
+                <Label className="text-xs font-medium">Ngày chạy</Label>
+                <DatePicker
+                  value={targetDate}
+                  onChange={setTargetDate}
+                  className="w-full"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs font-medium">Giờ chạy</Label>
+                <TimePicker
+                  value={runTime}
+                  onChange={setRunTime}
+                  className="w-full"
+                />
+              </div>
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="end" className="text-xs sm:text-sm">End</Label>
-              <Input
-                id="end"
-                type="text"
-                value={windowEnd}
-                onChange={(e) => setWindowEnd(e.target.value)}
-                className="text-center font-mono text-xs sm:text-sm px-1 sm:px-3"
-              />
+          ) : (
+            /* Lặp lại: Khung giờ + Khoảng cách + Số lần lặp max */
+            <div className="space-y-3 pt-1 border-t">
+              {/* Khung giờ */}
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <Label className="text-xs font-medium">Khung giờ chạy</Label>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-5 text-[11px] px-1.5 font-medium text-primary hover:text-primary hover:bg-primary/10"
+                    onClick={() => { setWindowStart('00:00'); setWindowEnd('23:59'); }}
+                  >
+                    Cả ngày (00:00 - 23:59)
+                  </Button>
+                </div>
+                <div className="grid grid-cols-2 gap-2.5">
+                  <div className="space-y-1">
+                    <span className="text-[11px] text-muted-foreground font-medium">Bắt đầu</span>
+                    <TimePicker
+                      value={windowStart}
+                      onChange={setWindowStart}
+                      className="w-full"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <span className="text-[11px] text-muted-foreground font-medium">Kết thúc</span>
+                    <TimePicker
+                      value={windowEnd}
+                      onChange={setWindowEnd}
+                      className="w-full"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Tần suất lặp & Số lần tối đa */}
+              <div className="grid grid-cols-2 gap-2.5">
+                <div className="space-y-1">
+                  <Label htmlFor="interval" className="text-xs font-medium">
+                    Mỗi lần cách nhau
+                  </Label>
+                  <div className="flex items-center gap-1.5">
+                    <Input
+                      id="interval"
+                      type="number"
+                      min={1}
+                      max={1440}
+                      value={intervalMinutes}
+                      onChange={(e) => setIntervalMinutes(Math.max(1, Number(e.target.value) || 1))}
+                      className="font-mono text-xs text-center bg-background h-9"
+                    />
+                    <span className="text-xs text-muted-foreground shrink-0 font-medium">phút</span>
+                  </div>
+                </div>
+
+                <div className="space-y-1">
+                  <Label htmlFor="maxRuns" className="text-xs font-medium">
+                    Số lần lặp max
+                  </Label>
+                  <div className="flex items-center gap-1.5">
+                    <Input
+                      id="maxRuns"
+                      type="number"
+                      min={0}
+                      max={9999}
+                      value={maxRuns}
+                      onChange={(e) => setMaxRuns(Math.max(0, parseInt(e.target.value, 10) || 0))}
+                      placeholder="0 = vô hạn"
+                      className="font-mono text-xs text-center bg-background h-9"
+                    />
+                    <span className="text-xs text-muted-foreground shrink-0 font-medium">lần</span>
+                  </div>
+                </div>
+              </div>
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="interval" className="text-xs sm:text-sm truncate">Interval(m)</Label>
-              <Input
-                id="interval"
-                type="number"
-                value={intervalMinutes}
-                onChange={(e) => setIntervalMinutes(Number(e.target.value))}
-                className="text-center font-mono text-xs sm:text-sm px-1 sm:px-3"
-              />
-            </div>
-          </div>
+          )}
         </div>
 
-        <div className="flex items-center gap-3 pt-2 pb-6 sm:pb-0">
+        <div className="flex items-center gap-2.5 pt-1">
           <Switch 
             id="active" 
             checked={active}
             onCheckedChange={setActive}
           />
-          <Label htmlFor="active" className="cursor-pointer">
-            Active Status
+          <Label htmlFor="active" className="text-xs font-medium cursor-pointer">
+            Kích hoạt ngay (Active)
           </Label>
         </div>
       </div>
@@ -275,22 +364,22 @@ export const ReminderModal: React.FC<Props> = ({
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="w-[95vw] sm:max-w-xl max-h-[90vh] flex flex-col p-0 gap-0 overflow-hidden rounded-xl">
+      <DialogContent className="w-[95vw] sm:max-w-lg max-h-[90vh] flex flex-col p-0 gap-0 overflow-hidden rounded-xl">
         <DialogHeader className="px-5 py-3.5 sm:px-6 sm:py-4 border-b shrink-0 text-left space-y-1">
-          <DialogTitle className="text-lg font-semibold">{initialData ? 'Edit Configuration' : 'New Configuration'}</DialogTitle>
+          <DialogTitle className="text-base font-semibold">{initialData ? 'Sửa cấu hình' : 'Tạo nhắc nhở mới'}</DialogTitle>
           <DialogDescription className="text-xs text-muted-foreground">
-            Configure the automated message and call behavior for this schedule.
+            Thiết lập tin nhắn, cuộc gọi và lịch trình gửi tự động.
           </DialogDescription>
         </DialogHeader>
         <div className="overflow-y-auto flex-1 min-h-0">
           {formContentNode}
         </div>
-        <DialogFooter className="px-5 py-3 sm:px-6 sm:py-4 shrink-0 border-t flex-col sm:flex-row gap-2 sm:gap-0">
-          <Button type="button" variant="outline" onClick={onClose} disabled={loading} className="w-full sm:w-24">
-            Cancel
+        <DialogFooter className="px-5 py-3 sm:px-6 sm:py-3.5 shrink-0 border-t flex-col sm:flex-row gap-2 sm:gap-0">
+          <Button type="button" variant="outline" onClick={onClose} disabled={loading} className="w-full sm:w-20 text-xs h-9">
+            Hủy
           </Button>
-          <Button type="submit" form="reminder-form" disabled={loading} className="w-full sm:w-auto">
-            {loading ? 'Saving...' : initialData ? 'Save Configuration' : 'Create Configuration'}
+          <Button type="submit" form="reminder-form" disabled={loading} className="w-full sm:w-auto text-xs h-9 font-medium">
+            {loading ? 'Đang lưu...' : initialData ? 'Lưu thay đổi' : 'Tạo nhắc nhở'}
           </Button>
         </DialogFooter>
       </DialogContent>
