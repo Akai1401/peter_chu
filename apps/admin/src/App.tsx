@@ -97,20 +97,6 @@ export function App() {
     }
   };
 
-  const handleToggleDryRun = async (dryRun: boolean) => {
-    try {
-      setLoading(true);
-      const updated = await api.setDryRun(dryRun);
-      setBotState(updated);
-      showToast(`Dry Run mode ${dryRun ? 'enabled' : 'disabled'}`, 'info');
-      await loadData(true);
-    } catch (err: any) {
-      showToast(err.message || 'Failed to update Dry Run', 'error');
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const handleToggleReminder = async (id: string) => {
     try {
       const updated = await api.toggleReminder(id);
@@ -211,7 +197,6 @@ export function App() {
         <BotStatusCard
           state={botState}
           onAction={handleBotAction}
-          onToggleDryRun={handleToggleDryRun}
           loading={loading}
         />
 

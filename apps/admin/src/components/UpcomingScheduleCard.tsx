@@ -8,6 +8,17 @@ interface Props {
   loading: boolean;
 }
 
+const formatTimeRemaining = (minutes: number) => {
+  if (minutes === 0) return 'DUE NOW';
+  if (minutes < 60) return `IN ~${minutes}M`;
+  const hours = Math.floor(minutes / 60);
+  const remainingMins = minutes % 60;
+  if (remainingMins === 0) {
+    return `IN ~${hours}H`;
+  }
+  return `IN ~${hours}H ${remainingMins}M`;
+};
+
 export const UpcomingScheduleCard: React.FC<Props> = ({ slots, loading }) => {
   return (
     <Card className="flex flex-col">
@@ -47,7 +58,7 @@ export const UpcomingScheduleCard: React.FC<Props> = ({ slots, loading }) => {
 
                   <div className="flex sm:flex-col items-center sm:items-end justify-between sm:justify-center shrink-0 pt-2 sm:pt-0 mt-1 sm:mt-0 border-t sm:border-t-0">
                     <span className="text-sm font-bold text-primary">
-                      {slot.minutesFromNow === 0 ? 'DUE NOW' : `IN ~${slot.minutesFromNow}M`}
+                      {formatTimeRemaining(slot.minutesFromNow)}
                     </span>
                     <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
                       {slot.slotLocal}

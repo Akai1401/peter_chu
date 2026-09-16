@@ -6,7 +6,7 @@ CREATE TABLE IF NOT EXISTS bot_state (
   status TEXT NOT NULL DEFAULT 'STOPPED', -- 'RUNNING', 'STOPPED', 'PAUSED', 'EMERGENCY_STOPPED'
   session_status TEXT NOT NULL DEFAULT 'UNKNOWN', -- 'UNKNOWN', 'LOGGED_IN', 'SESSION_EXPIRED', 'UNAUTHENTICATED'
   emergency_stop INTEGER NOT NULL DEFAULT 0,
-  dry_run INTEGER NOT NULL DEFAULT 1,
+  dry_run INTEGER NOT NULL DEFAULT 0,
   last_heartbeat TEXT,
   lock_holder_id TEXT,
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -14,7 +14,7 @@ CREATE TABLE IF NOT EXISTS bot_state (
 
 -- Initialize singleton if not exists
 INSERT OR IGNORE INTO bot_state (id, status, session_status, emergency_stop, dry_run, updated_at)
-VALUES (1, 'STOPPED', 'UNKNOWN', 0, 1, CURRENT_TIMESTAMP);
+VALUES (1, 'STOPPED', 'UNKNOWN', 0, 0, CURRENT_TIMESTAMP);
 
 -- Reminders table
 CREATE TABLE IF NOT EXISTS reminders (
@@ -24,10 +24,12 @@ CREATE TABLE IF NOT EXISTS reminders (
   target_thread_id TEXT NOT NULL,
   action_type TEXT NOT NULL DEFAULT 'MESSAGE', -- 'MESSAGE', 'AUDIO_CALL', 'VIDEO_CALL', 'MESSAGE_AND_CALL'
   call_duration_seconds INTEGER NOT NULL DEFAULT 30,
+  max_runs INTEGER NOT NULL DEFAULT 0,
+  run_count INTEGER NOT NULL DEFAULT 0,
   schedule_cron TEXT,
   active INTEGER NOT NULL DEFAULT 1,
-  window_start TEXT NOT NULL DEFAULT '18:00',
-  window_end TEXT NOT NULL DEFAULT '22:00',
+  window_start TEXT NOT NULL DEFAULT '00:00',
+  window_end TEXT NOT NULL DEFAULT '23:59',
   interval_minutes INTEGER NOT NULL DEFAULT 10,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP

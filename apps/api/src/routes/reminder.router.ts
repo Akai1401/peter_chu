@@ -146,32 +146,8 @@ export function createReminderRouter(
       // Record audit
       logService.logAudit('TEST_REMINDER_TRIGGER', req.body.actor || 'admin_ui', {
         reminderId: reminder.id,
-        title: reminder.title,
-        isDryRun
+        title: reminder.title
       });
-
-      if (isDryRun) {
-        // Record execution simulation
-        const log = logService.logExecution({
-          reminderId: reminder.id,
-          threadId: reminder.targetThreadId,
-          status: 'DRY_RUN',
-          idempotencyKey,
-          messagePreview: preview,
-          details: {
-            testTrigger: true,
-            mode: 'SIMULATION_DRY_RUN',
-            executedAt: new Date().toISOString()
-          }
-        });
-
-        res.json({
-          success: true,
-          message: 'Test reminder simulated successfully (DRY_RUN mode: no real message sent).',
-          execution: log
-        });
-        return;
-      }
 
       // LIVE MODE: Send real message through worker
       if (botState.sessionStatus === 'UNAUTHENTICATED') {
@@ -184,13 +160,14 @@ export function createReminderRouter(
 
       const db = getDb();
       const testId = randomUUID();
-      const actionType = req.body.actionType || reminder.actionType || 'MESSAGE';
+      const actionType = req.body.actionType || 'MESSAGE';
       const callDurationSeconds = req.body.callDurationSeconds || reminder.callDurationSeconds || 25;
+      const testContent = (reminder.content && reminder.content.trim()) || `[Test] ${reminder.title}`;
 
       db.prepare(`
         INSERT INTO test_dispatch_queue (id, reminder_id, target_thread_id, content, action_type, call_duration_seconds, status)
         VALUES (?, ?, ?, ?, ?, ?, 'PENDING')
-      `).run(testId, reminder.id, reminder.targetThreadId, reminder.content, actionType, callDurationSeconds);
+      `).run(testId, reminder.id, reminder.targetThreadId, testContent, actionType, callDurationSeconds);
 
       // Wait up to 35 seconds for worker to process
       const start = Date.now();
@@ -270,33 +247,8 @@ export function createReminderRouter(
         reminderId: reminder.id,
         title: reminder.title,
         callType,
-        durationSeconds,
-        isDryRun
+        durationSeconds
       });
-
-      if (isDryRun) {
-        const log = logService.logExecution({
-          reminderId: reminder.id,
-          threadId: reminder.targetThreadId,
-          status: 'DRY_RUN',
-          idempotencyKey,
-          messagePreview: `[Mô phỏng gọi ${callLabel} Messenger (${durationSeconds}s)]`,
-          details: {
-            testTrigger: true,
-            callType,
-            durationSeconds,
-            mode: 'SIMULATION_DRY_RUN',
-            executedAt: new Date().toISOString()
-          }
-        });
-
-        res.json({
-          success: true,
-          message: `Mô phỏng cuộc gọi ${callLabel} thành công (DRY_RUN: không thực hiện cuộc gọi thật).`,
-          execution: log
-        });
-        return;
-      }
 
       // LIVE MODE: Call through worker
       if (botState.sessionStatus === 'UNAUTHENTICATED') {

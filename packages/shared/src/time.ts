@@ -57,8 +57,8 @@ export function timeStringToMinutes(timeStr: string): number {
  */
 export function isWithinWindow(
   date: Date,
-  windowStart: string = '18:00',
-  windowEnd: string = '22:00'
+  windowStart: string = '00:00',
+  windowEnd: string = '23:59'
 ): boolean {
   const parts = getLocalTimeParts(date);
   const currentMinutes = parts.hour * 60 + parts.minute;
@@ -74,12 +74,12 @@ export function isWithinWindow(
 
 /**
  * Check if current time matches the interval from windowStart
- * e.g. windowStart 18:00, interval 10 => 18:00, 18:10, 18:20, ..., 22:00
+ * e.g. windowStart 00:00, interval 10 => 00:00, 00:10, 00:20, ..., 23:50
  */
 export function isSlotTriggerMinute(
   date: Date,
-  windowStart: string = '18:00',
-  windowEnd: string = '22:00',
+  windowStart: string = '00:00',
+  windowEnd: string = '23:59',
   intervalMinutes: number = 10
 ): boolean {
   if (!isWithinWindow(date, windowStart, windowEnd)) {
@@ -108,8 +108,8 @@ export function getCurrentSlotKey(date: Date = new Date()): string {
  */
 export function getUpcomingSlots(
   fromDate: Date = new Date(),
-  windowStart: string = '18:00',
-  windowEnd: string = '22:00',
+  windowStart: string = '00:00',
+  windowEnd: string = '23:59',
   intervalMinutes: number = 10,
   maxSlots: number = 10
 ): Array<{ slotLocal: string; slotIso: string; minutesFromNow: number }> {

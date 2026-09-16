@@ -8,8 +8,10 @@ import {
   Plus,
   Hash,
   PhoneCall,
+  Video,
   MoreVertical,
-  Power
+  Power,
+  Repeat
 } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -45,7 +47,7 @@ export const ReminderList: React.FC<Props> = ({
   loading
 }) => {
   const [testingId, setTestingId] = useState<string | null>(null);
-  const [callingId, setCallingId] = useState<string | null>(null);
+  const [callingState, setCallingState] = useState<{ id: string; type: 'AUDIO' | 'VIDEO' } | null>(null);
 
   const handleTestClick = async (id: string) => {
     setTestingId(id);
@@ -57,11 +59,11 @@ export const ReminderList: React.FC<Props> = ({
   };
 
   const handleCallClick = async (id: string, callType: 'AUDIO' | 'VIDEO' = 'AUDIO') => {
-    setCallingId(id);
+    setCallingState({ id, type: callType });
     try {
       await onCall(id, callType);
     } finally {
-      setCallingId(null);
+      setCallingState(null);
     }
   };
 
@@ -97,7 +99,9 @@ export const ReminderList: React.FC<Props> = ({
           <div className="grid gap-4">
             {reminders.map((reminder) => {
               const isTesting = testingId === reminder.id;
-              const isCalling = callingId === reminder.id;
+              const isCallingAudio = callingState?.id === reminder.id && callingState.type === 'AUDIO';
+              const isCallingVideo = callingState?.id === reminder.id && callingState.type === 'VIDEO';
+              const isAnyActionBusy = isTesting || isCallingAudio || isCallingVideo;
 
               return (
                 <div
@@ -117,6 +121,11 @@ export const ReminderList: React.FC<Props> = ({
                         </Badge>
                       </div>
                       <div className="flex flex-wrap gap-2">
+                        {(!reminder.actionType || reminder.actionType === 'MESSAGE') && (
+                          <Badge variant="outline" className="text-[10px]">
+                            Message
+                          </Badge>
+                        )}
                         {reminder.actionType === 'AUDIO_CALL' && (
                           <Badge variant="outline" className="text-[10px]">
                             Audio Call ({reminder.callDurationSeconds || 25}s)
@@ -135,33 +144,96 @@ export const ReminderList: React.FC<Props> = ({
                       </div>
                     </div>
 
-                    {/* Actions Menu */}
-                    <div className="absolute sm:relative top-3 sm:top-0 right-3 sm:right-0">
+                    {/* Actions Menu & Buttons */}
+                    <div className="absolute sm:relative top-3 sm:top-0 right-3 sm:right-0 flex items-center gap-1.5">
+                      {/* PC Outside Management Actions */}
+                      <div className="hidden sm:flex items-center gap-1.5">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => onToggle(reminder.id)}
+                          disabled={loading}
+                          className={`h-8 px-2.5 text-xs gap-1.5 ${
+                            reminder.active
+                              ? 'text-amber-600 hover:text-amber-700 hover:bg-amber-50 dark:hover:bg-amber-950/30'
+                              : 'text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 dark:hover:bg-emerald-950/30'
+                          }`}
+                          title={reminder.active ? 'Pause Schedule' : 'Start Schedule'}
+                        >
+                          <Power className="h-3.5 w-3.5" />
+                          <span>{reminder.active ? 'Pause' : 'Start'}</span>
+                        </Button>
+
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => onEdit(reminder)}
+                          disabled={loading}
+                          className="h-8 px-2.5 text-xs gap-1.5"
+                          title="Edit Reminder"
+                        >
+                          <Edit2 className="h-3.5 w-3.5 text-muted-foreground" />
+                          <span>Edit</span>
+                        </Button>
+
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            if (window.confirm('Are you sure you want to delete this reminder?')) {
+                              onDelete(reminder.id);
+                            }
+                          }}
+                          disabled={loading}
+                          className="h-8 px-2 text-xs text-destructive hover:text-destructive hover:bg-destructive/10"
+                          title="Delete Reminder"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+
+                      {/* Dropdown Menu (Contains only Test actions on PC, plus management on mobile) */}
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
-                          <Button variant="outline" size="icon" className="h-8 w-8">
+                          <Button variant="outline" size="icon" className="h-8 w-8" title="Test Options">
                             <MoreVertical className="h-4 w-4" />
                           </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end" className="w-48">
-                          <DropdownMenuItem onClick={() => onToggle(reminder.id)} className="gap-2">
-                            <Power className="h-4 w-4" />
-                            {reminder.active ? 'Pause Schedule' : 'Start Schedule'}
-                          </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => onEdit(reminder)} className="gap-2">
-                            <Edit2 className="h-4 w-4 text-muted-foreground" /> Edit
-                          </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => handleTestClick(reminder.id)} disabled={isTesting} className="gap-2">
+                          {/* Mobile-only management items */}
+                          <div className="sm:hidden">
+                            <DropdownMenuItem onClick={() => onToggle(reminder.id)} className="gap-2">
+                              <Power className="h-4 w-4" />
+                              {reminder.active ? 'Pause Schedule' : 'Start Schedule'}
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => onEdit(reminder)} className="gap-2">
+                              <Edit2 className="h-4 w-4 text-muted-foreground" /> Edit
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={() => {
+                                if (window.confirm('Are you sure you want to delete this reminder?')) {
+                                  onDelete(reminder.id);
+                                }
+                              }}
+                              className="gap-2 text-destructive focus:text-destructive focus:bg-destructive/10"
+                            >
+                              <Trash2 className="h-4 w-4" /> Delete Reminder
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                          </div>
+
+                          {/* Test Actions (Exclusively shown on PC inside the 3 dots) */}
+                          <DropdownMenuItem onClick={() => handleTestClick(reminder.id)} disabled={isAnyActionBusy} className="gap-2">
                             <Send className={`h-4 w-4 ${isTesting ? 'animate-spin text-primary' : 'text-muted-foreground'}`} />
                             Test Message
                           </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => handleCallClick(reminder.id, reminder.actionType === 'VIDEO_CALL' ? 'VIDEO' : 'AUDIO')} disabled={isCalling} className="gap-2">
-                            <PhoneCall className={`h-4 w-4 ${isCalling ? 'animate-pulse text-primary' : 'text-muted-foreground'}`} />
-                            Test Call
+                          <DropdownMenuItem onClick={() => handleCallClick(reminder.id, 'AUDIO')} disabled={isAnyActionBusy} className="gap-2">
+                            <PhoneCall className={`h-4 w-4 ${isCallingAudio ? 'animate-pulse text-cyan-500' : 'text-muted-foreground'}`} />
+                            Test Voice Call
                           </DropdownMenuItem>
-                          <DropdownMenuSeparator />
-                          <DropdownMenuItem onClick={() => onDelete(reminder.id)} className="gap-2 text-destructive focus:text-destructive focus:bg-destructive/10">
-                            <Trash2 className="h-4 w-4" /> Delete Reminder
+                          <DropdownMenuItem onClick={() => handleCallClick(reminder.id, 'VIDEO')} disabled={isAnyActionBusy} className="gap-2">
+                            <Video className={`h-4 w-4 ${isCallingVideo ? 'animate-pulse text-purple-500' : 'text-muted-foreground'}`} />
+                            Test Video Call
                           </DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>
@@ -169,7 +241,13 @@ export const ReminderList: React.FC<Props> = ({
                   </div>
 
                   <p className="text-sm text-muted-foreground mb-4 line-clamp-3 leading-relaxed break-words break-all sm:break-words">
-                    {reminder.content}
+                    {reminder.actionType === 'AUDIO_CALL' ? (
+                      <span className="italic text-muted-foreground">Audio call reminder (no text message)</span>
+                    ) : reminder.actionType === 'VIDEO_CALL' ? (
+                      <span className="italic text-muted-foreground">Video call reminder (no text message)</span>
+                    ) : (
+                      reminder.content
+                    )}
                   </p>
 
                   <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
@@ -181,6 +259,49 @@ export const ReminderList: React.FC<Props> = ({
                       <Clock className="h-3 w-3" />
                       {reminder.windowStart} - {reminder.windowEnd} ({reminder.intervalMinutes}m)
                     </div>
+                    {Boolean(reminder.maxRuns && reminder.maxRuns > 0) && (
+                      <div className="flex items-center gap-1.5 border px-2 py-1 rounded-md whitespace-nowrap bg-muted">
+                        <Repeat className="h-3 w-3" />
+                        Runs: {reminder.runCount || 0}/{reminder.maxRuns}
+                        {(reminder.runCount || 0) >= (reminder.maxRuns || 0) && (
+                          <span className="text-[10px] text-amber-500 font-semibold uppercase ml-1">(Limit reached)</span>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Mobile Quick Test Buttons */}
+                  <div className="flex sm:hidden items-center gap-1.5 mt-3 pt-3 border-t">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleTestClick(reminder.id)}
+                      disabled={isAnyActionBusy}
+                      className="h-8 px-2 text-xs gap-1 flex-1 font-normal"
+                    >
+                      <Send className={`h-3 w-3 ${isTesting ? 'animate-spin text-primary' : ''}`} />
+                      <span>{isTesting ? 'Sending...' : 'Test Msg'}</span>
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleCallClick(reminder.id, 'AUDIO')}
+                      disabled={isAnyActionBusy}
+                      className="h-8 px-2 text-xs gap-1 flex-1 font-normal"
+                    >
+                      <PhoneCall className={`h-3 w-3 ${isCallingAudio ? 'animate-pulse text-cyan-500' : ''}`} />
+                      <span>{isCallingAudio ? 'Calling...' : 'Voice Call'}</span>
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleCallClick(reminder.id, 'VIDEO')}
+                      disabled={isAnyActionBusy}
+                      className="h-8 px-2 text-xs gap-1 flex-1 font-normal"
+                    >
+                      <Video className={`h-3 w-3 ${isCallingVideo ? 'animate-pulse text-purple-500' : ''}`} />
+                      <span>{isCallingVideo ? 'Calling...' : 'Video Call'}</span>
+                    </Button>
                   </div>
                 </div>
               );

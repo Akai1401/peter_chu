@@ -58,6 +58,5 @@ if (isDirectRun) {
   const app = createApp();
   app.listen(port, () => {
     console.log(`[API] Messenger AI Bot Control Center API running on http://localhost:${port}`);
-    console.log(`[API] DRY_RUN = ${process.env.DRY_RUN !== 'false'}`);
   });
 }

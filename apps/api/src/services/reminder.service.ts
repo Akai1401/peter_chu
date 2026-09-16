@@ -21,6 +21,7 @@ export class ReminderService {
     const stmt = this.db.prepare(`
       SELECT id, title, content, target_thread_id as targetThreadId,
              action_type as actionType, call_duration_seconds as callDurationSeconds,
+             max_runs as maxRuns, run_count as runCount,
              schedule_cron as scheduleCron, active,
              window_start as windowStart, window_end as windowEnd,
              interval_minutes as intervalMinutes,
@@ -35,6 +36,8 @@ export class ReminderService {
       targetThreadId: string;
       actionType: any;
       callDurationSeconds: number;
+      maxRuns?: number;
+      runCount?: number;
       scheduleCron: string | null;
       active: number;
       windowStart: string;
@@ -48,6 +51,8 @@ export class ReminderService {
       ...r,
       actionType: r.actionType || 'MESSAGE',
       callDurationSeconds: r.callDurationSeconds || 30,
+      maxRuns: r.maxRuns || 0,
+      runCount: r.runCount || 0,
       active: Boolean(r.active)
     }));
   }
@@ -56,6 +61,7 @@ export class ReminderService {
     const stmt = this.db.prepare(`
       SELECT id, title, content, target_thread_id as targetThreadId,
              action_type as actionType, call_duration_seconds as callDurationSeconds,
+             max_runs as maxRuns, run_count as runCount,
              schedule_cron as scheduleCron, active,
              window_start as windowStart, window_end as windowEnd,
              interval_minutes as intervalMinutes,
@@ -70,6 +76,8 @@ export class ReminderService {
       targetThreadId: string;
       actionType: any;
       callDurationSeconds: number;
+      maxRuns?: number;
+      runCount?: number;
       scheduleCron: string | null;
       active: number;
       windowStart: string;
@@ -84,6 +92,8 @@ export class ReminderService {
       ...row,
       actionType: row.actionType || 'MESSAGE',
       callDurationSeconds: row.callDurationSeconds || 30,
+      maxRuns: row.maxRuns || 0,
+      runCount: row.runCount || 0,
       active: Boolean(row.active)
     };
   }
@@ -92,18 +102,20 @@ export class ReminderService {
     const id = randomUUID();
     const now = new Date().toISOString();
     const activeInt = data.active !== false ? 1 : 0;
-    const windowStart = data.windowStart || '18:00';
-    const windowEnd = data.windowEnd || '22:00';
+    const windowStart = data.windowStart || '00:00';
+    const windowEnd = data.windowEnd || '23:59';
     const intervalMinutes = data.intervalMinutes ?? 10;
     const actionType = data.actionType || 'MESSAGE';
     const callDurationSeconds = data.callDurationSeconds ?? 30;
+    const maxRuns = data.maxRuns ?? 0;
 
     const stmt = this.db.prepare(`
       INSERT INTO reminders (
-        id, title, content, target_thread_id, action_type, call_duration_seconds, schedule_cron,
+        id, title, content, target_thread_id, action_type, call_duration_seconds,
+        max_runs, run_count, schedule_cron,
         active, window_start, window_end, interval_minutes,
         created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     stmt.run(
@@ -113,6 +125,8 @@ export class ReminderService {
       data.targetThreadId,
       actionType,
       callDurationSeconds,
+      maxRuns,
+      0,
       data.scheduleCron || null,
       activeInt,
       windowStart,
@@ -136,6 +150,7 @@ export class ReminderService {
     const targetThreadId = data.targetThreadId ?? existing.targetThreadId;
     const actionType = data.actionType ?? existing.actionType;
     const callDurationSeconds = data.callDurationSeconds ?? existing.callDurationSeconds;
+    const maxRuns = data.maxRuns !== undefined ? data.maxRuns : (existing.maxRuns ?? 0);
     const scheduleCron = data.scheduleCron !== undefined ? data.scheduleCron : existing.scheduleCron;
     const activeInt = data.active !== undefined ? (data.active ? 1 : 0) : (existing.active ? 1 : 0);
     const windowStart = data.windowStart ?? existing.windowStart;
@@ -146,7 +161,7 @@ export class ReminderService {
     const stmt = this.db.prepare(`
       UPDATE reminders
       SET title = ?, content = ?, target_thread_id = ?, action_type = ?,
-          call_duration_seconds = ?, schedule_cron = ?,
+          call_duration_seconds = ?, max_runs = ?, schedule_cron = ?,
           active = ?, window_start = ?, window_end = ?, interval_minutes = ?,
           updated_at = ?
       WHERE id = ?
@@ -158,6 +173,7 @@ export class ReminderService {
       targetThreadId,
       actionType,
       callDurationSeconds,
+      maxRuns,
       scheduleCron,
       activeInt,
       windowStart,

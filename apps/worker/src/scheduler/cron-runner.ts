@@ -18,6 +18,8 @@ export interface ReminderRow {
   target_thread_id: string;
   action_type?: string;
   call_duration_seconds?: number;
+  max_runs?: number;
+  run_count?: number;
   active: number;
   window_start: string;
   window_end: string;
@@ -33,6 +35,7 @@ export class CronRunner {
   private timer: NodeJS.Timeout | null = null;
   private testTimer: NodeJS.Timeout | null = null;
   private isRunning: boolean = false;
+  private isTicking: boolean = false;
 
   constructor(
     db: Database,
@@ -61,16 +64,21 @@ export class CronRunner {
     skipped: number;
   }> {
     const stats = { processed: 0, dispatched: 0, skipped: 0 };
-
-    // 1. Acquire / renew worker singleton lease (TTL 30s)
-    const hasLock = this.lockManager.acquireLock('worker_singleton', this.workerId, 30);
-    if (!hasLock) {
-      // Another worker instance holds the active lease
+    if (this.isTicking) {
       return stats;
     }
+    this.isTicking = true;
 
-    // 2. Read bot state
-    const botStateRow = this.db.prepare(`
+    try {
+      // 1. Acquire / renew worker singleton lease (TTL 30s)
+      const hasLock = this.lockManager.acquireLock('worker_singleton', this.workerId, 30);
+      if (!hasLock) {
+        // Another worker instance holds the active lease
+        return stats;
+      }
+
+      // 2. Read bot state
+      const botStateRow = this.db.prepare(`
       SELECT status, emergency_stop as emergencyStop, dry_run as dryRun
       FROM bot_state
       WHERE id = 1
@@ -91,19 +99,22 @@ export class CronRunner {
       return stats;
     }
 
-    // Synchronize dry-run flag from database (single source of truth)
-    const isDryRun = Boolean(botStateRow.dryRun);
-    this.messengerClient.setDryRun(isDryRun);
-
     // 3. Query active reminders
     const reminders = this.db.prepare(`
       SELECT id, title, content, target_thread_id, action_type, call_duration_seconds, active,
-             window_start, window_end, interval_minutes
+             max_runs, run_count, window_start, window_end, interval_minutes
       FROM reminders
       WHERE active = 1
     `).all() as ReminderRow[];
 
     for (const reminder of reminders) {
+      // Check if max runs already reached
+      if (reminder.max_runs && reminder.max_runs > 0 && (reminder.run_count || 0) >= reminder.max_runs) {
+        this.db.prepare('UPDATE reminders SET active = 0 WHERE id = ?').run(reminder.id);
+        stats.skipped += 1;
+        continue;
+      }
+
       stats.processed += 1;
 
       // Check if current minute in Asia/Ho_Chi_Minh matches window and interval
@@ -134,6 +145,22 @@ export class CronRunner {
         continue; // Already processed for this time slot
       }
 
+      // Re-check current run_count from DB to prevent race conditions
+      const currentReminder = this.db.prepare('SELECT active, max_runs, run_count FROM reminders WHERE id = ?').get(reminder.id) as { active: number; max_runs: number; run_count: number } | undefined;
+      if (!currentReminder || currentReminder.active !== 1 || (currentReminder.max_runs > 0 && currentReminder.run_count >= currentReminder.max_runs)) {
+        stats.skipped += 1;
+        continue;
+      }
+
+      // Immediately reserve this execution run in DB to avoid parallel executions
+      const nextRunCount = (currentReminder.run_count || 0) + 1;
+      const willDeactivate = currentReminder.max_runs > 0 && nextRunCount >= currentReminder.max_runs;
+      this.db.prepare('UPDATE reminders SET run_count = ?, active = ? WHERE id = ?').run(
+        nextRunCount,
+        willDeactivate ? 0 : 1,
+        reminder.id
+      );
+
       // 5. Rate limiting check
       const rateCheck = this.rateLimiter.canSend(reminder.target_thread_id);
       const actionType = reminder.action_type || 'MESSAGE';
@@ -147,6 +174,12 @@ export class CronRunner {
         : createMessagePreview(reminder.content);
 
       if (!rateCheck.allowed) {
+        // Rollback reservation if rate-limited
+        this.db.prepare('UPDATE reminders SET run_count = MAX(0, run_count - 1), active = ? WHERE id = ?').run(
+          currentReminder.active,
+          reminder.id
+        );
+
         // Record rate-limited skip
         this.recordExecutionLog({
           reminderId: reminder.id,
@@ -197,11 +230,7 @@ export class CronRunner {
         }
       }
 
-      const execStatus = isDryRun
-        ? 'DRY_RUN'
-        : isSuccess
-        ? 'SUCCESS'
-        : 'FAILED';
+      const execStatus = isSuccess ? 'SUCCESS' : 'FAILED';
 
       this.recordExecutionLog({
         reminderId: reminder.id,
@@ -212,17 +241,27 @@ export class CronRunner {
         details: {
           slotKey,
           actionType,
-          dryRun: isDryRun,
           error: errorMsg
         }
       });
 
       this.rateLimiter.recordSend(reminder.target_thread_id);
       stats.dispatched += 1;
+
+      if (!isSuccess) {
+        // Rollback reservation if execution failed
+        this.db.prepare('UPDATE reminders SET run_count = MAX(0, run_count - 1), active = ? WHERE id = ?').run(
+          currentReminder.active,
+          reminder.id
+        );
+      }
     }
 
     return stats;
+  } finally {
+    this.isTicking = false;
   }
+}
 
   private recordExecutionLog(data: {
     reminderId: string;
@@ -282,9 +321,6 @@ export class CronRunner {
         WHERE id = 1
       `).get() as { status: BotStatus; emergencyStop: number; dryRun: number } | undefined;
 
-      const isDryRun = Boolean(botStateRow?.dryRun);
-      this.messengerClient.setDryRun(isDryRun);
-
       const actionType = pending.action_type || 'MESSAGE';
       const callDuration = pending.call_duration_seconds || 25;
 
@@ -293,7 +329,7 @@ export class CronRunner {
 
       if (actionType === 'MESSAGE' || actionType === 'MESSAGE_AND_CALL') {
         const sendResult = await this.messengerClient.sendMessage(pending.target_thread_id, pending.content);
-        if (!sendResult.dryRun && !sendResult.success) {
+        if (!sendResult.success) {
           isSuccess = false;
           errorMsg = sendResult.error;
         }
@@ -305,7 +341,7 @@ export class CronRunner {
           'AUDIO',
           callDuration
         );
-        if (!callResult.dryRun && !callResult.success) {
+        if (!callResult.success) {
           isSuccess = false;
           errorMsg = callResult.error;
         }
@@ -315,14 +351,14 @@ export class CronRunner {
           'VIDEO',
           callDuration
         );
-        if (!callResult.dryRun && !callResult.success) {
+        if (!callResult.success) {
           isSuccess = false;
           errorMsg = callResult.error;
         }
       }
 
       const finishedAt = new Date().toISOString();
-      const status = isDryRun ? 'COMPLETED' : isSuccess ? 'COMPLETED' : 'FAILED';
+      const status = isSuccess ? 'COMPLETED' : 'FAILED';
 
       this.db.prepare(`
         UPDATE test_dispatch_queue
@@ -345,13 +381,13 @@ export class CronRunner {
       this.recordExecutionLog({
         reminderId: pending.reminder_id,
         threadId: pending.target_thread_id,
-        status: isDryRun ? 'DRY_RUN' : isSuccess ? 'SUCCESS' : 'FAILED',
+        status: isSuccess ? 'SUCCESS' : 'FAILED',
         idempotencyKey,
         messagePreview: preview,
         details: {
           testTrigger: true,
           actionType,
-          mode: isDryRun ? 'DRY_RUN' : 'LIVE',
+          mode: 'LIVE',
           error: errorMsg
         }
       });

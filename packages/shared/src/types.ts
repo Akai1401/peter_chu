@@ -22,6 +22,8 @@ export interface Reminder {
   targetThreadId: string;
   actionType: ReminderActionType;
   callDurationSeconds: number;
+  maxRuns?: number;
+  runCount?: number;
   scheduleCron?: string | null;
   active: boolean;
   windowStart: string; // e.g. "18:00"

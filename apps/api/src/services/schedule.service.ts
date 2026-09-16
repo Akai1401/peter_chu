@@ -15,12 +15,20 @@ export class ScheduleService {
     const now = new Date();
 
     for (const reminder of reminders) {
+      if (reminder.maxRuns && reminder.maxRuns > 0) {
+        const remaining = reminder.maxRuns - (reminder.runCount || 0);
+        if (remaining <= 0) continue;
+      }
+      const maxSlotsForReminder = (reminder.maxRuns && reminder.maxRuns > 0)
+        ? Math.min(5, reminder.maxRuns - (reminder.runCount || 0))
+        : 5;
+
       const slots = getUpcomingSlots(
         now,
         reminder.windowStart,
         reminder.windowEnd,
         reminder.intervalMinutes,
-        5
+        maxSlotsForReminder
       );
 
       for (const slot of slots) {

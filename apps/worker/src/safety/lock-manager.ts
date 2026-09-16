@@ -67,10 +67,19 @@ export class LockManager {
 
   /**
    * Atomic idempotency check: returns true if this key has NOT been executed before
-   * and marks it as locked to prevent duplicates.
+   * and marks it as locked to prevent duplicates (cannot be re-acquired by anyone until expired).
    */
   acquireSlotLock(idempotencyKey: string, holderId: string, ttlHours: number = 24): boolean {
-    // Check if an execution log already exists with this idempotency key
+    const lockKey = `slot:${idempotencyKey}`;
+    const nowIso = new Date().toISOString();
+
+    // 1. Clean up expired lock for this slot first
+    this.db.prepare(`
+      DELETE FROM singleton_locks
+      WHERE lock_key = ? AND expires_at < ?
+    `).run(lockKey, nowIso);
+
+    // 2. Check if an execution log already exists with this idempotency key
     const existingLog = this.db.prepare(`
       SELECT id FROM execution_logs
       WHERE idempotency_key = ? AND status IN ('SUCCESS', 'DRY_RUN')
@@ -81,7 +90,19 @@ export class LockManager {
       return false; // Already executed!
     }
 
-    // Now try acquiring the lock
-    return this.acquireLock(`slot:${idempotencyKey}`, holderId, ttlHours * 3600);
+    // 3. Atomically acquire exclusive slot lock (fails on conflict!)
+    try {
+      const now = new Date();
+      const expiresAt = new Date(now.getTime() + ttlHours * 3600 * 1000).toISOString();
+      const stmt = this.db.prepare(`
+        INSERT INTO singleton_locks (lock_key, holder_id, acquired_at, expires_at)
+        VALUES (?, ?, ?, ?)
+      `);
+      const result = stmt.run(lockKey, holderId, now.toISOString(), expiresAt);
+      return result.changes > 0;
+    } catch {
+      // Slot lock already exists/held!
+      return false;
+    }
   }
 }

@@ -65,7 +65,7 @@ export const api = {
   testReminder: (id: string) =>
     request<{ success: boolean; message: string; execution: ExecutionLog }>(`/reminders/${id}/test`, {
       method: 'POST',
-      body: JSON.stringify({ actor: 'admin_dashboard' })
+      body: JSON.stringify({ actor: 'admin_dashboard', actionType: 'MESSAGE' })
     }),
   callReminder: (id: string, callType: 'AUDIO' | 'VIDEO' = 'AUDIO', durationSeconds: number = 25) =>
     request<{ success: boolean; message: string; execution: ExecutionLog }>(`/reminders/${id}/call`, {

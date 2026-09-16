@@ -38,6 +38,8 @@ function setupTestDb(): Database.Database {
       target_thread_id TEXT NOT NULL,
       action_type TEXT NOT NULL DEFAULT 'MESSAGE',
       call_duration_seconds INTEGER NOT NULL DEFAULT 30,
+      max_runs INTEGER NOT NULL DEFAULT 0,
+      run_count INTEGER NOT NULL DEFAULT 0,
       schedule_cron TEXT,
       active INTEGER NOT NULL DEFAULT 1,
       window_start TEXT NOT NULL DEFAULT '18:00',
@@ -86,6 +88,12 @@ test('LockManager - acquire, renew, release and deduplication', () => {
 
   // Now holder 2 can acquire
   assert.equal(lock.acquireLock('worker_singleton', 'holder-2', 10), true);
+
+  // Slot lock deduplication test: must not allow same holder to re-acquire the same slot lock
+  assert.equal(lock.acquireSlotLock('test-slot-key-1', 'holder-1', 24), true);
+  assert.equal(lock.acquireSlotLock('test-slot-key-1', 'holder-1', 24), false);
+  assert.equal(lock.acquireSlotLock('test-slot-key-1', 'holder-2', 24), false);
+
   db.close();
 });
 
@@ -162,7 +170,7 @@ test('CronRunner - handles schedule, deduplication, and emergency stop', async (
   // Verify execution log created
   const logRow = db.prepare(`SELECT * FROM execution_logs WHERE reminder_id = 'r_test_1'`).get() as any;
   assert.ok(logRow);
-  assert.equal(logRow.status, 'DRY_RUN');
+  assert.equal(logRow.status, 'SUCCESS');
 
   // 3. Second tick at same slot time => deduplication prevents sending
   const resDup = await runner.tick(slotTime);
@@ -177,6 +185,37 @@ test('CronRunner - handles schedule, deduplication, and emergency stop', async (
   await runner.stop();
   db.close();
 
+  if (fs.existsSync(TEST_DB)) {
+    fs.unlinkSync(TEST_DB);
+  }
+});
+
+test('CronRunner - enforces max_runs and auto-deactivates reminder', async () => {
+  const db = setupTestDb();
+  const client = new MessengerClient({ isDryRun: true });
+  const lock = new LockManager(db);
+  const limiter = new RateLimiter(db, { minSecondsBetween: 0, maxPerHour: 100 });
+  const runner = new CronRunner(db, client, lock, limiter, 'test-worker-2');
+
+  db.prepare(`
+    INSERT INTO reminders (id, title, content, target_thread_id, window_start, window_end, interval_minutes, active, max_runs, run_count)
+    VALUES ('r_test_max', 'Max Runs Test', 'Once only', 't_max', '18:00', '22:00', 10, 1, 1, 0)
+  `).run();
+
+  const slot1 = new Date('2026-09-15T11:00:00Z');
+  const res1 = await runner.tick(slot1);
+  assert.equal(res1.dispatched, 1);
+
+  const rowAfter = db.prepare(`SELECT active, run_count FROM reminders WHERE id = 'r_test_max'`).get() as any;
+  assert.equal(rowAfter.run_count, 1);
+  assert.equal(rowAfter.active, 0);
+
+  const slot2 = new Date('2026-09-15T11:10:00Z');
+  const res2 = await runner.tick(slot2);
+  assert.equal(res2.dispatched, 0);
+
+  await runner.stop();
+  db.close();
   if (fs.existsSync(TEST_DB)) {
     fs.unlinkSync(TEST_DB);
   }

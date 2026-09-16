@@ -35,8 +35,9 @@ export const ReminderModal: React.FC<Props> = ({
   const [targetThreadId, setTargetThreadId] = useState('');
   const [actionType, setActionType] = useState<any>('MESSAGE');
   const [callDurationSeconds, setCallDurationSeconds] = useState(25);
-  const [windowStart, setWindowStart] = useState('18:00');
-  const [windowEnd, setWindowEnd] = useState('22:00');
+  const [maxRuns, setMaxRuns] = useState<number>(0);
+  const [windowStart, setWindowStart] = useState('00:00');
+  const [windowEnd, setWindowEnd] = useState('23:59');
   const [intervalMinutes, setIntervalMinutes] = useState(10);
   const [active, setActive] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -48,8 +49,9 @@ export const ReminderModal: React.FC<Props> = ({
       setTargetThreadId(initialData.targetThreadId);
       setActionType(initialData.actionType || 'MESSAGE');
       setCallDurationSeconds(initialData.callDurationSeconds || 25);
-      setWindowStart(initialData.windowStart || '18:00');
-      setWindowEnd(initialData.windowEnd || '22:00');
+      setMaxRuns(initialData.maxRuns || 0);
+      setWindowStart(initialData.windowStart || '00:00');
+      setWindowEnd(initialData.windowEnd || '23:59');
       setIntervalMinutes(initialData.intervalMinutes || 10);
       setActive(initialData.active);
     } else if (isOpen) {
@@ -58,8 +60,9 @@ export const ReminderModal: React.FC<Props> = ({
       setTargetThreadId('');
       setActionType('MESSAGE');
       setCallDurationSeconds(25);
-      setWindowStart('18:00');
-      setWindowEnd('22:00');
+      setMaxRuns(0);
+      setWindowStart('00:00');
+      setWindowEnd('23:59');
       setIntervalMinutes(10);
       setActive(true);
     }
@@ -68,18 +71,25 @@ export const ReminderModal: React.FC<Props> = ({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!title.trim() || !content.trim() || !targetThreadId.trim()) {
+    if (!title.trim() || !targetThreadId.trim()) {
       setError('Please fill in all required fields');
+      return;
+    }
+
+    const isMessageRequired = actionType === 'MESSAGE' || actionType === 'MESSAGE_AND_CALL';
+    if (isMessageRequired && !content.trim()) {
+      setError('Please enter message content');
       return;
     }
 
     try {
       await onSubmit({
         title: title.trim(),
-        content: content.trim(),
+        content: isMessageRequired ? content.trim() : (actionType === 'AUDIO_CALL' ? 'Audio Call' : 'Video Call'),
         targetThreadId: targetThreadId.trim(),
         actionType,
         callDurationSeconds: Number(callDurationSeconds),
+        maxRuns: Number(maxRuns) || 0,
         windowStart,
         windowEnd,
         intervalMinutes: Number(intervalMinutes),
@@ -151,36 +161,59 @@ export const ReminderModal: React.FC<Props> = ({
           </div>
         </div>
 
-        {actionType !== 'MESSAGE' && (
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 sm:p-4 bg-muted/50 rounded-lg border">
-            <Label htmlFor="duration" className="font-semibold">Ring Duration (sec)</Label>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {actionType !== 'MESSAGE' && (
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 bg-muted/50 rounded-lg border">
+              <div>
+                <Label htmlFor="duration" className="font-semibold text-xs sm:text-sm">Ring Duration</Label>
+                <p className="text-[11px] text-muted-foreground">Seconds (5 - 180s)</p>
+              </div>
+              <Input
+                id="duration"
+                type="number"
+                min={5}
+                max={180}
+                value={callDurationSeconds}
+                onChange={(e) => setCallDurationSeconds(Number(e.target.value))}
+                className="w-full sm:w-20 bg-background text-center font-mono"
+              />
+            </div>
+          )}
+
+          <div className={`flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 bg-muted/50 rounded-lg border ${actionType === 'MESSAGE' ? 'sm:col-span-2' : ''}`}>
+            <div>
+              <Label htmlFor="maxRuns" className="font-semibold text-xs sm:text-sm">Max Runs</Label>
+              <p className="text-[11px] text-muted-foreground">0 = unlimited action executions</p>
+            </div>
             <Input
-              id="duration"
+              id="maxRuns"
               type="number"
-              min={5}
-              max={180}
-              value={callDurationSeconds}
-              onChange={(e) => setCallDurationSeconds(Number(e.target.value))}
-              className="sm:w-24 bg-background"
+              min={0}
+              max={9999}
+              value={maxRuns}
+              onChange={(e) => setMaxRuns(Math.max(0, parseInt(e.target.value) || 0))}
+              className="w-full sm:w-24 bg-background text-center font-mono"
+            />
+          </div>
+        </div>
+
+        {(actionType === 'MESSAGE' || actionType === 'MESSAGE_AND_CALL') && (
+          <div className="space-y-2">
+            <div className="flex justify-between items-center">
+              <Label htmlFor="content">Message Content</Label>
+              <span className="text-xs text-muted-foreground">{content.length}/2000</span>
+            </div>
+            <Textarea
+              id="content"
+              required
+              rows={3}
+              value={content}
+              onChange={(e) => setContent(e.target.value)}
+              placeholder="Enter message content..."
+              className="resize-y min-h-[80px]"
             />
           </div>
         )}
-
-        <div className="space-y-2">
-          <div className="flex justify-between items-center">
-            <Label htmlFor="content">Message Content</Label>
-            <span className="text-xs text-muted-foreground">{content.length}/2000</span>
-          </div>
-          <Textarea
-            id="content"
-            required
-            rows={3}
-            value={content}
-            onChange={(e) => setContent(e.target.value)}
-            placeholder="Enter message content..."
-            className="resize-y min-h-[80px]"
-          />
-        </div>
 
         <div className="p-3 sm:p-4 bg-muted/30 rounded-lg border space-y-4">
           <div className="flex items-center justify-between">
@@ -190,9 +223,9 @@ export const ReminderModal: React.FC<Props> = ({
               variant="outline"
               size="sm"
               className="h-7 text-[10px] uppercase tracking-wider gap-1"
-              onClick={() => { setWindowStart('18:00'); setWindowEnd('22:00'); setIntervalMinutes(10); }}
+              onClick={() => { setWindowStart('00:00'); setWindowEnd('23:59'); setIntervalMinutes(10); }}
             >
-              <Sparkles className="h-3 w-3" /> Default
+              <Sparkles className="h-3 w-3" /> All Day (Default)
             </Button>
           </div>
           <div className="grid grid-cols-3 gap-2 sm:gap-3">

@@ -52,14 +52,14 @@ function initWorkerDatabase(dbPath: string): Database.Database {
       status TEXT NOT NULL DEFAULT 'STOPPED',
       session_status TEXT NOT NULL DEFAULT 'UNKNOWN',
       emergency_stop INTEGER NOT NULL DEFAULT 0,
-      dry_run INTEGER NOT NULL DEFAULT 1,
+      dry_run INTEGER NOT NULL DEFAULT 0,
       last_heartbeat TEXT,
       lock_holder_id TEXT,
       updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
 
     INSERT OR IGNORE INTO bot_state (id, status, session_status, emergency_stop, dry_run, updated_at)
-    VALUES (1, 'STOPPED', 'UNKNOWN', 0, 1, CURRENT_TIMESTAMP);
+    VALUES (1, 'STOPPED', 'UNKNOWN', 0, 0, CURRENT_TIMESTAMP);
 
     CREATE TABLE IF NOT EXISTS reminders (
       id TEXT PRIMARY KEY,
@@ -70,8 +70,8 @@ function initWorkerDatabase(dbPath: string): Database.Database {
       call_duration_seconds INTEGER NOT NULL DEFAULT 30,
       schedule_cron TEXT,
       active INTEGER NOT NULL DEFAULT 1,
-      window_start TEXT NOT NULL DEFAULT '18:00',
-      window_end TEXT NOT NULL DEFAULT '22:00',
+      window_start TEXT NOT NULL DEFAULT '00:00',
+      window_end TEXT NOT NULL DEFAULT '23:59',
       interval_minutes INTEGER NOT NULL DEFAULT 10,
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
       updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -125,6 +125,12 @@ function initWorkerDatabase(dbPath: string): Database.Database {
     db.exec(`ALTER TABLE reminders ADD COLUMN call_duration_seconds INTEGER NOT NULL DEFAULT 30`);
   } catch {}
   try {
+    db.exec(`ALTER TABLE reminders ADD COLUMN max_runs INTEGER NOT NULL DEFAULT 0`);
+  } catch {}
+  try {
+    db.exec(`ALTER TABLE reminders ADD COLUMN run_count INTEGER NOT NULL DEFAULT 0`);
+  } catch {}
+  try {
     db.exec(`ALTER TABLE test_dispatch_queue ADD COLUMN action_type TEXT NOT NULL DEFAULT 'MESSAGE'`);
   } catch {}
   try {
@@ -138,15 +144,12 @@ async function bootstrapWorker() {
   const dbPath = getDbPath();
   const db = initWorkerDatabase(dbPath);
 
-  const botStateRow = db.prepare('SELECT dry_run FROM bot_state WHERE id = 1').get() as { dry_run: number } | undefined;
-  const isDryRun = botStateRow !== undefined ? Boolean(botStateRow.dry_run) : (process.env.DRY_RUN !== 'false');
-  console.log(`[Worker] Starting Messenger Bot Worker...`);
+  console.log(`[Worker] Starting Messenger Bot Worker (LIVE MODE)...`);
   console.log(`[Worker] Database: ${dbPath}`);
-  console.log(`[Worker] DRY_RUN Mode: ${isDryRun}`);
   console.log(`[Worker] Timezone: Asia/Ho_Chi_Minh (UTC+7)`);
 
   const messengerClient = new MessengerClient({
-    isDryRun,
+    isDryRun: false,
     headless: process.env.MESSENGER_HEADLESS === 'true',
     userDataDir: path.resolve(rootDir, process.env.MESSENGER_USER_DATA_DIR || './.messenger-session')
   });

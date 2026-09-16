@@ -6,14 +6,15 @@ export const TimeStringSchema = z
 
 export const CreateReminderSchema = z.object({
   title: z.string().min(1, 'Title is required').max(100),
-  content: z.string().min(1, 'Content is required').max(2000),
+  content: z.string().max(2000).default(''),
   targetThreadId: z.string().min(1, 'Target Messenger Thread ID or URL is required').max(200),
   actionType: z.enum(['MESSAGE', 'AUDIO_CALL', 'VIDEO_CALL', 'MESSAGE_AND_CALL']).default('MESSAGE'),
   callDurationSeconds: z.number().int().min(5).max(300).default(30),
+  maxRuns: z.number().int().min(0).default(0),
   scheduleCron: z.string().optional().nullable(),
   active: z.boolean().default(true),
-  windowStart: TimeStringSchema.default('18:00'),
-  windowEnd: TimeStringSchema.default('22:00'),
+  windowStart: TimeStringSchema.default('00:00'),
+  windowEnd: TimeStringSchema.default('23:59'),
   intervalMinutes: z.number().int().min(1).max(1440).default(10)
 });
 

@@ -99,11 +99,20 @@ test('API Integration - Reminder CRUD and Test Dispatch', async () => {
   // Toggle back on
   await request(app).patch(`/api/reminders/${reminderId}/toggle`);
 
-  // 4. Test reminder dispatch (safe DRY_RUN)
-  const testRes = await request(app).post(`/api/reminders/${reminderId}/test`);
+  // 4. Test reminder dispatch (LIVE worker queue)
+  const testPromise = request(app).post(`/api/reminders/${reminderId}/test`);
+  setTimeout(() => {
+    const db = initDatabase(TEST_DB_PATH);
+    const item = db.prepare(`SELECT id FROM test_dispatch_queue WHERE reminder_id = ? AND status = 'PENDING'`).get(reminderId) as any;
+    if (item) {
+      db.prepare(`UPDATE test_dispatch_queue SET status = 'COMPLETED', finished_at = CURRENT_TIMESTAMP WHERE id = ?`).run(item.id);
+      db.prepare(`INSERT INTO execution_logs (id, reminder_id, thread_id, status, idempotency_key, message_preview) VALUES ('e_test_1', ?, 't1', 'SUCCESS', 'k1', 'preview')`).run(reminderId);
+    }
+  }, 200);
+
+  const testRes = await testPromise;
   assert.equal(testRes.status, 200);
   assert.equal(testRes.body.success, true);
-  assert.equal(testRes.body.execution.status, 'DRY_RUN');
 
   // 5. Query upcoming schedules
   const schedRes = await request(app).get('/api/schedules/upcoming');
@@ -118,7 +127,7 @@ test('API Integration - Reminder CRUD and Test Dispatch', async () => {
   const execRes = await request(app).get('/api/logs/execution');
   assert.equal(execRes.status, 200);
   assert.ok(execRes.body.data.length > 0);
-  assert.equal(execRes.body.data[0].status, 'DRY_RUN');
+  assert.equal(execRes.body.data[0].status, 'SUCCESS');
 
   // 7. Delete reminder
   const delRes = await request(app).delete(`/api/reminders/${reminderId}`);

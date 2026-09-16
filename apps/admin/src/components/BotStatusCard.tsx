@@ -12,7 +12,6 @@ import {
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import {
@@ -28,11 +27,10 @@ import type { BotState } from '@messenger/shared';
 interface Props {
   state: BotState | null;
   onAction: (action: 'START' | 'STOP' | 'RESTART' | 'EMERGENCY_STOP', reason?: string) => Promise<void>;
-  onToggleDryRun: (dryRun: boolean) => Promise<void>;
   loading: boolean;
 }
 
-export const BotStatusCard: React.FC<Props> = ({ state, onAction, onToggleDryRun, loading }) => {
+export const BotStatusCard: React.FC<Props> = ({ state, onAction, loading }) => {
   const [showEmergencyModal, setShowEmergencyModal] = useState(false);
   const [emergencyReason, setEmergencyReason] = useState('');
 
@@ -62,8 +60,8 @@ export const BotStatusCard: React.FC<Props> = ({ state, onAction, onToggleDryRun
     switch (state.sessionStatus) {
       case 'LOGGED_IN':
         return (
-          <Badge variant="outline" className="flex items-center gap-1.5">
-            <ShieldCheck className="w-3.5 h-3.5" /> Authenticated
+          <Badge variant="success" className="flex items-center gap-1.5">
+            <ShieldCheck className="w-3.5 h-3.5" /> Messenger Connected
           </Badge>
         );
       case 'UNAUTHENTICATED':
@@ -115,16 +113,6 @@ export const BotStatusCard: React.FC<Props> = ({ state, onAction, onToggleDryRun
 
           <div className="flex flex-wrap items-center gap-4 pl-14 md:pl-0">
             {getSessionBadge()}
-            
-            <div className="flex items-center space-x-2 border rounded-md px-3 py-1.5 bg-card">
-              <Switch 
-                id="dry-run" 
-                checked={state.dryRun}
-                onCheckedChange={onToggleDryRun}
-                disabled={loading}
-              />
-              <Label htmlFor="dry-run" className="text-sm cursor-pointer">Dry Run</Label>
-            </div>
           </div>
         </CardHeader>
         
