@@ -11,6 +11,7 @@ import {
 import { MessengerClient } from '../messenger/playwright-client.js';
 import { LockManager } from '../safety/lock-manager.js';
 import { RateLimiter } from '../safety/rate-limiter.js';
+import { GeminiService } from '../ai/gemini-service.js';
 
 export interface ReminderRow {
   id: string;
@@ -33,27 +34,33 @@ export class CronRunner {
   private messengerClient: MessengerClient;
   private lockManager: LockManager;
   private rateLimiter: RateLimiter;
+  private geminiService: GeminiService;
   private workerId: string;
   private timer: NodeJS.Timeout | null = null;
   private testTimer: NodeJS.Timeout | null = null;
   private sessionTimer: NodeJS.Timeout | null = null;
+  private aiTimer: NodeJS.Timeout | null = null;
   private isRunning: boolean = false;
   private isTicking: boolean = false;
   private isProcessingQueue: boolean = false;
   private isCheckingSession: boolean = false;
+  private isProcessingAiReply: boolean = false;
+  private hasPendingSchedule: boolean = false;
 
   constructor(
     db: Database,
     messengerClient: MessengerClient,
     lockManager: LockManager,
     rateLimiter: RateLimiter,
-    workerId: string = `worker-${randomUUID().substring(0, 8)}`
+    workerId: string = `worker-${randomUUID().substring(0, 8)}`,
+    geminiService?: GeminiService
   ) {
     this.db = db;
     this.messengerClient = messengerClient;
     this.lockManager = lockManager;
     this.rateLimiter = rateLimiter;
     this.workerId = workerId;
+    this.geminiService = geminiService || new GeminiService();
   }
 
   getWorkerId(): string {
@@ -72,6 +79,16 @@ export class CronRunner {
     if (this.isTicking) {
       return stats;
     }
+
+    // Schedule priority: only yield AI Auto-Reply if there are ACTUALLY reminders due right now
+    if (this.isProcessingAiReply && this.hasDueReminders()) {
+      console.log('[Scheduler] Reminders due while AI reply is processing. Prioritizing schedule execution...');
+      this.hasPendingSchedule = true;
+      for (let i = 0; i < 30 && this.isProcessingAiReply; i++) {
+        await new Promise((r) => setTimeout(r, 100));
+      }
+    }
+
     this.isTicking = true;
 
     try {
@@ -299,6 +316,7 @@ export class CronRunner {
 
     return stats;
   } finally {
+    this.hasPendingSchedule = false;
     this.isTicking = false;
   }
 }
@@ -348,6 +366,20 @@ export class CronRunner {
    */
   async processTestQueue(): Promise<void> {
     if (this.isProcessingQueue) return;
+
+    // Check if there is actually any pending item FIRST
+    if (!this.hasPendingTestQueue()) {
+      return;
+    }
+
+    if (this.isProcessingAiReply) {
+      console.log('[Worker] Test queue item pending while AI reply is in progress. Prioritizing test dispatch...');
+      this.hasPendingSchedule = true;
+      for (let i = 0; i < 30 && this.isProcessingAiReply; i++) {
+        await new Promise((r) => setTimeout(r, 100));
+      }
+    }
+
     this.isProcessingQueue = true;
     try {
       const pending = this.db.prepare(`
@@ -419,6 +451,17 @@ export class CronRunner {
         await this.messengerClient.disconnectSession();
         this.db.prepare(`UPDATE bot_state SET session_status = 'UNAUTHENTICATED', status = 'STOPPED', updated_at = CURRENT_TIMESTAMP WHERE id = 1`).run();
         this.db.prepare(`UPDATE test_dispatch_queue SET status = 'COMPLETED', finished_at = ? WHERE id = ?`).run(
+          new Date().toISOString(),
+          pending.id
+        );
+        return;
+      }
+
+      // 4. Special command: CHECK_INCOMING
+      if (actionType === 'CHECK_INCOMING') {
+        const found = await this.checkAndReplyIncomingMessages(true);
+        this.db.prepare(`UPDATE test_dispatch_queue SET status = 'COMPLETED', error = ?, finished_at = ? WHERE id = ?`).run(
+          found ? 'FOUND_INCOMING' : 'NO_NEW_MESSAGES',
           new Date().toISOString(),
           pending.id
         );
@@ -504,7 +547,343 @@ export class CronRunner {
     } catch (err: any) {
       console.warn('[Worker] Error processing test queue:', err.message);
     } finally {
+      this.hasPendingSchedule = false;
       this.isProcessingQueue = false;
+    }
+  }
+
+  /**
+   * Check for unread incoming Messenger messages and reply using Gemini AI
+   */
+  async checkAndReplyIncomingMessages(isManualTrigger: boolean = false): Promise<boolean> {
+    if (this.isProcessingAiReply) {
+      return false;
+    }
+
+    // PRIORITY RULE: Schedule execution and test dispatches ALWAYS have higher priority than AI Auto-Reply
+    if (this.isTicking || (!isManualTrigger && (this.isProcessingQueue || this.hasPendingSchedule))) {
+      console.log('[AI-AutoReply] Priority conflict: Schedule execution or test queue is active. Yielding priority to schedule.');
+      if (isManualTrigger) {
+        this.recordAuditLog(
+          'INCOMING_MESSAGE_CHECK',
+          'admin_dashboard',
+          'Tạm hoãn quét tin nhắn: Hệ thống đang ưu tiên thực thi lịch nhắc nhở (Schedule Execution).',
+          'INFO'
+        );
+      }
+      return false;
+    }
+
+    if (!isManualTrigger) {
+      if (this.hasPendingTestQueue()) {
+        console.log('[AI-AutoReply] Priority conflict: Test dispatch queue has pending items. Yielding to test dispatch.');
+        return false;
+      }
+
+      if (this.hasDueReminders()) {
+        console.log('[AI-AutoReply] Priority conflict: Scheduled reminder is due for execution. Yielding priority to schedule execution.');
+        return false;
+      }
+    }
+
+    // Check bot state
+    const botState = this.db.prepare(`
+      SELECT status, emergency_stop as emergencyStop, dry_run as dryRun, session_status as sessionStatus,
+             ai_auto_reply as aiAutoReply, ai_target_thread as aiTargetThread
+      FROM bot_state
+      WHERE id = 1
+    `).get() as {
+      status: BotStatus;
+      emergencyStop: number;
+      dryRun: number;
+      sessionStatus?: string;
+      aiAutoReply?: number;
+      aiTargetThread?: string;
+    } | undefined;
+
+    // Bot must be RUNNING, not emergency stopped, and session must be LOGGED_IN
+    if (!botState || botState.status !== 'RUNNING' || botState.emergencyStop === 1 || botState.sessionStatus !== 'LOGGED_IN') {
+      if (isManualTrigger) {
+        this.recordAuditLog(
+          'INCOMING_MESSAGE_CHECK',
+          'admin_dashboard',
+          `Không thể kiểm tra tin nhắn: Bot chưa ở trạng thái RUNNING hoặc Messenger chưa LOGGED_IN (Trạng thái hiện tại: ${botState?.status || 'UNKNOWN'}, Session: ${botState?.sessionStatus || 'UNKNOWN'})`,
+          'WARN'
+        );
+      }
+      return false;
+    }
+
+    const isAiEnabled = botState.aiAutoReply === undefined || botState.aiAutoReply === 1;
+
+    this.isProcessingAiReply = true;
+    try {
+      if (botState.aiTargetThread && botState.aiTargetThread.trim()) {
+        console.log(`[AI-AutoReply] Checking messages on configured thread: ${botState.aiTargetThread}...`);
+      } else {
+        console.log('[AI-AutoReply] Checking incoming messages on Messenger Web (all threads)...');
+      }
+
+      // 1. Detect unread incoming message via Playwright (targeting specific thread if configured)
+      const incoming = await this.messengerClient.getLatestUnreadIncomingMessage(botState.aiTargetThread);
+      if (!incoming || !incoming.messageText.trim()) {
+        console.log('[AI-AutoReply] Scan complete: No new unread messages.');
+        if (isManualTrigger) {
+          this.recordAuditLog(
+            'INCOMING_MESSAGE_CHECK',
+            'admin_dashboard',
+            botState.aiTargetThread
+              ? `Đã quét hội thoại "${botState.aiTargetThread}": Không có tin nhắn mới từ khách.`
+              : 'Đã quét tin nhắn trên Messenger Web: Không có tin nhắn mới nào chưa đọc.',
+            'INFO'
+          );
+        }
+        return false;
+      }
+
+      const { threadId, messageText, senderName, conversationHistory } = incoming;
+
+      // 2. Deduplication: skip if we successfully processed this exact message recently (30 min)
+      const alreadyHandled = this.db.prepare(`
+        SELECT id FROM ai_processed_messages
+        WHERE thread_id = ? AND message_text = ?
+          AND created_at >= datetime('now', '-30 minutes')
+          AND reply_text NOT LIKE '[ERROR:%' AND reply_text NOT LIKE '[SEND_FAILED:%'
+        LIMIT 1
+      `).get(threadId, messageText);
+
+      if (alreadyHandled) {
+        console.log(`[AI-AutoReply] Message from ${threadId} was already processed, skipping.`);
+        if (isManualTrigger) {
+          this.recordAuditLog(
+            'INCOMING_MESSAGE_CHECK',
+            'admin_dashboard',
+            `Tin nhắn gần nhất ("${createMessagePreview(messageText)}") đã được xử lý, bỏ qua.`,
+            'INFO'
+          );
+        }
+        return false;
+      }
+
+      // Also check recent outgoing executions from bot (reminders or calls)
+      const cleanSnippet = messageText.trim().slice(0, 30);
+      if (cleanSnippet.length > 3) {
+        const recentBotSend = this.db.prepare(`
+          SELECT id FROM execution_logs
+          WHERE thread_id = ?
+            AND status = 'SUCCESS'
+            AND reminder_id != 'incoming_message'
+            AND (message_preview LIKE ? OR details LIKE ?)
+            AND executed_at >= datetime('now', '-2 hours')
+          LIMIT 1
+        `).get(threadId, `%${cleanSnippet}%`, `%${cleanSnippet}%`);
+
+        if (recentBotSend) {
+          console.log(`[AI-AutoReply] Message matches recent bot dispatch in thread ${threadId}, skipping.`);
+          return false;
+        }
+      }
+
+      const senderDisplay = senderName ? `${senderName} (${threadId})` : threadId;
+      const incomingRecordId = randomUUID();
+
+      // 3. Record incoming message in Audit Logs
+      this.recordAuditLog(
+        'INCOMING_MESSAGE_RECEIVED',
+        senderName || 'messenger_user',
+        `Tin nhắn đến từ ${senderDisplay}: "${createMessagePreview(messageText)}"`,
+        'INFO'
+      );
+
+      console.log(`[Incoming-Message] Received message from ${senderDisplay}: "${messageText.slice(0, 50)}"... (AI Reply: ${isAiEnabled ? 'BẬT' : 'TẮT'})`);
+
+      // 4. If AI Auto-Reply is disabled, record incoming log and finish
+      if (!isAiEnabled) {
+        this.recordExecutionLog({
+          reminderId: 'incoming_message',
+          threadId,
+          status: 'SUCCESS',
+          idempotencyKey: `incoming-${incomingRecordId}`,
+          messagePreview: `📩 [Tin nhắn đến] ${senderName || 'Khách'}: "${createMessagePreview(messageText)}" (AI Auto-Reply đang Tắt)`,
+          details: {
+            actionType: 'INCOMING_MESSAGE',
+            senderName: senderName || 'Khách Messenger',
+            threadId,
+            incomingMessage: messageText,
+            aiAutoReply: false,
+            timestamp: new Date().toISOString()
+          }
+        });
+
+        this.db.prepare(`
+          INSERT INTO ai_processed_messages (id, thread_id, message_text, reply_text)
+          VALUES (?, ?, ?, ?)
+        `).run(incomingRecordId, threadId, messageText, '[AI_REPLY_DISABLED]');
+
+        console.log(`[Incoming-Message] Logged message from ${senderDisplay}. AI Auto-Reply is disabled.`);
+        return false;
+      }
+
+      if (!this.geminiService.isConfigured()) {
+        console.warn('[AI-AutoReply] Gemini API key not configured, skipping reply generation.');
+        this.recordAuditLog(
+          'AI_REPLY_SKIPPED',
+          'gemini_bot',
+          `Bỏ qua phản hồi vì chưa cấu hình Google Gemini API Key.`,
+          'WARN'
+        );
+        return false;
+      }
+
+      // Check priority before calling Gemini
+      if (!isManualTrigger && this.hasPendingSchedule && (this.hasDueReminders() || this.hasPendingTestQueue())) {
+        console.log('[AI-AutoReply] Yielding priority: Schedule execution requested priority. Aborting AI reply generation.');
+        return false;
+      }
+
+      // 5. Generate response using Gemini with multi-turn context
+      console.log(`[AI-AutoReply] Generating Gemini reply for message from ${senderDisplay} with ${conversationHistory?.length || 0} context messages...`);
+      let replyText = '';
+      let isQuotaFallback = false;
+      try {
+        replyText = await this.geminiService.generateReply(messageText, senderName, conversationHistory);
+      } catch (geminiErr: any) {
+        const errMessage = String(geminiErr?.message || '');
+        const isQuotaExhausted =
+          errMessage.includes('429') ||
+          errMessage.includes('RESOURCE_EXHAUSTED') ||
+          errMessage.toLowerCase().includes('quota') ||
+          errMessage.toLowerCase().includes('rate limit');
+
+        if (isQuotaExhausted) {
+          isQuotaFallback = true;
+          replyText =
+            process.env.AI_QUOTA_REPLY_TEXT ||
+            'Hiện tại AI đang tạm hết hạn mức (quota) xử lý hôm nay rồi ạ, lát nữa hoặc mai mình phản hồi lại nha! 😅';
+          console.warn(`[AI-AutoReply] Gemini quota exhausted across models. Using fallback quota reply: "${replyText}"`);
+          this.recordAuditLog(
+            'AI_QUOTA_EXCEEDED',
+            'gemini_bot',
+            `Hết quota AI từ các model. Phản hồi thông báo hết hạn mức tới ${senderDisplay}.`,
+            'WARN'
+          );
+        } else {
+          console.error(`[AI-AutoReply] Gemini generation failed:`, geminiErr.message);
+          this.recordAuditLog(
+            'AI_REPLY_FAILED',
+            'gemini_bot',
+            `Lỗi khi Gemini tạo câu trả lời cho ${senderDisplay}: ${geminiErr.message}`,
+            'ERROR'
+          );
+          this.recordExecutionLog({
+            reminderId: 'ai_auto_reply',
+            threadId,
+            status: 'FAILED',
+            idempotencyKey: `ai-error-${randomUUID()}`,
+            messagePreview: `❌ [AI Lỗi] Không thể tạo câu trả lời: ${geminiErr.message}`,
+            details: {
+              actionType: 'AI_REPLY_ERROR',
+              senderName: senderName || 'Khách Messenger',
+              threadId,
+              incomingMessage: messageText,
+              error: geminiErr.message
+            }
+          });
+          // Don't save failed attempts - allow retry on next cycle
+          return false;
+        }
+      }
+
+      // Check priority before sending message via Playwright (only abort if an actual reminder is due right now)
+      if (!isManualTrigger && this.hasPendingSchedule && this.hasDueReminders()) {
+        console.log('[AI-AutoReply] Yielding priority: Urgent scheduled reminder is due. Aborting AI send turn.');
+        return false;
+      }
+
+      // 6. Send the reply via Messenger
+      console.log(`[AI-AutoReply] Sending reply to ${threadId}: "${replyText.slice(0, 50)}"...`);
+      const sendResult = await this.messengerClient.sendMessage(threadId, replyText);
+
+      if (!sendResult.dryRun && !sendResult.success) {
+        console.warn(`[AI-AutoReply] Failed to send reply:`, sendResult.error);
+        this.recordAuditLog(
+          'AI_REPLY_FAILED',
+          'messenger_client',
+          `Lỗi khi gửi tin nhắn trả lời tới ${senderDisplay}: ${sendResult.error}`,
+          'ERROR'
+        );
+        this.recordExecutionLog({
+          reminderId: 'ai_auto_reply',
+          threadId,
+          status: 'FAILED',
+          idempotencyKey: `ai-error-${randomUUID()}`,
+          messagePreview: `❌ [Gửi tin nhắn thất bại]: ${sendResult.error || 'Unknown error'}`,
+          details: {
+            actionType: 'AI_REPLY_SEND_ERROR',
+            senderName: senderName || 'Khách Messenger',
+            threadId,
+            incomingMessage: messageText,
+            replyContent: replyText,
+            error: sendResult.error
+          }
+        });
+        // Don't save failed sends - allow retry on next cycle
+        return false;
+      }
+
+      // 7. Store in ai_processed_messages with reply text
+      const replyRecordId = randomUUID();
+      this.db.prepare(`
+        INSERT INTO ai_processed_messages (id, thread_id, message_text, reply_text)
+        VALUES (?, ?, ?, ?)
+      `).run(replyRecordId, threadId, messageText, replyText);
+
+      // 8. Record AI Reply in execution logs & audit logs
+      const idempotencyKey = `ai-reply-${replyRecordId}`;
+      const previewText = isQuotaFallback
+        ? `⚠️ [AI Hết Quota] Khách: "${createMessagePreview(messageText)}" ➔ Phản hồi: "${createMessagePreview(replyText)}"`
+        : `🤖 [AI Reply] Khách: "${createMessagePreview(messageText)}" ➔ AI: "${createMessagePreview(replyText)}"`;
+
+      this.recordExecutionLog({
+        reminderId: 'ai_auto_reply',
+        threadId,
+        status: 'SUCCESS',
+        idempotencyKey,
+        messagePreview: previewText,
+        details: {
+          actionType: isQuotaFallback ? 'AI_QUOTA_REPLY' : 'AI_REPLY',
+          senderName: senderName || 'Khách Messenger',
+          threadId,
+          incomingMessage: messageText,
+          replyContent: replyText,
+          model: this.geminiService.getModel(),
+          isQuotaFallback,
+          contextMessagesCount: conversationHistory?.length || 0,
+          targetThread: botState.aiTargetThread || undefined,
+          timestamp: new Date().toISOString()
+        }
+      });
+
+      this.recordAuditLog(
+        'AI_REPLY_SENT',
+        'gemini_bot',
+        `Đã gửi trả lời AI tới ${senderDisplay}: "${createMessagePreview(replyText)}"`,
+        'INFO'
+      );
+
+      console.log(`[AI-AutoReply] Successfully sent AI reply to thread ${threadId}!`);
+      return true;
+    } catch (err: any) {
+      console.error('[AI-AutoReply] Error during auto-reply execution:', err.message);
+      this.recordAuditLog(
+        'AI_REPLY_FAILED',
+        'system',
+        `Lỗi hệ thống khi tự động trả lời tin nhắn: ${err.message}`,
+        'ERROR'
+      );
+      return false;
+    } finally {
+      this.isProcessingAiReply = false;
     }
   }
 
@@ -525,6 +904,66 @@ export class CronRunner {
       console.warn('[Worker] Periodic session check error:', err.message);
     } finally {
       this.isCheckingSession = false;
+    }
+  }
+
+  /**
+   * Check if any active scheduled reminder is due for execution in the current time slot
+   */
+  hasDueReminders(now: Date = new Date()): boolean {
+    try {
+      const reminders = this.db.prepare(`
+        SELECT id, title, content, target_thread_id, action_type, call_duration_seconds,
+               max_runs, run_count, schedule_cron, target_date, active, window_start,
+               window_end, interval_minutes
+        FROM reminders
+        WHERE active = 1
+      `).all() as ReminderRow[];
+
+      if (reminders.length === 0) return false;
+
+      const todayIct = getCurrentSlotKey(now).substring(0, 10);
+      const slotKey = getCurrentSlotKey(now);
+
+      for (const reminder of reminders) {
+        if (reminder.max_runs && reminder.max_runs > 0 && (reminder.run_count || 0) >= reminder.max_runs) {
+          continue;
+        }
+        if (reminder.target_date && reminder.target_date !== todayIct) {
+          continue;
+        }
+        const isSlot = isSlotTriggerMinute(
+          now,
+          reminder.window_start,
+          reminder.window_end,
+          reminder.interval_minutes
+        );
+        if (!isSlot) continue;
+
+        const idempotencyKey = generateIdempotencyKey(reminder.id, reminder.target_thread_id, slotKey);
+        if (!this.lockManager.isSlotLocked(idempotencyKey)) {
+          return true; // There is at least one reminder due right now!
+        }
+      }
+
+      return false;
+    } catch (err: any) {
+      console.warn('[Worker] hasDueReminders check warning:', err.message);
+      return false;
+    }
+  }
+
+  /**
+   * Check if the on-demand test dispatch queue has pending items
+   */
+  hasPendingTestQueue(): boolean {
+    try {
+      const count = this.db.prepare(`
+        SELECT COUNT(*) as c FROM test_dispatch_queue WHERE status = 'PENDING'
+      `).get() as { c: number } | undefined;
+      return Boolean(count && count.c > 0);
+    } catch {
+      return false;
     }
   }
 
@@ -551,6 +990,11 @@ export class CronRunner {
     this.sessionTimer = setInterval(() => {
       this.checkAndSyncSession().catch(console.error);
     }, 30000);
+
+    // Periodically check and auto-reply incoming messages with Gemini every 5 seconds
+    this.aiTimer = setInterval(() => {
+      this.checkAndReplyIncomingMessages().catch(console.error);
+    }, 5000);
   }
 
   /**
@@ -569,6 +1013,10 @@ export class CronRunner {
     if (this.sessionTimer) {
       clearInterval(this.sessionTimer);
       this.sessionTimer = null;
+    }
+    if (this.aiTimer) {
+      clearInterval(this.aiTimer);
+      this.aiTimer = null;
     }
     this.lockManager.releaseLock('worker_singleton', this.workerId);
     await this.messengerClient.close();

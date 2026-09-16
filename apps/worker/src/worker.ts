@@ -117,6 +117,16 @@ function initWorkerDatabase(dbPath: string): Database.Database {
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
       finished_at TEXT
     );
+
+    CREATE TABLE IF NOT EXISTS ai_processed_messages (
+      id TEXT PRIMARY KEY,
+      thread_id TEXT NOT NULL,
+      message_text TEXT NOT NULL,
+      reply_text TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_ai_processed_messages_thread ON ai_processed_messages(thread_id);
   `);
 
   try {
@@ -139,6 +149,9 @@ function initWorkerDatabase(dbPath: string): Database.Database {
   } catch {}
   try {
     db.exec(`ALTER TABLE test_dispatch_queue ADD COLUMN call_duration_seconds INTEGER NOT NULL DEFAULT 30`);
+  } catch {}
+  try {
+    db.exec(`ALTER TABLE bot_state ADD COLUMN ai_auto_reply INTEGER NOT NULL DEFAULT 1`);
   } catch {}
 
   return db;

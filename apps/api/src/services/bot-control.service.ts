@@ -32,8 +32,8 @@ export class BotControlService {
   getBotState(): BotState {
     const row = this.db.prepare(`
       SELECT status, session_status as sessionStatus, emergency_stop as emergencyStop,
-             dry_run as dryRun, last_heartbeat as lastHeartbeat,
-             lock_holder_id as lockHolderId, updated_at as updatedAt
+             dry_run as dryRun, ai_auto_reply as aiAutoReply, ai_target_thread as aiTargetThread,
+             last_heartbeat as lastHeartbeat, lock_holder_id as lockHolderId, updated_at as updatedAt
       FROM bot_state
       WHERE id = 1
     `).get() as {
@@ -41,6 +41,8 @@ export class BotControlService {
       sessionStatus: SessionStatus;
       emergencyStop: number;
       dryRun: number;
+      aiAutoReply?: number;
+      aiTargetThread?: string;
       lastHeartbeat: string | null;
       lockHolderId: string | null;
       updatedAt: string;
@@ -52,6 +54,8 @@ export class BotControlService {
         sessionStatus: 'UNKNOWN',
         emergencyStop: false,
         dryRun: process.env.DRY_RUN !== 'false',
+        aiAutoReply: true,
+        aiTargetThread: '',
         updatedAt: new Date().toISOString()
       };
     }
@@ -61,6 +65,8 @@ export class BotControlService {
       sessionStatus: row.sessionStatus,
       emergencyStop: Boolean(row.emergencyStop),
       dryRun: Boolean(row.dryRun),
+      aiAutoReply: row.aiAutoReply === undefined || row.aiAutoReply === null ? true : Boolean(row.aiAutoReply),
+      aiTargetThread: row.aiTargetThread || '',
       lastHeartbeat: row.lastHeartbeat,
       lockHolderId: row.lockHolderId,
       updatedAt: row.updatedAt
@@ -156,6 +162,41 @@ export class BotControlService {
 
     this.logService.logAudit('BOT_DRY_RUN_TOGGLE', actor, { dryRun, sessionStatus });
     return this.getBotState();
+  }
+
+  setAiConfig(config: { enabled?: boolean; targetThread?: string }, actor: string = 'admin_ui'): BotState {
+    const updates: string[] = [];
+    const params: any[] = [];
+
+    if (config.enabled !== undefined) {
+      updates.push('ai_auto_reply = ?');
+      params.push(config.enabled ? 1 : 0);
+    }
+
+    if (config.targetThread !== undefined) {
+      updates.push('ai_target_thread = ?');
+      params.push(config.targetThread.trim());
+    }
+
+    if (updates.length > 0) {
+      updates.push('updated_at = CURRENT_TIMESTAMP');
+      this.db.prepare(`
+        UPDATE bot_state
+        SET ${updates.join(', ')}
+        WHERE id = 1
+      `).run(...params);
+
+      this.logService.logAudit('AI_CONFIG_UPDATED', actor, {
+        aiAutoReply: config.enabled,
+        aiTargetThread: config.targetThread
+      });
+    }
+
+    return this.getBotState();
+  }
+
+  setAiAutoReply(enabled: boolean, actor: string = 'admin_ui'): BotState {
+    return this.setAiConfig({ enabled }, actor);
   }
 
   heartbeat(holderId?: string): void {

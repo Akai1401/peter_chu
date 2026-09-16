@@ -61,6 +61,40 @@ export function createBotRouter(botService: BotControlService = new BotControlSe
     }
   });
 
+  // POST /api/bot/ai-toggle
+  router.post('/ai-toggle', (req, res) => {
+    try {
+      const { enabled, actor } = req.body;
+      if (typeof enabled !== 'boolean') {
+        res.status(400).json({ success: false, error: 'enabled must be a boolean' });
+        return;
+      }
+      const state = botService.setAiAutoReply(enabled, actor || 'admin');
+      res.json({ success: true, data: state });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // POST /api/bot/ai-config
+  router.post('/ai-config', (req, res) => {
+    try {
+      const { enabled, targetThread, actor } = req.body;
+      if (enabled !== undefined && typeof enabled !== 'boolean') {
+        res.status(400).json({ success: false, error: 'enabled must be a boolean' });
+        return;
+      }
+      if (targetThread !== undefined && typeof targetThread !== 'string') {
+        res.status(400).json({ success: false, error: 'targetThread must be a string' });
+        return;
+      }
+      const state = botService.setAiConfig({ enabled, targetThread }, actor || 'admin');
+      res.json({ success: true, data: state });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
   // GET /api/bot/session-check (Legacy status check)
   router.get('/session-check', (_req, res) => {
     try {
@@ -109,6 +143,48 @@ export function createBotRouter(botService: BotControlService = new BotControlSe
         data: {
           sessionStatus: state.sessionStatus,
           lastHeartbeat: state.lastHeartbeat
+        }
+      });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // POST /api/bot/check-incoming (Active incoming message check via Worker)
+  router.post('/check-incoming', async (_req, res) => {
+    try {
+      const db = getDb();
+      const testId = randomUUID();
+
+      db.prepare(`
+        INSERT INTO test_dispatch_queue (id, reminder_id, target_thread_id, content, action_type, call_duration_seconds, status)
+        VALUES (?, 'system', 'system', 'check-incoming', 'CHECK_INCOMING', 0, 'PENDING')
+      `).run(testId);
+
+      // Wait up to 25 seconds for worker to scan
+      const start = Date.now();
+      let finishedJob: { status: string; error: string | null } | null = null;
+      while (Date.now() - start < 25000) {
+        await new Promise((r) => setTimeout(r, 600));
+        const job = db
+          .prepare('SELECT status, error FROM test_dispatch_queue WHERE id = ?')
+          .get(testId) as { status: string; error: string | null } | undefined;
+        if (job && (job.status === 'COMPLETED' || job.status === 'FAILED')) {
+          finishedJob = job;
+          break;
+        }
+      }
+
+      const result = finishedJob?.error || 'TIMEOUT';
+      const hasFound = result === 'FOUND_INCOMING';
+      res.json({
+        success: true,
+        data: {
+          result,
+          found: hasFound,
+          message: hasFound
+            ? 'Đã phát hiện và xử lý tin nhắn mới thành công!'
+            : 'Đã quét xong: Chưa có tin nhắn mới nào chưa đọc trên Messenger Web.'
         }
       });
     } catch (err: any) {

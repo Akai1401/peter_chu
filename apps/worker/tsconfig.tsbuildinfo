@@ -1,1 +1,1 @@
-{"root":["./src/worker.test.ts","./src/worker.ts","./src/messenger/playwright-client.ts","./src/safety/lock-manager.ts","./src/safety/rate-limiter.ts","./src/scheduler/cron-runner.ts","./src/scripts/login.ts"],"version":"5.9.3"}
+{"root":["./src/worker.test.ts","./src/worker.ts","./src/ai/gemini-service.test.ts","./src/ai/gemini-service.ts","./src/messenger/playwright-client.ts","./src/safety/lock-manager.ts","./src/safety/rate-limiter.ts","./src/scheduler/cron-runner.ts","./src/scripts/login.ts"],"version":"5.9.3"}

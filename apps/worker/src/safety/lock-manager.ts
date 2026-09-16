@@ -105,4 +105,28 @@ export class LockManager {
       return false;
     }
   }
+
+  /**
+   * Check if a slot is already locked or executed (without acquiring it)
+   */
+  isSlotLocked(idempotencyKey: string): boolean {
+    const lockKey = `slot:${idempotencyKey}`;
+    const nowIso = new Date().toISOString();
+
+    const existingLog = this.db.prepare(`
+      SELECT id FROM execution_logs
+      WHERE idempotency_key = ? AND status IN ('SUCCESS', 'DRY_RUN')
+      LIMIT 1
+    `).get(idempotencyKey);
+
+    if (existingLog) return true;
+
+    const activeLock = this.db.prepare(`
+      SELECT lock_key FROM singleton_locks
+      WHERE lock_key = ? AND expires_at >= ?
+      LIMIT 1
+    `).get(lockKey, nowIso);
+
+    return Boolean(activeLock);
+  }
 }

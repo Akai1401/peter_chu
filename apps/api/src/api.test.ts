@@ -62,6 +62,31 @@ test('API Integration - Bot Status and Actions', async () => {
   assert.equal(res4.status, 200);
   assert.equal(res4.body.data.status, 'RUNNING');
   assert.equal(res4.body.data.emergencyStop, false);
+
+  // 5. Toggle AI Auto-Reply
+  const resAiOff = await request(app)
+    .post('/api/bot/ai-toggle')
+    .send({ enabled: false, actor: 'test_suite' });
+  assert.equal(resAiOff.status, 200);
+  assert.equal(resAiOff.body.data.aiAutoReply, false);
+
+  const resAiOn = await request(app)
+    .post('/api/bot/ai-toggle')
+    .send({ enabled: true, actor: 'test_suite' });
+  assert.equal(resAiOn.status, 200);
+  assert.equal(resAiOn.body.data.aiAutoReply, true);
+
+  // 6. Configure AI target thread via /api/bot/ai-config
+  const resAiConfig = await request(app)
+    .post('/api/bot/ai-config')
+    .send({
+      targetThread: 'https://www.facebook.com/messages/t/100040388333156',
+      enabled: true,
+      actor: 'test_suite'
+    });
+  assert.equal(resAiConfig.status, 200);
+  assert.equal(resAiConfig.body.data.aiTargetThread, 'https://www.facebook.com/messages/t/100040388333156');
+  assert.equal(resAiConfig.body.data.aiAutoReply, true);
 });
 
 test('API Integration - Reminder CRUD and Test Dispatch', async () => {

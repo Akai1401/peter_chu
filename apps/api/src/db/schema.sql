@@ -7,6 +7,8 @@ CREATE TABLE IF NOT EXISTS bot_state (
   session_status TEXT NOT NULL DEFAULT 'UNKNOWN', -- 'UNKNOWN', 'LOGGED_IN', 'SESSION_EXPIRED', 'UNAUTHENTICATED'
   emergency_stop INTEGER NOT NULL DEFAULT 0,
   dry_run INTEGER NOT NULL DEFAULT 0,
+  ai_auto_reply INTEGER NOT NULL DEFAULT 1,
+  ai_target_thread TEXT DEFAULT '',
   last_heartbeat TEXT,
   lock_holder_id TEXT,
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -84,3 +86,14 @@ CREATE TABLE IF NOT EXISTS test_dispatch_queue (
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   finished_at TEXT
 );
+
+-- AI Processed Messages for Messenger Auto-Reply Idempotency
+CREATE TABLE IF NOT EXISTS ai_processed_messages (
+  id TEXT PRIMARY KEY,
+  thread_id TEXT NOT NULL,
+  message_text TEXT NOT NULL,
+  reply_text TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_ai_processed_messages_thread ON ai_processed_messages(thread_id);

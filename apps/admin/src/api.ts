@@ -47,6 +47,20 @@ export const api = {
     request<{ message: string }>('/bot/disconnect', {
       method: 'POST'
     }),
+  toggleAiAutoReply: (enabled: boolean) =>
+    request<BotState>('/bot/ai-toggle', {
+      method: 'POST',
+      body: JSON.stringify({ enabled, actor: 'admin_dashboard' })
+    }),
+  updateAiConfig: (config: { enabled?: boolean; targetThread?: string }) =>
+    request<BotState>('/bot/ai-config', {
+      method: 'POST',
+      body: JSON.stringify({ ...config, actor: 'admin_dashboard' })
+    }),
+  checkIncomingMessages: () =>
+    request<{ result: string; found: boolean; message: string }>('/bot/check-incoming', {
+      method: 'POST'
+    }),
 
   // Reminders
   getReminders: () => request<Reminder[]>('/reminders'),

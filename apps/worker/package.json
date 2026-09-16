@@ -7,7 +7,7 @@
     "dev": "tsx watch src/worker.ts",
     "build": "tsc -b",
     "typecheck": "tsc --noEmit",
-    "test": "node --test --import tsx src/**/*.test.ts",
+    "test": "node --test --import tsx \"src/**/*.test.ts\" \"src/*.test.ts\"",
     "lint": "tsc --noEmit",
     "start": "node dist/worker.js"
   },

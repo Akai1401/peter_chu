@@ -44,6 +44,7 @@ export function App() {
   const [initialLoaded, setInitialLoaded] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
   const [isCheckingSession, setIsCheckingSession] = useState(false);
+  const [isCheckingIncoming, setIsCheckingIncoming] = useState(false);
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingReminder, setEditingReminder] = useState<Reminder | null>(null);
@@ -117,6 +118,58 @@ export function App() {
       showToast(err.message || `Failed to execute ${action}`, 'error');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleToggleAiAutoReply = async (enabled: boolean) => {
+    try {
+      setLoading(true);
+      const updated = await api.toggleAiAutoReply(enabled);
+      setBotState(updated);
+      showToast(`Tự động trả lời Gemini AI đã ${enabled ? 'BẬT' : 'TẮT'}`, 'success');
+      await loadData(true);
+    } catch (err: any) {
+      showToast(err.message || 'Lỗi khi bật/tắt Gemini AI', 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleUpdateAiConfig = async (config: { enabled?: boolean; targetThread?: string }) => {
+    try {
+      setLoading(true);
+      const updated = await api.updateAiConfig(config);
+      setBotState(updated);
+      if (config.targetThread !== undefined) {
+        showToast(
+          config.targetThread.trim()
+            ? 'Đã cập nhật cuộc hội thoại theo dõi cho AI'
+            : 'Đã chuyển sang chế độ quét tự do cho AI',
+          'success'
+        );
+      }
+      await loadData(true);
+    } catch (err: any) {
+      showToast(err.message || 'Lỗi khi cập nhật cấu hình AI', 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleCheckIncoming = async () => {
+    setIsCheckingIncoming(true);
+    try {
+      const res = await api.checkIncomingMessages();
+      if (res.found) {
+        showToast(res.message || 'Đã phát hiện và phản hồi tin nhắn mới từ khách!', 'success');
+      } else {
+        showToast(res.message || 'Đã quét xong: Chưa có tin nhắn mới nào chưa đọc.', 'info');
+      }
+      await loadData(true);
+    } catch (err: any) {
+      showToast(err.message || 'Kiểm tra tin nhắn thất bại', 'error');
+    } finally {
+      setIsCheckingIncoming(false);
     }
   };
 
@@ -351,7 +404,11 @@ export function App() {
             onCheckSession={handleCheckSession}
             onConnectMessenger={handleConnectMessenger}
             onDisconnectMessenger={handleDisconnectMessenger}
+            onToggleAiAutoReply={handleToggleAiAutoReply}
+            onUpdateAiConfig={handleUpdateAiConfig}
+            onCheckIncoming={handleCheckIncoming}
             isCheckingSession={isCheckingSession}
+            isCheckingIncoming={isCheckingIncoming}
             loading={loading}
           />
 

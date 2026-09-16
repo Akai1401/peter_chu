@@ -29,6 +29,34 @@ export interface CallResult {
   timestamp: string;
 }
 
+export interface IncomingMessage {
+  threadId: string;
+  senderName?: string;
+  messageText: string;
+  conversationHistory?: Array<{ role: 'user' | 'model'; text: string }>;
+}
+
+/**
+ * Utility to extract a clean Messenger Thread ID from a URL or raw ID string.
+ * Example inputs:
+ *  - '100040388333156' -> '100040388333156'
+ *  - 'https://www.facebook.com/messages/t/100040388333156' -> '100040388333156'
+ *  - 'https://www.facebook.com/messages/e2ee/t/100040388333156/' -> '100040388333156'
+ */
+export function extractThreadId(urlOrId: string): string {
+  if (!urlOrId) return '';
+  const trimmed = urlOrId.trim();
+  const match = trimmed.match(/(?:messages\/(?:e2ee\/)?t\/|\/t\/)([^/?#]+)/i);
+  if (match && match[1] && match[1] !== 't') {
+    return match[1];
+  }
+  const matchFallback = trimmed.match(/\/messages\/([^/?#]+)/i);
+  if (matchFallback && matchFallback[1] && matchFallback[1] !== 't') {
+    return matchFallback[1];
+  }
+  return trimmed;
+}
+
 export class MessengerClient {
   private userDataDir: string;
   private isDryRun: boolean;
@@ -414,22 +442,29 @@ export class MessengerClient {
       }
 
       // Build target URL (always use facebook.com session where logged in)
-      let threadUrl = targetThreadId.trim();
-      const urlMatch = threadUrl.match(/(?:messenger\.com|facebook\.com)?\/?(?:messages\/)?(?:e2ee\/)?t\/([^/?#]+)/i);
-      if (urlMatch && urlMatch[1]) {
-        threadUrl = `https://www.facebook.com/messages/t/${urlMatch[1]}`;
-      } else if (!threadUrl.startsWith('http')) {
-        threadUrl = `https://www.facebook.com/messages/t/${threadUrl}`;
+      const cleanThreadId = extractThreadId(targetThreadId);
+      const threadUrl = cleanThreadId.startsWith('http')
+        ? cleanThreadId
+        : `https://www.facebook.com/messages/t/${cleanThreadId}`;
+
+      const currentUrlBefore = this.page.url();
+      const isAlreadyOnThread =
+        Boolean(cleanThreadId) &&
+        cleanThreadId !== 't' &&
+        !cleanThreadId.startsWith('http') &&
+        currentUrlBefore.includes(cleanThreadId);
+
+      if (!isAlreadyOnThread) {
+        console.log(`[Messenger] Opening thread URL: ${threadUrl}`);
+        await this.page.goto(threadUrl, {
+          waitUntil: 'domcontentloaded',
+          timeout: 30000
+        });
+        // Wait a moment for dynamic elements to settle
+        await this.page.waitForTimeout(3000);
+      } else {
+        console.log(`[Messenger] Already on target thread: ${currentUrlBefore}`);
       }
-
-      console.log(`[Messenger] Opening thread URL: ${threadUrl}`);
-      await this.page.goto(threadUrl, {
-        waitUntil: 'domcontentloaded',
-        timeout: 30000
-      });
-
-      // Wait a moment for dynamic elements to settle
-      await this.page.waitForTimeout(3000);
 
       // 1. Check if redirected to login page
       const currentUrl = this.page.url();
@@ -512,8 +547,10 @@ export class MessengerClient {
       const inputIsCleared = !remainingText || remainingText.trim() === '';
 
       // Check if message text appears in the chat thread
-      const bubbleLocator = this.page.locator(`text="${message}"`).last();
-      const bubbleFound = (await bubbleLocator.count()) > 0;
+      const bubbleFound = await this.page.evaluate((msg) => {
+        const main = document.querySelector('div[role="main"]') || document.body;
+        return (main.textContent || '').includes(msg.slice(0, 30));
+      }, message).catch(() => false);
 
       console.log(`[Messenger] Verification: inputIsCleared=${inputIsCleared}, bubbleFound=${bubbleFound}`);
       if (!inputIsCleared && !bubbleFound) {
@@ -573,21 +610,28 @@ export class MessengerClient {
       }
 
       // Build target URL (always use facebook.com session where logged in)
-      let threadUrl = targetThreadId.trim();
-      const urlMatch = threadUrl.match(/(?:messenger\.com|facebook\.com)?\/?(?:messages\/)?(?:e2ee\/)?t\/([^/?#]+)/i);
-      if (urlMatch && urlMatch[1]) {
-        threadUrl = `https://www.facebook.com/messages/t/${urlMatch[1]}`;
-      } else if (!threadUrl.startsWith('http')) {
-        threadUrl = `https://www.facebook.com/messages/t/${threadUrl}`;
+      const cleanThreadId = extractThreadId(targetThreadId);
+      const threadUrl = cleanThreadId.startsWith('http')
+        ? cleanThreadId
+        : `https://www.facebook.com/messages/t/${cleanThreadId}`;
+
+      const currentUrlBefore = this.page.url();
+      const isAlreadyOnThread =
+        Boolean(cleanThreadId) &&
+        cleanThreadId !== 't' &&
+        !cleanThreadId.startsWith('http') &&
+        currentUrlBefore.includes(cleanThreadId);
+
+      if (!isAlreadyOnThread) {
+        console.log(`[Messenger] Opening thread URL for call: ${threadUrl}`);
+        await this.page.goto(threadUrl, {
+          waitUntil: 'domcontentloaded',
+          timeout: 30000
+        });
+        await this.page.waitForTimeout(3000);
+      } else {
+        console.log(`[Messenger] Already on target thread for call: ${currentUrlBefore}`);
       }
-
-      console.log(`[Messenger] Navigating for call to ${threadUrl}...`);
-      await this.page.goto(threadUrl, {
-        waitUntil: 'domcontentloaded',
-        timeout: 30000
-      });
-
-      await this.page.waitForTimeout(3000);
 
       // Dismiss any popups/shortcuts
       try {
@@ -701,6 +745,298 @@ export class MessengerClient {
         error: err.message || `Failed to initiate ${callType} call via Messenger Web`,
         timestamp
       };
+    }
+  }
+
+  /**
+   * Reads the latest unread incoming message from Messenger.
+   * If a targetThread is specified, navigates directly to that conversation and reads its messages.
+   * Otherwise checks both the currently open active thread and unread threads in the conversation list.
+   */
+  async getLatestUnreadIncomingMessage(targetThread?: string): Promise<IncomingMessage | null> {
+    if (this.isDryRun) {
+      return null;
+    }
+
+    try {
+      await this.init();
+      this.page = await this.getActivePage();
+      if (!this.page) return null;
+
+      // Check login state
+      const currentUrl = this.page.url();
+      if (currentUrl.includes('/login') || currentUrl.includes('/checkpoint')) {
+        console.warn('[MessengerClient] Session is not logged in (redirected to login/checkpoint).');
+        return null;
+      }
+
+      // If a specific conversation thread is configured, navigate and check that thread directly
+      if (targetThread && targetThread.trim()) {
+        const cleanThreadId = extractThreadId(targetThread.trim());
+        if (cleanThreadId) {
+          const threadUrl = cleanThreadId.startsWith('http')
+            ? cleanThreadId
+            : `https://www.facebook.com/messages/t/${cleanThreadId}`;
+
+          const isAlreadyOnTarget =
+            cleanThreadId !== 't' &&
+            !cleanThreadId.startsWith('http') &&
+            this.page.url().includes(cleanThreadId);
+
+          if (!isAlreadyOnTarget) {
+            console.log(`[MessengerClient] Navigating to configured AI target thread: ${threadUrl}`);
+            await this.page.goto(threadUrl, {
+              waitUntil: 'domcontentloaded',
+              timeout: 25000
+            });
+            await this.page.waitForTimeout(3000);
+          } else {
+            console.log(`[MessengerClient] Already on configured AI target thread: ${this.page.url()}`);
+          }
+
+          return await this.extractIncomingMessageFromActiveThread();
+        }
+      }
+
+      // Default behavior when no specific thread is configured:
+      if (!currentUrl.includes('facebook.com/messages') && !currentUrl.includes('messenger.com')) {
+        console.log('[MessengerClient] Navigating to https://www.facebook.com/messages ...');
+        await this.page.goto('https://www.facebook.com/messages', {
+          waitUntil: 'domcontentloaded',
+          timeout: 25000
+        });
+        await this.page.waitForTimeout(3000);
+      }
+
+      console.log(`[MessengerClient] Scanning for incoming messages at: ${currentUrl}`);
+
+      // 1. Check if a conversation is ALREADY open in the active main pane
+      const hasActiveThread = currentUrl.includes('/messages/t/') || currentUrl.includes('/t/');
+      if (hasActiveThread) {
+        const activeIncoming = await this.extractIncomingMessageFromActiveThread();
+        if (activeIncoming) {
+          return activeIncoming;
+        }
+      }
+
+      // 2. Scan sidebar for unread conversation indicators
+      const unreadSelector = [
+        'div[role="navigation"] [aria-label*="chưa đọc" i]',
+        'div[role="navigation"] [aria-label*="unread" i]',
+        'div[role="navigation"] [aria-label*="Đánh dấu là đã đọc" i]',
+        'div[role="navigation"] [aria-label*="Mark as read" i]',
+        'div[role="navigation"] span[style*="background-color: var(--accent)"]',
+        'div[role="navigation"] span[style*="background-color: rgb(0, 100, 224)"]',
+        'div[role="navigation"] span[style*="background-color: rgb(0, 132, 255)"]',
+        'div[role="navigation"] span.x1rg5ohu',
+        'div[role="grid"] [aria-label*="chưa đọc" i]',
+        'div[role="grid"] [aria-label*="unread" i]',
+        'div[data-scope="messages_table"] [aria-label*="chưa đọc" i]',
+        'div[data-scope="messages_table"] [aria-label*="unread" i]'
+      ].join(', ');
+
+      const unreadLocator = this.page.locator(unreadSelector);
+      const unreadCount = await unreadLocator.count();
+      console.log(`[MessengerClient] Unread indicators count in sidebar: ${unreadCount}`);
+
+      if (unreadCount > 0) {
+        const unreadItem = unreadLocator.first();
+        if (await unreadItem.isVisible().catch(() => false)) {
+          console.log('[MessengerClient] Detected unread badge in conversation list. Opening thread...');
+          await unreadItem.click({ force: true }).catch(() => {});
+          await this.page.waitForTimeout(2500);
+          return await this.extractIncomingMessageFromActiveThread();
+        }
+      }
+
+      // 3. Fallback check: inspect the top conversation in sidebar
+      const topConversation = this.page.locator([
+        'div[role="navigation"] [role="grid"] [role="row"]',
+        'div[role="navigation"] a[href*="/messages/t/"]',
+        'div[role="navigation"] a[href*="/t/"]',
+        'div[role="grid"] [role="row"]'
+      ].join(', ')).first();
+
+      if ((await topConversation.count()) > 0 && (await topConversation.isVisible().catch(() => false))) {
+        const topText = (await topConversation.innerText().catch(() => '')).trim();
+        console.log(`[MessengerClient] Top conversation snippet: ${JSON.stringify(topText.slice(0, 80))}`);
+        const lines = topText.split('\n').map((s) => s.trim()).filter(Boolean);
+        const isSentByUs = lines.some((l) => /^bạn\s*:/i.test(l) || /^you\s*:/i.test(l));
+
+        if (!isSentByUs && lines.length >= 2) {
+          console.log('[MessengerClient] Top active conversation might be an incoming message. Opening...');
+          await topConversation.click({ force: true }).catch(() => {});
+          await this.page.waitForTimeout(2500);
+          return await this.extractIncomingMessageFromActiveThread();
+        }
+      }
+
+      return null;
+    } catch (err: any) {
+      console.warn('[MessengerClient] Check incoming message warning:', err.message);
+      return null;
+    }
+  }
+
+  /**
+   * Extracts the latest incoming message and chronological multi-turn conversation context
+   * from the currently open conversation in div[role="main"].
+   */
+  private async extractIncomingMessageFromActiveThread(): Promise<IncomingMessage | null> {
+    try {
+      if (!this.page) return null;
+
+      const activeUrl = this.page.url();
+      const threadId = extractThreadId(activeUrl) || activeUrl;
+
+      // Extract sender name from conversation header
+      let senderName = '';
+      try {
+        const headerNameLocator = this.page.locator([
+          'div[role="main"] h1',
+          'div[role="main"] h2',
+          'div[role="main"] [data-scope="messages_header"]'
+        ].join(', ')).first();
+        if ((await headerNameLocator.count()) > 0) {
+          senderName = (await headerNameLocator.innerText().catch(() => '')).trim();
+        }
+      } catch {}
+
+      // Evaluate conversation bubbles and multi-turn context
+      const messageInfo = await this.page.evaluate(() => {
+        const main = document.querySelector('div[role="main"]') || document.querySelector('div[role="region"]');
+        if (!main) return { error: 'NO_MAIN_ELEMENT' };
+
+        const textElements = Array.from(main.querySelectorAll('div[dir="auto"]'));
+        if (textElements.length === 0) return { error: 'NO_TEXT_ELEMENTS' };
+
+        // Inspect up to 25 recent elements to gather conversation flow
+        const startIndex = Math.max(0, textElements.length - 25);
+        const collected: Array<{ text: string; isOutgoing: boolean; role: 'user' | 'model' }> = [];
+
+        for (let i = startIndex; i < textElements.length; i++) {
+          const el = textElements[i] as HTMLElement;
+          const text = (el.textContent || '').trim();
+          if (!text || text.length === 0) continue;
+          if (text.startsWith('http')) continue;
+          if (/^(?:vừa xong|\d+\s*(?:phút|giờ|ngày|giây|tháng)|seen|đã nhận|đã gửi|sent|delivered|active now|đang hoạt động)/i.test(text)) continue;
+
+          let curr: HTMLElement | null = el;
+          let isOutgoing = false;
+
+          // 1. Check aria-label and testid attributes
+          while (curr && curr !== main) {
+            const ariaLabel = curr.getAttribute('aria-label') || '';
+            if (/^(?:bạn đã gửi|bạn gửi|you sent)/i.test(ariaLabel)) {
+              isOutgoing = true;
+              break;
+            }
+            if (curr.getAttribute('data-testid') === 'outgoing_message') {
+              isOutgoing = true;
+              break;
+            }
+
+            // Styling: background color of accent (blue/purple) means outgoing
+            const style = window.getComputedStyle(curr);
+            const bg = style.backgroundColor;
+            if (bg.includes('0, 132, 255') || bg.includes('0, 100, 224') || bg.includes('24, 119, 242')) {
+              isOutgoing = true;
+              break;
+            }
+
+            if (style.justifyContent === 'flex-end' || style.alignItems === 'flex-end') {
+              isOutgoing = true;
+              break;
+            }
+
+            curr = curr.parentElement;
+          }
+
+          // 2. Geometric alignment check: Outgoing bubbles in Messenger are positioned on the right
+          if (!isOutgoing) {
+            const mainRect = main.getBoundingClientRect();
+            const elRect = el.getBoundingClientRect();
+            if (mainRect.width > 0 && elRect.width > 0) {
+              const distFromLeft = elRect.left - mainRect.left;
+              const distFromRight = mainRect.right - elRect.right;
+              const elCenter = elRect.left + elRect.width / 2;
+              const mainThreshold = mainRect.left + mainRect.width * 0.5;
+
+              // Outgoing messages are closer to the right margin or centered on the right half
+              if (distFromRight < distFromLeft || elCenter > mainThreshold) {
+                isOutgoing = true;
+              }
+            }
+          }
+
+          // Deduplicate identical or nested parent/child items
+          const prev = collected[collected.length - 1];
+          if (prev && prev.text === text && prev.isOutgoing === isOutgoing) {
+            continue;
+          }
+          if (prev && prev.isOutgoing === isOutgoing && prev.text.includes(text)) {
+            continue;
+          }
+
+          collected.push({
+            text,
+            isOutgoing,
+            role: isOutgoing ? 'model' : 'user'
+          });
+        }
+
+        if (collected.length === 0) {
+          return { error: 'NO_VALID_MESSAGES' };
+        }
+
+        // Check the very last message in the thread
+        const lastMessage = collected[collected.length - 1];
+        if (lastMessage.isOutgoing) {
+          // Last message was sent by the Bot/Us. No new incoming customer message.
+          return {
+            isOutgoingLast: true,
+            lastText: lastMessage.text
+          };
+        }
+
+        // Find all trailing customer messages
+        let lastBotIndex = -1;
+        for (let i = collected.length - 1; i >= 0; i--) {
+          if (collected[i].isOutgoing) {
+            lastBotIndex = i;
+            break;
+          }
+        }
+
+        const trailingCustomer = collected.slice(lastBotIndex + 1);
+        const historyBefore = collected.slice(0, lastBotIndex + 1);
+
+        const incomingText = trailingCustomer.map((m) => m.text).join('\n');
+        const history = historyBefore.map((m) => ({ role: m.role, text: m.text }));
+
+        return {
+          isOutgoingLast: false,
+          incomingText,
+          history
+        };
+      });
+
+      console.log(`[MessengerClient] Evaluated active thread (${threadId}, ${senderName}):`, JSON.stringify(messageInfo));
+
+      if (messageInfo && !messageInfo.error && !messageInfo.isOutgoingLast && messageInfo.incomingText) {
+        console.log(`[MessengerClient] Found incoming customer message in thread ${threadId}: "${messageInfo.incomingText.slice(0, 50)}" with ${messageInfo.history?.length || 0} context messages.`);
+        return {
+          threadId,
+          senderName: senderName || undefined,
+          messageText: messageInfo.incomingText,
+          conversationHistory: messageInfo.history
+        };
+      }
+
+      return null;
+    } catch (err: any) {
+      console.warn('[MessengerClient] Extract message from active thread warning:', err.message);
+      return null;
     }
   }
 

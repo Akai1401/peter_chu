@@ -6,11 +6,16 @@ import {
   Clock,
   Cpu,
   AlertTriangle,
-  FlaskConical
+  FlaskConical,
+  Sparkles,
+  RefreshCw,
+  SlidersHorizontal,
+  Link2
 } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { AiConfigModal } from './AiConfigModal';
 import type { BotState } from '@messenger/shared';
 
 interface Props {
@@ -19,7 +24,11 @@ interface Props {
   onCheckSession?: () => Promise<void>;
   onConnectMessenger?: () => Promise<void>;
   onDisconnectMessenger?: () => Promise<void>;
+  onToggleAiAutoReply?: (enabled: boolean) => Promise<void>;
+  onUpdateAiConfig?: (config: { enabled?: boolean; targetThread?: string }) => Promise<void>;
+  onCheckIncoming?: () => Promise<void>;
   isCheckingSession?: boolean;
+  isCheckingIncoming?: boolean;
   loading: boolean;
 }
 
@@ -35,9 +44,15 @@ const ENGINE_STATUS_CONFIG: Record<string, { label: string; dot: string; badge: 
 export const BotStatusCard: React.FC<Props> = ({
   state,
   onAction,
+  onToggleAiAutoReply,
+  onUpdateAiConfig,
+  onCheckIncoming,
+  isCheckingIncoming,
   loading
 }) => {
   const [isRestarting, setIsRestarting] = useState(false);
+  const [isTogglingAi, setIsTogglingAi] = useState(false);
+  const [isAiConfigOpen, setIsAiConfigOpen] = useState(false);
 
   const handleRestart = async () => {
     setIsRestarting(true);
@@ -62,6 +77,7 @@ export const BotStatusCard: React.FC<Props> = ({
   }
 
   const isRunning = state.status === 'RUNNING';
+  const aiEnabled = state.aiAutoReply !== false;
   const engineCfg = ENGINE_STATUS_CONFIG[state.status] ?? ENGINE_STATUS_CONFIG['STOPPED'];
 
   return (
@@ -92,12 +108,27 @@ export const BotStatusCard: React.FC<Props> = ({
             <AlertTriangle className="w-3 h-3" /> Emergency Stop
           </Badge>
         )}
+
+        {/* Gemini AI Auto-Reply indicator */}
+        <Badge
+          variant="outline"
+          className={`text-[10px] px-2 py-0 h-5 gap-1 font-semibold transition-colors ${
+            !aiEnabled
+              ? 'text-slate-400 border-slate-200 bg-slate-50 dark:text-slate-500 dark:bg-slate-800/40 dark:border-slate-700'
+              : isRunning
+              ? 'text-purple-700 border-purple-300 bg-purple-50 dark:text-purple-300 dark:bg-purple-950/40 dark:border-purple-800'
+              : 'text-amber-600 border-amber-200 bg-amber-50 dark:text-amber-400 dark:bg-amber-950/40 dark:border-amber-800'
+          }`}
+        >
+          <Sparkles className={`w-3 h-3 ${aiEnabled && isRunning ? 'text-purple-500 animate-pulse' : 'text-slate-400'}`} />
+          <span>Gemini AI: {!aiEnabled ? 'Tắt' : isRunning ? 'Hoạt động' : 'Chờ bật Engine'}</span>
+        </Badge>
       </div>
 
       {/* ── Engine Controls + Heartbeat ── */}
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 pt-2 border-t">
-        {/* Engine Controls */}
-        <div className="flex items-center gap-2.5">
+        {/* Engine Controls + AI Toggle */}
+        <div className="flex flex-wrap items-center gap-2">
           {!isRunning ? (
             <Button
               onClick={() => onAction('START')}
@@ -105,7 +136,7 @@ export const BotStatusCard: React.FC<Props> = ({
               size="sm"
               className="gap-2 h-9 px-4 font-medium shadow-sm"
             >
-              <Play className="w-3.5 h-3.5" /> Start Engine
+              <Play className="w-3.5 h-3.5 fill-current" /> Start Engine
             </Button>
           ) : (
             <Button
@@ -115,7 +146,7 @@ export const BotStatusCard: React.FC<Props> = ({
               size="sm"
               className="gap-2 h-9 px-4 font-medium shadow-sm"
             >
-              <Square className="w-3.5 h-3.5" /> Stop Engine
+              <Square className="w-3.5 h-3.5 fill-current" /> Stop Engine
             </Button>
           )}
 
@@ -124,10 +155,82 @@ export const BotStatusCard: React.FC<Props> = ({
             disabled={loading || isRestarting}
             variant="outline"
             size="sm"
-            className="gap-2 h-9 px-3.5 text-xs font-medium"
+            className="gap-2 h-9 px-3 text-xs font-medium"
           >
             <RotateCcw className={`w-3.5 h-3.5 ${isRestarting ? 'animate-spin' : ''}`} /> Restart
           </Button>
+
+          {/* AI Auto-Reply Toggle Button right next to Engine controls */}
+          {onToggleAiAutoReply && (
+            <Button
+              type="button"
+              variant={aiEnabled ? 'default' : 'outline'}
+              size="sm"
+              disabled={loading || isTogglingAi}
+              onClick={async () => {
+                setIsTogglingAi(true);
+                try {
+                  await onToggleAiAutoReply(!aiEnabled);
+                } finally {
+                  setIsTogglingAi(false);
+                }
+              }}
+              className={`gap-2 h-9 px-3.5 text-xs font-medium transition-all ${
+                aiEnabled
+                  ? 'bg-purple-600 hover:bg-purple-700 text-white border-transparent shadow-xs'
+                  : 'text-muted-foreground hover:text-foreground border-border bg-background'
+              }`}
+              title={`Bấm để ${aiEnabled ? 'Tắt' : 'Bật'} tự động trả lời bằng Gemini AI`}
+            >
+              <Sparkles className={`w-3.5 h-3.5 ${aiEnabled ? 'text-amber-300 animate-pulse' : 'text-muted-foreground'}`} />
+              <span>AI Reply: <strong className="font-semibold">{aiEnabled ? 'BẬT' : 'TẮT'}</strong></span>
+            </Button>
+          )}
+
+          {/* AI Thread Configuration Button */}
+          {onUpdateAiConfig && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={loading}
+              onClick={() => setIsAiConfigOpen(true)}
+              className="gap-1.5 h-9 px-3 text-xs font-medium text-muted-foreground hover:text-foreground border-border bg-background"
+              title="Cấu hình liên kết cuộc hội thoại Messenger để AI theo dõi"
+            >
+              <SlidersHorizontal className="w-3.5 h-3.5 text-purple-600" />
+              <span className="hidden sm:inline">Cấu hình hội thoại</span>
+            </Button>
+          )}
+
+          {/* Configured Thread Indicator / Quick Edit Badge */}
+          {state.aiTargetThread && state.aiTargetThread.trim() && (
+            <button
+              type="button"
+              onClick={() => setIsAiConfigOpen(true)}
+              className="inline-flex items-center gap-1.5 h-9 px-2.5 rounded-md text-[11px] font-mono bg-purple-50 hover:bg-purple-100 dark:bg-purple-950/40 dark:hover:bg-purple-900/50 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800 transition-colors shadow-2xs max-w-[200px] sm:max-w-[260px]"
+              title={`Cuộc hội thoại mục tiêu: ${state.aiTargetThread} (Bấm để thay đổi)`}
+            >
+              <Link2 className="w-3 h-3 text-purple-600 shrink-0" />
+              <span className="truncate">{state.aiTargetThread}</span>
+            </button>
+          )}
+
+          {/* Compact manual scan button */}
+          {onCheckIncoming && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              disabled={loading || isCheckingIncoming}
+              onClick={onCheckIncoming}
+              className="h-9 px-2.5 text-xs gap-1.5 font-medium text-muted-foreground hover:text-foreground"
+              title="Quét tin nhắn Messenger mới ngay lập tức"
+            >
+              <RefreshCw className={`w-3 h-3 ${isCheckingIncoming ? 'animate-spin text-primary' : ''}`} />
+              <span className="hidden sm:inline">{isCheckingIncoming ? 'Đang quét...' : 'Quét tin nhắn'}</span>
+            </Button>
+          )}
         </div>
 
         {/* Heartbeat Display */}
@@ -141,6 +244,19 @@ export const BotStatusCard: React.FC<Props> = ({
           </span>
         </div>
       </div>
+
+      {/* AI Conversation Thread Configuration Modal */}
+      {onUpdateAiConfig && (
+        <AiConfigModal
+          isOpen={isAiConfigOpen}
+          currentTargetThread={state.aiTargetThread || ''}
+          onClose={() => setIsAiConfigOpen(false)}
+          onSave={async (thread) => {
+            await onUpdateAiConfig({ targetThread: thread });
+          }}
+          loading={loading}
+        />
+      )}
     </Card>
   );
 };

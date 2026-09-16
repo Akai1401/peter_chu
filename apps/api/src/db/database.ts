@@ -71,6 +71,12 @@ export function initDatabase(dbPath?: string): Database.Database {
   try {
     db.exec(`ALTER TABLE test_dispatch_queue ADD COLUMN call_duration_seconds INTEGER NOT NULL DEFAULT 30`);
   } catch {}
+  try {
+    db.exec(`ALTER TABLE bot_state ADD COLUMN ai_auto_reply INTEGER NOT NULL DEFAULT 1`);
+  } catch {}
+  try {
+    db.exec(`ALTER TABLE bot_state ADD COLUMN ai_target_thread TEXT DEFAULT ''`);
+  } catch {}
 
   return db;
 }

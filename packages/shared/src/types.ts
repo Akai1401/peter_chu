@@ -39,6 +39,8 @@ export interface BotState {
   sessionStatus: SessionStatus;
   emergencyStop: boolean;
   dryRun: boolean;
+  aiAutoReply?: boolean;
+  aiTargetThread?: string;
   lastHeartbeat?: string | null;
   lockHolderId?: string | null;
   updatedAt: string;

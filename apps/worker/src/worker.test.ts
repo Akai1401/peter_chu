@@ -7,6 +7,7 @@ import { LockManager } from './safety/lock-manager.js';
 import { RateLimiter } from './safety/rate-limiter.js';
 import { MessengerClient } from './messenger/playwright-client.js';
 import { CronRunner } from './scheduler/cron-runner.js';
+import { GeminiService } from './ai/gemini-service.js';
 
 const TEST_DB = path.resolve(process.cwd(), 'data/test_worker.db');
 
@@ -25,11 +26,13 @@ function setupTestDb(): Database.Database {
       session_status TEXT NOT NULL DEFAULT 'UNKNOWN',
       emergency_stop INTEGER NOT NULL DEFAULT 0,
       dry_run INTEGER NOT NULL DEFAULT 1,
+      ai_auto_reply INTEGER NOT NULL DEFAULT 1,
+      ai_target_thread TEXT DEFAULT '',
       last_heartbeat TEXT,
       lock_holder_id TEXT,
       updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
-    INSERT INTO bot_state (id, status, session_status, emergency_stop, dry_run) VALUES (1, 'RUNNING', 'LOGGED_IN', 0, 1);
+    INSERT INTO bot_state (id, status, session_status, emergency_stop, dry_run, ai_auto_reply, ai_target_thread) VALUES (1, 'RUNNING', 'LOGGED_IN', 0, 1, 1, '');
 
     CREATE TABLE IF NOT EXISTS reminders (
       id TEXT PRIMARY KEY,
@@ -66,6 +69,23 @@ function setupTestDb(): Database.Database {
       holder_id TEXT NOT NULL,
       acquired_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
       expires_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS audit_logs (
+      id TEXT PRIMARY KEY,
+      timestamp TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      action TEXT NOT NULL,
+      actor TEXT NOT NULL DEFAULT 'system',
+      details TEXT,
+      level TEXT NOT NULL DEFAULT 'INFO'
+    );
+
+    CREATE TABLE IF NOT EXISTS ai_processed_messages (
+      id TEXT PRIMARY KEY,
+      thread_id TEXT NOT NULL,
+      message_text TEXT NOT NULL,
+      reply_text TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
   `);
   return db;
@@ -249,3 +269,153 @@ test('CronRunner - auto-stops bot and halts processing when Messenger is not con
     fs.unlinkSync(TEST_DB);
   }
 });
+
+test('CronRunner - checkAndReplyIncomingMessages automatically responds to incoming messages with Gemini', async () => {
+  const db = setupTestDb();
+  db.prepare(`UPDATE bot_state SET status = 'RUNNING', session_status = 'LOGGED_IN' WHERE id = 1`).run();
+
+  const client = new MessengerClient({ isDryRun: true });
+  // Mock getLatestUnreadIncomingMessage
+  let simulatedIncoming: { threadId: string; senderName?: string; messageText: string } | null = {
+    threadId: 't_user_123',
+    senderName: 'Nguyen Van A',
+    messageText: 'Chào bạn, gói dịch vụ giá bao nhiêu?'
+  };
+  client.getLatestUnreadIncomingMessage = async () => simulatedIncoming;
+
+  let sentMessages: Array<{ threadId: string; message: string }> = [];
+  client.sendMessage = async (threadId: string, message: string) => {
+    sentMessages.push({ threadId, message });
+    return {
+      success: true,
+      dryRun: true,
+      threadId,
+      message,
+      timestamp: new Date().toISOString()
+    };
+  };
+
+  const gemini = new GeminiService({ apiKey: 'dummy_key' });
+  gemini.generateReply = async (input: string) => `Chào bạn! Giá gói dịch vụ là 100k/tháng ạ (cho: ${input})`;
+
+  const lock = new LockManager(db);
+  const limiter = new RateLimiter(db, { minSecondsBetween: 0, maxPerHour: 100 });
+  const runner = new CronRunner(db, client, lock, limiter, 'test-worker-ai', gemini);
+
+  // 1. First run: processes and replies
+  const replied = await runner.checkAndReplyIncomingMessages();
+  assert.equal(replied, true);
+  assert.equal(sentMessages.length, 1);
+  assert.equal(sentMessages[0].threadId, 't_user_123');
+  assert.ok(sentMessages[0].message.includes('100k/tháng'));
+
+  // Verify record in SQLite ai_processed_messages
+  const savedRow = db.prepare(`SELECT * FROM ai_processed_messages WHERE thread_id = 't_user_123'`).get() as any;
+  assert.ok(savedRow);
+  assert.equal(savedRow.message_text, 'Chào bạn, gói dịch vụ giá bao nhiêu?');
+
+  // Verify execution log
+  const logRow = db.prepare(`SELECT * FROM execution_logs WHERE reminder_id = 'ai_auto_reply'`).get() as any;
+  assert.ok(logRow);
+  assert.equal(logRow.status, 'SUCCESS');
+
+  // 2. Second run with same message: should be ignored (deduplicated)
+  const repliedSecond = await runner.checkAndReplyIncomingMessages();
+  assert.equal(repliedSecond, false);
+  assert.equal(sentMessages.length, 1); // No new message sent
+
+  // 3. If bot is stopped: should not reply
+  db.prepare(`UPDATE bot_state SET status = 'STOPPED' WHERE id = 1`).run();
+  simulatedIncoming = {
+    threadId: 't_user_456',
+    messageText: 'Alo bạn ơi?'
+  };
+  const repliedStopped = await runner.checkAndReplyIncomingMessages();
+  assert.equal(repliedStopped, false);
+  assert.equal(sentMessages.length, 1);
+
+  // 4. If AI auto reply is toggled OFF (ai_auto_reply = 0): should not reply even if bot is RUNNING
+  db.prepare(`UPDATE bot_state SET status = 'RUNNING', ai_auto_reply = 0 WHERE id = 1`).run();
+  simulatedIncoming = {
+    threadId: 't_user_789',
+    messageText: 'Có ai ở đó không?'
+  };
+  const repliedDisabled = await runner.checkAndReplyIncomingMessages();
+  assert.equal(repliedDisabled, false);
+  assert.equal(sentMessages.length, 1);
+
+  await runner.stop();
+  db.close();
+  if (fs.existsSync(TEST_DB)) {
+    fs.unlinkSync(TEST_DB);
+  }
+});
+
+test('CronRunner - schedule execution takes strict priority over AI Auto-Reply when conflicts occur', async () => {
+  const db = setupTestDb();
+  db.prepare(`UPDATE bot_state SET status = 'RUNNING', session_status = 'LOGGED_IN' WHERE id = 1`).run();
+
+  const client = new MessengerClient({ isDryRun: true });
+  const simulatedIncoming = {
+    threadId: 't_user_conflict',
+    senderName: 'Nguyen Van Conflict',
+    messageText: 'Khách gửi tin nhắn đúng lúc lịch chạy'
+  };
+  client.getLatestUnreadIncomingMessage = async () => simulatedIncoming;
+
+  const sentMessages: Array<{ threadId: string; message: string }> = [];
+  client.sendMessage = async (threadId: string, message: string) => {
+    sentMessages.push({ threadId, message });
+    return {
+      success: true,
+      dryRun: true,
+      threadId,
+      message,
+      timestamp: new Date().toISOString()
+    };
+  };
+
+  const gemini = new GeminiService({ apiKey: 'dummy_key' });
+  gemini.generateReply = async () => 'AI Reply';
+
+  const lock = new LockManager(db);
+  const limiter = new RateLimiter(db, { minSecondsBetween: 0, maxPerHour: 100 });
+  const runner = new CronRunner(db, client, lock, limiter, 'test-worker-priority', gemini);
+
+  // 1. Insert an active reminder due at all times (window 00:00 - 23:59, interval 1 min)
+  db.prepare(`
+    INSERT INTO reminders (id, title, content, target_thread_id, window_start, window_end, interval_minutes, active)
+    VALUES ('r_priority_1', 'Priority Reminder', 'Lịch nhắc quan trọng!', 't_scheduled_target', '00:00', '23:59', 1, 1)
+  `).run();
+
+  // Verify that hasDueReminders recognizes this reminder is due
+  assert.equal(runner.hasDueReminders(), true);
+
+  // 2. Since schedule is due right now, AI Auto-Reply must yield priority and return false without sending
+  const aiResult = await runner.checkAndReplyIncomingMessages();
+  assert.equal(aiResult, false);
+  assert.equal(sentMessages.length, 0); // AI did NOT send!
+
+  // 3. Now execute the scheduled reminder via tick()
+  const tickResult = await runner.tick();
+  assert.equal(tickResult.dispatched, 1);
+  assert.equal(sentMessages.length, 1);
+  assert.equal(sentMessages[0].threadId, 't_scheduled_target');
+  assert.equal(sentMessages[0].message, 'Lịch nhắc quan trọng!');
+
+  // 4. Now that schedule has executed for this slot, hasDueReminders is false
+  assert.equal(runner.hasDueReminders(), false);
+
+  // 5. AI Auto-Reply can now safely run
+  const aiResultAfter = await runner.checkAndReplyIncomingMessages();
+  assert.equal(aiResultAfter, true);
+  assert.equal(sentMessages.length, 2);
+  assert.equal(sentMessages[1].threadId, 't_user_conflict');
+
+  await runner.stop();
+  db.close();
+  if (fs.existsSync(TEST_DB)) {
+    fs.unlinkSync(TEST_DB);
+  }
+});
+
