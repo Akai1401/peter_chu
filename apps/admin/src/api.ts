@@ -1,5 +1,6 @@
 import type {
   BotState,
+  SessionStatus,
   Reminder,
   AuditLog,
   ExecutionLog,
@@ -34,10 +35,17 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ action, reason, actor: 'admin_dashboard' })
     }),
-  setDryRun: (dryRun: boolean) =>
-    request<BotState>('/bot/dry-run', {
-      method: 'POST',
-      body: JSON.stringify({ dryRun, actor: 'admin_dashboard' })
+  checkSession: () =>
+    request<{ sessionStatus: SessionStatus; lastHeartbeat: string | null }>('/bot/check-session', {
+      method: 'POST'
+    }),
+  connectMessenger: () =>
+    request<{ message: string }>('/bot/connect-messenger', {
+      method: 'POST'
+    }),
+  disconnectMessenger: () =>
+    request<{ message: string }>('/bot/disconnect', {
+      method: 'POST'
     }),
 
   // Reminders

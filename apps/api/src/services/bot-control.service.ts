@@ -72,6 +72,13 @@ export class BotControlService {
     actor: string = 'admin_ui',
     reason?: string
   ): BotState {
+    if (action === 'START' || action === 'RESTART') {
+      const currentState = this.getBotState();
+      if (currentState.sessionStatus !== 'LOGGED_IN') {
+        throw new Error('Không thể khởi động hệ thống: Messenger chưa kết nối. Vui lòng kết nối Messenger trước.');
+      }
+    }
+
     let nextStatus: BotStatus = 'RUNNING';
     let emergencyStop = 0;
 

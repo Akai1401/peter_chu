@@ -8,14 +8,14 @@
     "apps/*"
   ],
   "scripts": {
-    "dev:api": "npm --workspace=@messenger/api run dev",
-    "dev:worker": "npm --workspace=@messenger/worker run dev",
-    "dev:admin": "npm --workspace=@messenger/admin run dev",
+    "dev:api": "bun --filter=@messenger/api run dev",
+    "dev:worker": "bun --filter=@messenger/worker run dev",
+    "dev:admin": "bun --filter=@messenger/admin run dev",
     "login:messenger": "tsx apps/worker/src/scripts/login.ts",
-    "build": "npm run build --workspaces",
-    "typecheck": "npm run typecheck --workspaces",
-    "lint": "npm run lint --workspaces",
-    "test": "npm run test --workspaces"
+    "build": "bun run --workspaces build",
+    "typecheck": "bun run --workspaces typecheck",
+    "lint": "bun run --workspaces lint",
+    "test": "bun run --workspaces test"
   },
   "devDependencies": {
     "@types/node": "^22.10.5",

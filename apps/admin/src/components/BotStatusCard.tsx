@@ -3,168 +3,144 @@ import {
   Play,
   Square,
   RotateCcw,
-  AlertOctagon,
-  ShieldCheck,
-  ShieldAlert,
   Clock,
-  Activity
+  Cpu,
+  AlertTriangle,
+  FlaskConical
 } from 'lucide-react';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Label } from '@/components/ui/label';
-import { Input } from '@/components/ui/input';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import type { BotState } from '@messenger/shared';
 
 interface Props {
   state: BotState | null;
   onAction: (action: 'START' | 'STOP' | 'RESTART' | 'EMERGENCY_STOP', reason?: string) => Promise<void>;
+  onCheckSession?: () => Promise<void>;
+  onConnectMessenger?: () => Promise<void>;
+  onDisconnectMessenger?: () => Promise<void>;
+  isCheckingSession?: boolean;
   loading: boolean;
 }
 
-export const BotStatusCard: React.FC<Props> = ({ state, onAction, loading }) => {
-  const [showEmergencyModal, setShowEmergencyModal] = useState(false);
-  const [emergencyReason, setEmergencyReason] = useState('');
+const ENGINE_STATUS_CONFIG: Record<string, { label: string; dot: string; badge: string }> = {
+  RUNNING:          { label: 'Running',          dot: 'bg-emerald-500 animate-pulse', badge: 'text-emerald-700 bg-emerald-50 border-emerald-200 dark:text-emerald-400 dark:bg-emerald-950/40 dark:border-emerald-800' },
+  STOPPED:          { label: 'Stopped',          dot: 'bg-slate-400',                badge: 'text-slate-600 bg-slate-100 border-slate-200 dark:text-slate-400 dark:bg-slate-800/40 dark:border-slate-700' },
+  PAUSED:           { label: 'Paused',           dot: 'bg-amber-400 animate-pulse',  badge: 'text-amber-700 bg-amber-50 border-amber-200 dark:text-amber-400 dark:bg-amber-950/40 dark:border-amber-800' },
+  EMERGENCY_STOPPED:{ label: 'Emergency Stop',   dot: 'bg-red-500 animate-pulse',    badge: 'text-red-700 bg-red-50 border-red-200 dark:text-red-400 dark:bg-red-950/40 dark:border-red-800' },
+};
+
+
+
+export const BotStatusCard: React.FC<Props> = ({
+  state,
+  onAction,
+  loading
+}) => {
+  const [isRestarting, setIsRestarting] = useState(false);
+
+  const handleRestart = async () => {
+    setIsRestarting(true);
+    try {
+      await onAction('RESTART');
+    } finally {
+      setTimeout(() => {
+        setIsRestarting(false);
+      }, 600);
+    }
+  };
 
   if (!state) {
     return (
-      <Card className="min-h-[160px] flex items-center justify-center">
-        <div className="flex flex-col items-center gap-4 text-muted-foreground">
-          <div className="w-8 h-8 border-2 border-muted-foreground/20 border-t-muted-foreground rounded-full animate-spin" />
-          <span className="text-sm font-medium">Initializing Nexus Core...</span>
+      <Card className="p-4 flex items-center justify-center min-h-[64px]">
+        <div className="flex items-center gap-3 text-muted-foreground">
+          <div className="w-4 h-4 border-2 border-muted-foreground/20 border-t-muted-foreground rounded-full animate-spin" />
+          <span className="text-xs font-medium">Loading Engine State...</span>
         </div>
       </Card>
     );
   }
 
-  const isEmergency = state.status === 'EMERGENCY_STOPPED' || state.emergencyStop;
   const isRunning = state.status === 'RUNNING';
-
-  const getStatusBadge = () => {
-    if (isEmergency) return <Badge variant="destructive">Emergency Stopped</Badge>;
-    if (isRunning) return <Badge variant="success">System Active</Badge>;
-    return <Badge variant="secondary">System Standby</Badge>;
-  };
-
-
-
-  const getSessionBadge = () => {
-    switch (state.sessionStatus) {
-      case 'LOGGED_IN':
-        return (
-          <Badge variant="success" className="flex items-center gap-1.5">
-            <ShieldCheck className="w-3.5 h-3.5" /> Messenger Connected
-          </Badge>
-        );
-      case 'UNAUTHENTICATED':
-      case 'SESSION_EXPIRED':
-        return (
-          <Badge variant="destructive" className="flex items-center gap-1.5">
-            <ShieldAlert className="w-3.5 h-3.5" /> {state.sessionStatus === 'SESSION_EXPIRED' ? 'Expired' : 'Unauthenticated'}
-          </Badge>
-        );
-      default:
-        return <Badge variant="secondary">Unknown</Badge>;
-    }
-  };
-
-  const handleConfirmEmergency = async () => {
-    await onAction('EMERGENCY_STOP', emergencyReason || 'Triggered from Admin UI');
-    setShowEmergencyModal(false);
-    setEmergencyReason('');
-  };
-
-  const EmergencyForm = () => (
-    <div className="py-4 space-y-2 px-4 sm:px-0">
-      <Label htmlFor="reason">Reason for halt (Optional)</Label>
-      <Input
-        id="reason"
-        value={emergencyReason}
-        onChange={(e) => setEmergencyReason(e.target.value)}
-        placeholder="e.g. Rate limit hit on Facebook"
-      />
-    </div>
-  );
+  const engineCfg = ENGINE_STATUS_CONFIG[state.status] ?? ENGINE_STATUS_CONFIG['STOPPED'];
 
   return (
-    <>
-      <Card>
-        <CardHeader className="pb-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div className="flex items-start gap-4">
-            <div className="w-10 h-10 rounded-lg bg-muted border flex items-center justify-center shrink-0">
-              <Activity className="w-5 h-5" />
-            </div>
-            <div>
-              <div className="flex items-center gap-3 mb-1">
-                <CardTitle className="text-lg">Core Worker Status</CardTitle>
-                {getStatusBadge()}
-              </div>
-              <CardDescription>Manage the Playwright execution engine and scheduler.</CardDescription>
-            </div>
-          </div>
+    <Card className="p-3 sm:p-4 shadow-sm space-y-3">
+      {/* ── System Status Row ── */}
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="flex items-center gap-1.5 text-xs text-muted-foreground font-medium shrink-0">
+          <Cpu className="w-3.5 h-3.5" />
+          <span>System Status</span>
+        </div>
 
-          <div className="flex flex-wrap items-center gap-4 pl-14 md:pl-0">
-            {getSessionBadge()}
-          </div>
-        </CardHeader>
-        
-        <CardContent>
-          <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-4 pt-4 border-t">
-            <div className="grid grid-cols-2 sm:flex items-center gap-3 w-full xl:w-auto">
-              {!isRunning ? (
-                <Button onClick={() => onAction('START')} disabled={loading} className="col-span-2 sm:col-span-1 gap-2">
-                  <Play className="w-4 h-4" /> Initialize
-                </Button>
-              ) : (
-                <Button onClick={() => onAction('STOP')} disabled={loading} variant="secondary" className="col-span-2 sm:col-span-1 gap-2">
-                  <Square className="w-4 h-4" /> Halt
-                </Button>
-              )}
+        {/* Engine status */}
+        <span className={`inline-flex items-center gap-1.5 border rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${engineCfg.badge}`}>
+          <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${engineCfg.dot}`} />
+          {engineCfg.label}
+        </span>
 
-              <Button onClick={() => onAction('RESTART')} disabled={loading} variant="outline" className="gap-2">
-                <RotateCcw className="w-4 h-4" /> Reboot
-              </Button>
+        {/* Dry-run indicator */}
+        {state.dryRun && (
+          <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-5 gap-1 font-semibold text-purple-600 border-purple-300 bg-purple-50 dark:bg-purple-950/30 dark:border-purple-800 dark:text-purple-400">
+            <FlaskConical className="w-3 h-3" /> Dry Run
+          </Badge>
+        )}
 
-              <Button onClick={() => setShowEmergencyModal(true)} disabled={loading || isEmergency} variant="destructive" className="gap-2">
-                <AlertOctagon className="w-4 h-4" /> E-Stop
-              </Button>
-            </div>
+        {/* Emergency stop warning */}
+        {state.emergencyStop && (
+          <Badge variant="destructive" className="text-[10px] px-1.5 py-0 h-5 gap-1 font-semibold">
+            <AlertTriangle className="w-3 h-3" /> Emergency Stop
+          </Badge>
+        )}
+      </div>
 
-            <div className="flex items-center gap-2 text-sm text-muted-foreground border px-3 py-1.5 rounded-md">
-              <Clock className="w-4 h-4" />
-              <span>Last Heartbeat: {state.lastHeartbeat ? new Date(state.lastHeartbeat).toLocaleTimeString() : 'N/A'}</span>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      <Dialog open={showEmergencyModal} onOpenChange={setShowEmergencyModal}>
-        <DialogContent className="sm:max-w-md w-[95vw] rounded-lg">
-          <DialogHeader>
-            <DialogTitle>Confirm Emergency Stop</DialogTitle>
-            <DialogDescription>
-              This will forcefully halt all running jobs and prevent the bot from executing future reminders.
-            </DialogDescription>
-          </DialogHeader>
-          <EmergencyForm />
-          <DialogFooter className="gap-2 sm:gap-0">
-            <Button variant="outline" onClick={() => setShowEmergencyModal(false)}>
-              Cancel
+      {/* ── Engine Controls + Heartbeat ── */}
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 pt-2 border-t">
+        {/* Engine Controls */}
+        <div className="flex items-center gap-2.5">
+          {!isRunning ? (
+            <Button
+              onClick={() => onAction('START')}
+              disabled={loading || isRestarting}
+              size="sm"
+              className="gap-2 h-9 px-4 font-medium shadow-sm"
+            >
+              <Play className="w-3.5 h-3.5" /> Start Engine
             </Button>
-            <Button variant="destructive" onClick={handleConfirmEmergency}>
-              Execute Stop
+          ) : (
+            <Button
+              onClick={() => onAction('STOP')}
+              disabled={loading || isRestarting}
+              variant="destructive"
+              size="sm"
+              className="gap-2 h-9 px-4 font-medium shadow-sm"
+            >
+              <Square className="w-3.5 h-3.5" /> Stop Engine
             </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </>
+          )}
+
+          <Button
+            onClick={handleRestart}
+            disabled={loading || isRestarting}
+            variant="outline"
+            size="sm"
+            className="gap-2 h-9 px-3.5 text-xs font-medium"
+          >
+            <RotateCcw className={`w-3.5 h-3.5 ${isRestarting ? 'animate-spin' : ''}`} /> Restart
+          </Button>
+        </div>
+
+        {/* Heartbeat Display */}
+        <div className="flex items-center gap-2 text-xs text-muted-foreground bg-muted/40 border px-3 py-2 rounded-md justify-center sm:justify-start">
+          <Clock className="w-3.5 h-3.5 shrink-0" />
+          <span className="truncate">
+            Heartbeat:{' '}
+            <strong className="font-mono text-foreground font-medium">
+              {state.lastHeartbeat ? new Date(state.lastHeartbeat).toLocaleTimeString() : 'N/A'}
+            </strong>
+          </span>
+        </div>
+      </div>
+    </Card>
   );
 };

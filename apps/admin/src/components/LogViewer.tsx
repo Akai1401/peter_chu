@@ -22,6 +22,18 @@ export const LogViewer: React.FC<Props> = ({
   const [tab, setTab] = useState<'execution' | 'audit'>('execution');
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [filterText, setFilterText] = useState('');
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  const handleRefresh = async () => {
+    setIsRefreshing(true);
+    try {
+      await onRefresh();
+    } finally {
+      setTimeout(() => {
+        setIsRefreshing(false);
+      }, 500);
+    }
+  };
 
   const toggleExpand = (id: string) => {
     setExpandedId(expandedId === id ? null : id);
@@ -90,27 +102,25 @@ export const LogViewer: React.FC<Props> = ({
             <CardTitle className="text-lg">System Logs</CardTitle>
           </div>
 
-          <div className="flex bg-muted/50 rounded-md p-1 border">
-            <button
+          <div className="flex bg-muted/60 rounded-lg p-1 border gap-1">
+            <Button
+              type="button"
+              variant={tab === 'execution' ? 'default' : 'ghost'}
+              size="sm"
               onClick={() => setTab('execution')}
-              className={`px-3 py-1.5 rounded-sm text-xs font-semibold transition-colors ${
-                tab === 'execution'
-                  ? 'bg-background text-foreground shadow-sm'
-                  : 'text-muted-foreground hover:text-foreground hover:bg-background/50'
-              }`}
+              className="h-7 text-xs font-semibold px-2.5 shadow-none"
             >
               Execution ({executionLogs.length})
-            </button>
-            <button
+            </Button>
+            <Button
+              type="button"
+              variant={tab === 'audit' ? 'default' : 'ghost'}
+              size="sm"
               onClick={() => setTab('audit')}
-              className={`px-3 py-1.5 rounded-sm text-xs font-semibold transition-colors ${
-                tab === 'audit'
-                  ? 'bg-background text-foreground shadow-sm'
-                  : 'text-muted-foreground hover:text-foreground hover:bg-background/50'
-              }`}
+              className="h-7 text-xs font-semibold px-2.5 shadow-none"
             >
               Audit ({auditLogs.length})
-            </button>
+            </Button>
           </div>
         </div>
 
@@ -128,11 +138,12 @@ export const LogViewer: React.FC<Props> = ({
           <Button
             variant="outline"
             size="icon"
-            onClick={() => onRefresh()}
-            disabled={loading}
+            onClick={handleRefresh}
+            disabled={loading || isRefreshing}
             className="shrink-0"
+            title="Reload logs"
           >
-            <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+            <RefreshCw className={`h-4 w-4 ${loading || isRefreshing ? 'animate-spin' : ''}`} />
           </Button>
         </div>
       </CardHeader>

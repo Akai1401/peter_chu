@@ -109,7 +109,7 @@ export const ReminderModal: React.FC<Props> = ({
 
   const formContentNode = (
     <form id="reminder-form" onSubmit={handleSubmit} className="flex flex-col">
-      <div className="p-4 sm:p-6 space-y-4 sm:space-y-6">
+      <div className="px-5 py-3.5 sm:px-6 sm:py-4 space-y-4 sm:space-y-5">
         {error && (
           <div className="p-3 bg-destructive/10 border border-destructive/20 text-destructive rounded-md text-sm font-medium">
             {error}
@@ -144,19 +144,16 @@ export const ReminderModal: React.FC<Props> = ({
           <Label>Action Type</Label>
           <div className="grid grid-cols-4 gap-2">
             {actionTypes.map(type => (
-              <button
+              <Button
                 key={type.id}
                 type="button"
+                variant={actionType === type.id ? "default" : "outline"}
                 onClick={() => setActionType(type.id)}
-                className={`flex flex-col items-center justify-center gap-2 p-2 sm:p-3 rounded-md border transition-colors ${
-                  actionType === type.id
-                    ? 'bg-primary border-primary text-primary-foreground'
-                    : 'bg-card border-input text-muted-foreground hover:bg-accent hover:text-accent-foreground'
-                }`}
+                className="h-auto py-2.5 sm:py-3 flex flex-col items-center justify-center gap-1.5 rounded-lg border transition-all"
               >
                 {type.icon}
                 <span className="text-[10px] font-semibold uppercase tracking-wider">{type.label}</span>
-              </button>
+              </Button>
             ))}
           </div>
         </div>
@@ -278,17 +275,17 @@ export const ReminderModal: React.FC<Props> = ({
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="w-[95vw] sm:max-w-xl max-h-[90vh] flex flex-col p-0 overflow-hidden rounded-lg">
-        <DialogHeader className="p-4 sm:p-6 pb-2 shrink-0 text-left">
-          <DialogTitle>{initialData ? 'Edit Configuration' : 'New Configuration'}</DialogTitle>
-          <DialogDescription>
+      <DialogContent className="w-[95vw] sm:max-w-xl max-h-[90vh] flex flex-col p-0 gap-0 overflow-hidden rounded-xl">
+        <DialogHeader className="px-5 py-3.5 sm:px-6 sm:py-4 border-b shrink-0 text-left space-y-1">
+          <DialogTitle className="text-lg font-semibold">{initialData ? 'Edit Configuration' : 'New Configuration'}</DialogTitle>
+          <DialogDescription className="text-xs text-muted-foreground">
             Configure the automated message and call behavior for this schedule.
           </DialogDescription>
         </DialogHeader>
         <div className="overflow-y-auto flex-1 min-h-0">
           {formContentNode}
         </div>
-        <DialogFooter className="p-4 sm:p-6 pt-2 sm:pt-4 shrink-0 border-t flex-col sm:flex-row gap-2 sm:gap-0">
+        <DialogFooter className="px-5 py-3 sm:px-6 sm:py-4 shrink-0 border-t flex-col sm:flex-row gap-2 sm:gap-0">
           <Button type="button" variant="outline" onClick={onClose} disabled={loading} className="w-full sm:w-24">
             Cancel
           </Button>

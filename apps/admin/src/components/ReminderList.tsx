@@ -96,7 +96,7 @@ export const ReminderList: React.FC<Props> = ({
             </Button>
           </div>
         ) : (
-          <div className="grid gap-4">
+          <div className="grid gap-3">
             {reminders.map((reminder) => {
               const isTesting = testingId === reminder.id;
               const isCallingAudio = callingState?.id === reminder.id && callingState.type === 'AUDIO';
@@ -106,25 +106,25 @@ export const ReminderList: React.FC<Props> = ({
               return (
                 <div
                   key={reminder.id}
-                  className={`relative p-4 rounded-lg border transition-colors ${
-                    reminder.active
-                      ? 'bg-card'
-                      : 'bg-muted/30 opacity-80'
+                  className={`overflow-hidden rounded-lg border transition-colors ${
+                    reminder.active ? 'bg-card' : 'bg-muted/30 opacity-80'
                   }`}
                 >
-                  <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3 mb-3">
-                    <div className="flex flex-col gap-2 pr-8 sm:pr-0 min-w-0 flex-1">
+                  {/* ── Header: title / badges / action menu ── */}
+                  <div className="flex items-start justify-between gap-2 p-4 pb-2">
+                    <div className="flex flex-col gap-1.5 min-w-0 flex-1">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <h3 className="text-sm font-semibold break-words">{reminder.title}</h3>
-                        <Badge variant={reminder.active ? "success" : "secondary"} className="text-[10px] px-1.5 py-0">
+                        <h3 className="text-sm font-semibold truncate">{reminder.title}</h3>
+                        <Badge
+                          variant={reminder.active ? 'success' : 'secondary'}
+                          className="text-[10px] px-1.5 py-0 shrink-0"
+                        >
                           {reminder.active ? 'Active' : 'Paused'}
                         </Badge>
                       </div>
-                      <div className="flex flex-wrap gap-2">
+                      <div className="flex flex-wrap gap-1.5">
                         {(!reminder.actionType || reminder.actionType === 'MESSAGE') && (
-                          <Badge variant="outline" className="text-[10px]">
-                            Message
-                          </Badge>
+                          <Badge variant="outline" className="text-[10px]">Message</Badge>
                         )}
                         {reminder.actionType === 'AUDIO_CALL' && (
                           <Badge variant="outline" className="text-[10px]">
@@ -144,9 +144,8 @@ export const ReminderList: React.FC<Props> = ({
                       </div>
                     </div>
 
-                    {/* Actions Menu & Buttons */}
-                    <div className="absolute sm:relative top-3 sm:top-0 right-3 sm:right-0 flex items-center gap-1.5">
-                      {/* PC Outside Management Actions */}
+                    {/* Action buttons — desktop shows Pause/Edit/Delete inline; mobile via dropdown */}
+                    <div className="flex items-center gap-1.5 shrink-0">
                       <div className="hidden sm:flex items-center gap-1.5">
                         <Button
                           variant="outline"
@@ -170,7 +169,7 @@ export const ReminderList: React.FC<Props> = ({
                           onClick={() => onEdit(reminder)}
                           disabled={loading}
                           className="h-8 px-2.5 text-xs gap-1.5"
-                          title="Edit Reminder"
+                          title="Edit"
                         >
                           <Edit2 className="h-3.5 w-3.5 text-muted-foreground" />
                           <span>Edit</span>
@@ -186,21 +185,20 @@ export const ReminderList: React.FC<Props> = ({
                           }}
                           disabled={loading}
                           className="h-8 px-2 text-xs text-destructive hover:text-destructive hover:bg-destructive/10"
-                          title="Delete Reminder"
+                          title="Delete"
                         >
                           <Trash2 className="h-3.5 w-3.5" />
                         </Button>
                       </div>
 
-                      {/* Dropdown Menu (Contains only Test actions on PC, plus management on mobile) */}
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
-                          <Button variant="outline" size="icon" className="h-8 w-8" title="Test Options">
+                          <Button variant="outline" size="icon" className="h-8 w-8 shrink-0" title="More options">
                             <MoreVertical className="h-4 w-4" />
                           </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end" className="w-48">
-                          {/* Mobile-only management items */}
+                          {/* Mobile: management actions */}
                           <div className="sm:hidden">
                             <DropdownMenuItem onClick={() => onToggle(reminder.id)} className="gap-2">
                               <Power className="h-4 w-4" />
@@ -221,8 +219,7 @@ export const ReminderList: React.FC<Props> = ({
                             </DropdownMenuItem>
                             <DropdownMenuSeparator />
                           </div>
-
-                          {/* Test Actions (Exclusively shown on PC inside the 3 dots) */}
+                          {/* Test actions (all screen sizes) */}
                           <DropdownMenuItem onClick={() => handleTestClick(reminder.id)} disabled={isAnyActionBusy} className="gap-2">
                             <Send className={`h-4 w-4 ${isTesting ? 'animate-spin text-primary' : 'text-muted-foreground'}`} />
                             Test Message
@@ -240,69 +237,41 @@ export const ReminderList: React.FC<Props> = ({
                     </div>
                   </div>
 
-                  <p className="text-sm text-muted-foreground mb-4 line-clamp-3 leading-relaxed break-words break-all sm:break-words">
-                    {reminder.actionType === 'AUDIO_CALL' ? (
-                      <span className="italic text-muted-foreground">Audio call reminder (no text message)</span>
-                    ) : reminder.actionType === 'VIDEO_CALL' ? (
-                      <span className="italic text-muted-foreground">Video call reminder (no text message)</span>
-                    ) : (
-                      reminder.content
-                    )}
-                  </p>
+                  {/* ── Message content ── */}
+                  <div className="px-4 pb-2">
+                    <p className="text-sm text-muted-foreground line-clamp-2 leading-relaxed">
+                      {reminder.actionType === 'AUDIO_CALL' ? (
+                        <span className="italic">Audio call reminder (no text message)</span>
+                      ) : reminder.actionType === 'VIDEO_CALL' ? (
+                        <span className="italic">Video call reminder (no text message)</span>
+                      ) : (
+                        reminder.content
+                      )}
+                    </p>
+                  </div>
 
-                  <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                    <div className="flex items-center gap-1.5 border px-2 py-1 rounded-md break-all bg-muted">
-                      <Hash className="h-3 w-3" />
-                      {reminder.targetThreadId}
+                  {/* ── Metadata chips (flex-wrap, never overflows) ── */}
+                  <div className="px-4 pb-3 flex flex-wrap gap-1.5 text-xs text-muted-foreground">
+                    <div className="flex items-start gap-1 border px-2 py-1 rounded-md bg-muted min-w-0">
+                      <Hash className="h-3 w-3 shrink-0 mt-0.5" />
+                      <span className="break-all">{reminder.targetThreadId}</span>
                     </div>
-                    <div className="flex items-center gap-1.5 border px-2 py-1 rounded-md whitespace-nowrap bg-muted">
-                      <Clock className="h-3 w-3" />
-                      {reminder.windowStart} - {reminder.windowEnd} ({reminder.intervalMinutes}m)
+                    <div className="flex items-center gap-1 border px-2 py-1 rounded-md bg-muted whitespace-nowrap">
+                      <Clock className="h-3 w-3 shrink-0" />
+                      {reminder.windowStart}–{reminder.windowEnd} ({reminder.intervalMinutes}m)
                     </div>
                     {Boolean(reminder.maxRuns && reminder.maxRuns > 0) && (
-                      <div className="flex items-center gap-1.5 border px-2 py-1 rounded-md whitespace-nowrap bg-muted">
-                        <Repeat className="h-3 w-3" />
-                        Runs: {reminder.runCount || 0}/{reminder.maxRuns}
+                      <div className="flex items-center gap-1 border px-2 py-1 rounded-md bg-muted whitespace-nowrap">
+                        <Repeat className="h-3 w-3 shrink-0" />
+                        {reminder.runCount || 0}/{reminder.maxRuns} runs
                         {(reminder.runCount || 0) >= (reminder.maxRuns || 0) && (
-                          <span className="text-[10px] text-amber-500 font-semibold uppercase ml-1">(Limit reached)</span>
+                          <span className="text-[10px] text-amber-500 font-semibold ml-1">(Done)</span>
                         )}
                       </div>
                     )}
                   </div>
 
-                  {/* Mobile Quick Test Buttons */}
-                  <div className="flex sm:hidden items-center gap-1.5 mt-3 pt-3 border-t">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => handleTestClick(reminder.id)}
-                      disabled={isAnyActionBusy}
-                      className="h-8 px-2 text-xs gap-1 flex-1 font-normal"
-                    >
-                      <Send className={`h-3 w-3 ${isTesting ? 'animate-spin text-primary' : ''}`} />
-                      <span>{isTesting ? 'Sending...' : 'Test Msg'}</span>
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => handleCallClick(reminder.id, 'AUDIO')}
-                      disabled={isAnyActionBusy}
-                      className="h-8 px-2 text-xs gap-1 flex-1 font-normal"
-                    >
-                      <PhoneCall className={`h-3 w-3 ${isCallingAudio ? 'animate-pulse text-cyan-500' : ''}`} />
-                      <span>{isCallingAudio ? 'Calling...' : 'Voice Call'}</span>
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => handleCallClick(reminder.id, 'VIDEO')}
-                      disabled={isAnyActionBusy}
-                      className="h-8 px-2 text-xs gap-1 flex-1 font-normal"
-                    >
-                      <Video className={`h-3 w-3 ${isCallingVideo ? 'animate-pulse text-purple-500' : ''}`} />
-                      <span>{isCallingVideo ? 'Calling...' : 'Video Call'}</span>
-                    </Button>
-                  </div>
+
                 </div>
               );
             })}

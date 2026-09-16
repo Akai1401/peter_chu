@@ -67,12 +67,12 @@ messenger-control-center/
 
 ### 1. Yêu cầu môi trường
 - Node.js >= 20 (khuyên dùng Node 22+)
-- npm >= 10
+- Bun >= 1.1
 
 ### 2. Cài đặt Dependencies
 ```bash
 cd /Users/aiot/Data/peter_chu
-npm install
+bun install
 ```
 
 ### 3. Cấu hình Biến Môi Trường
@@ -97,19 +97,19 @@ Mở 3 terminal riêng biệt để chạy các thành phần:
 
 - **Terminal 1: Chạy API Backend**
   ```bash
-  npm run dev:api
+  bun run dev:api
   # API chạy tại http://localhost:4000
   ```
 
 - **Terminal 2: Chạy Bot Worker**
   ```bash
-  npm run dev:worker
+  bun run dev:worker
   # Worker khởi động scheduler và Playwright context
   ```
 
 - **Terminal 3: Chạy Admin Dashboard**
   ```bash
-  npm run dev:admin
+  bun run dev:admin
   # Dashboard giao diện mở tại http://localhost:3000
   ```
 
@@ -117,7 +117,7 @@ Mở 3 terminal riêng biệt để chạy các thành phần:
 Khi muốn gửi tin nhắn thật lên Facebook (tắt chế độ DRY_RUN):
 1. Chạy lệnh:
    ```bash
-   npm run login:messenger
+   bun run login:messenger
    ```
 2. Cửa sổ Chrome thật sẽ tự động mở trang Facebook Messenger. Bạn tiến hành đăng nhập tài khoản Facebook của bạn 1 lần duy nhất.
 3. Sau khi vào được màn hình tin nhắn, script sẽ tự động lưu phiên (cookies & storage) vào thư mục `.messenger-session/` và cập nhật `session_status = 'LOGGED_IN'`.
@@ -131,19 +131,19 @@ Hệ thống cung cấp đầy đủ các scripts chạy đồng thời trên to
 
 1. **Typecheck (Kiểm tra kiểu dữ liệu TypeScript)**:
    ```bash
-   npm run typecheck
+   bun run typecheck
    ```
 2. **Lint**:
    ```bash
-   npm run lint
+   bun run lint
    ```
 3. **Chạy Unit & Integration Tests**:
    ```bash
-   npm run test
+   bun run test
    ```
 4. **Build Production Toàn Bộ Dự Án**:
    ```bash
-   npm run build
+   bun run build
    ```
 
 ---

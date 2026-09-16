@@ -1,6 +1,8 @@
 import { Router } from 'express';
+import { randomUUID } from 'node:crypto';
 import { BotControlService } from '../services/bot-control.service.js';
 import { BotActionSchema } from '@messenger/shared';
+import { getDb } from '../db/database.js';
 
 export function createBotRouter(botService: BotControlService = new BotControlService()): Router {
   const router = Router();
@@ -25,6 +27,18 @@ export function createBotRouter(botService: BotControlService = new BotControlSe
       }
 
       const { action, actor, reason } = parseResult.data;
+
+      if (action === 'START' || action === 'RESTART') {
+        const currentState = botService.getBotState();
+        if (currentState.sessionStatus !== 'LOGGED_IN') {
+          res.status(400).json({
+            success: false,
+            error: 'Messenger chưa được kết nối. Vui lòng kết nối Messenger trước khi kích hoạt hệ thống!'
+          });
+          return;
+        }
+      }
+
       const state = botService.updateBotStatus(action, actor, reason);
       res.json({ success: true, data: state });
     } catch (err: any) {
@@ -47,7 +61,7 @@ export function createBotRouter(botService: BotControlService = new BotControlSe
     }
   });
 
-  // GET /api/bot/session-check
+  // GET /api/bot/session-check (Legacy status check)
   router.get('/session-check', (_req, res) => {
     try {
       const state = botService.getBotState();
@@ -58,6 +72,86 @@ export function createBotRouter(botService: BotControlService = new BotControlSe
           lastHeartbeat: state.lastHeartbeat,
           dryRun: state.dryRun
         }
+      });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // POST /api/bot/check-session (Active session re-check via Worker)
+  router.post('/check-session', async (_req, res) => {
+    try {
+      const db = getDb();
+      const testId = randomUUID();
+
+      db.prepare(`
+        INSERT INTO test_dispatch_queue (id, reminder_id, target_thread_id, content, action_type, call_duration_seconds, status)
+        VALUES (?, 'system', 'system', 'check-session', 'CHECK_SESSION', 0, 'PENDING')
+      `).run(testId);
+
+      // Wait up to 20 seconds for worker to verify
+      const start = Date.now();
+      let finishedJob: { status: string; error: string | null } | null = null;
+      while (Date.now() - start < 20000) {
+        await new Promise((r) => setTimeout(r, 600));
+        const job = db
+          .prepare('SELECT status, error FROM test_dispatch_queue WHERE id = ?')
+          .get(testId) as { status: string; error: string | null } | undefined;
+        if (job && (job.status === 'COMPLETED' || job.status === 'FAILED')) {
+          finishedJob = job;
+          break;
+        }
+      }
+
+      const state = botService.getBotState();
+      res.json({
+        success: true,
+        data: {
+          sessionStatus: state.sessionStatus,
+          lastHeartbeat: state.lastHeartbeat
+        }
+      });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // POST /api/bot/connect-messenger (Open Chrome to log in Messenger)
+  router.post('/connect-messenger', async (_req, res) => {
+    try {
+      const db = getDb();
+      const testId = randomUUID();
+
+      db.prepare(`
+        INSERT INTO test_dispatch_queue (id, reminder_id, target_thread_id, content, action_type, call_duration_seconds, status)
+        VALUES (?, 'system', 'system', 'connect-messenger', 'CONNECT_MESSENGER', 0, 'PENDING')
+      `).run(testId);
+
+      res.json({
+        success: true,
+        message: 'Đang mở trình duyệt Chrome để đăng nhập Facebook Messenger. Vui lòng đăng nhập trên cửa sổ Chrome vừa mở!'
+      });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // POST /api/bot/disconnect (Log out session and clear cookies)
+  router.post('/disconnect', async (_req, res) => {
+    try {
+      const db = getDb();
+      const testId = randomUUID();
+
+      db.prepare(`
+        INSERT INTO test_dispatch_queue (id, reminder_id, target_thread_id, content, action_type, call_duration_seconds, status)
+        VALUES (?, 'system', 'system', 'disconnect', 'DISCONNECT', 0, 'PENDING')
+      `).run(testId);
+
+      botService.updateSessionStatus('UNAUTHENTICATED');
+
+      res.json({
+        success: true,
+        message: 'Đã ngắt kết nối phiên đăng nhập Messenger.'
       });
     } catch (err: any) {
       res.status(500).json({ success: false, error: err.message });

@@ -150,10 +150,10 @@ export function createReminderRouter(
       });
 
       // LIVE MODE: Send real message through worker
-      if (botState.sessionStatus === 'UNAUTHENTICATED') {
+      if (botState.sessionStatus !== 'LOGGED_IN') {
         res.status(400).json({
           success: false,
-          error: 'Messenger Web chưa đăng nhập. Vui lòng chạy "npm run login:messenger" trên terminal trước khi gửi thật!'
+          error: 'Messenger chưa được kết nối. Vui lòng kết nối Messenger trước khi sử dụng tính năng này!'
         });
         return;
       }
@@ -251,10 +251,10 @@ export function createReminderRouter(
       });
 
       // LIVE MODE: Call through worker
-      if (botState.sessionStatus === 'UNAUTHENTICATED') {
+      if (botState.sessionStatus !== 'LOGGED_IN') {
         res.status(400).json({
           success: false,
-          error: 'Messenger Web chưa đăng nhập. Vui lòng chạy "npm run login:messenger" trên terminal!'
+          error: 'Messenger chưa được kết nối. Vui lòng kết nối Messenger trước khi sử dụng tính năng này!'
         });
         return;
       }

@@ -1,15 +1,23 @@
 import { ReminderService } from './reminder.service.js';
+import { BotControlService } from './bot-control.service.js';
 import { getUpcomingSlots } from '@messenger/shared';
 import type { UpcomingSlot } from '@messenger/shared';
 
 export class ScheduleService {
   private reminderService: ReminderService;
+  private botControlService: BotControlService;
 
-  constructor(reminderService?: ReminderService) {
+  constructor(reminderService?: ReminderService, botControlService?: BotControlService) {
     this.reminderService = reminderService || new ReminderService();
+    this.botControlService = botControlService || new BotControlService();
   }
 
   getUpcomingSlots(limit: number = 20): UpcomingSlot[] {
+    const botState = this.botControlService.getBotState();
+    if (botState.status !== 'RUNNING') {
+      return [];
+    }
+
     const reminders = this.reminderService.getAllReminders().filter((r) => r.active);
     const allSlots: UpcomingSlot[] = [];
     const now = new Date();

@@ -158,10 +158,14 @@ async function bootstrapWorker() {
   const rateLimiter = new RateLimiter(db);
   const cronRunner = new CronRunner(db, messengerClient, lockManager, rateLimiter);
 
-  // Check initial session
+  // Check initial session offline
   try {
-    const sessionStatus = await messengerClient.checkSession();
-    db.prepare(`UPDATE bot_state SET session_status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = 1`).run(sessionStatus);
+    const sessionStatus = await messengerClient.checkSession(false);
+    if (sessionStatus !== 'LOGGED_IN') {
+      db.prepare(`UPDATE bot_state SET session_status = ?, status = 'STOPPED', updated_at = CURRENT_TIMESTAMP WHERE id = 1`).run(sessionStatus);
+    } else {
+      db.prepare(`UPDATE bot_state SET session_status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = 1`).run(sessionStatus);
+    }
     console.log(`[Worker] Initial Session Status: ${sessionStatus}`);
   } catch (err) {
     console.warn(`[Worker] Could not verify session status:`, err);

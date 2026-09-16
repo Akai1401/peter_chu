@@ -29,7 +29,7 @@ function setupTestDb(): Database.Database {
       lock_holder_id TEXT,
       updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
-    INSERT INTO bot_state (id, status, emergency_stop, dry_run) VALUES (1, 'RUNNING', 0, 1);
+    INSERT INTO bot_state (id, status, session_status, emergency_stop, dry_run) VALUES (1, 'RUNNING', 'LOGGED_IN', 0, 1);
 
     CREATE TABLE IF NOT EXISTS reminders (
       id TEXT PRIMARY KEY,
@@ -213,6 +213,34 @@ test('CronRunner - enforces max_runs and auto-deactivates reminder', async () =>
   const slot2 = new Date('2026-09-15T11:10:00Z');
   const res2 = await runner.tick(slot2);
   assert.equal(res2.dispatched, 0);
+
+  await runner.stop();
+  db.close();
+  if (fs.existsSync(TEST_DB)) {
+    fs.unlinkSync(TEST_DB);
+  }
+});
+
+test('CronRunner - auto-stops bot and halts processing when Messenger is not connected', async () => {
+  const db = setupTestDb();
+  db.prepare(`UPDATE bot_state SET status = 'RUNNING', session_status = 'UNAUTHENTICATED' WHERE id = 1`).run();
+
+  const client = new MessengerClient({ isDryRun: true });
+  const lock = new LockManager(db);
+  const limiter = new RateLimiter(db, { minSecondsBetween: 0, maxPerHour: 100 });
+  const runner = new CronRunner(db, client, lock, limiter, 'test-worker-unauth');
+
+  db.prepare(`
+    INSERT INTO reminders (id, title, content, target_thread_id, window_start, window_end, interval_minutes, active)
+    VALUES ('r_test_unauth', 'Unauth Test', 'Should not run', 't_unauth', '18:00', '22:00', 10, 1)
+  `).run();
+
+  const slot = new Date('2026-09-15T11:00:00Z');
+  const res = await runner.tick(slot);
+  assert.equal(res.dispatched, 0);
+
+  const botStateRow = db.prepare(`SELECT status FROM bot_state WHERE id = 1`).get() as any;
+  assert.equal(botStateRow.status, 'STOPPED');
 
   await runner.stop();
   db.close();

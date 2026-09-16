@@ -34,8 +34,11 @@ export class CronRunner {
   private workerId: string;
   private timer: NodeJS.Timeout | null = null;
   private testTimer: NodeJS.Timeout | null = null;
+  private sessionTimer: NodeJS.Timeout | null = null;
   private isRunning: boolean = false;
   private isTicking: boolean = false;
+  private isProcessingQueue: boolean = false;
+  private isCheckingSession: boolean = false;
 
   constructor(
     db: Database,
@@ -79,10 +82,10 @@ export class CronRunner {
 
       // 2. Read bot state
       const botStateRow = this.db.prepare(`
-      SELECT status, emergency_stop as emergencyStop, dry_run as dryRun
+      SELECT status, emergency_stop as emergencyStop, dry_run as dryRun, session_status as sessionStatus
       FROM bot_state
       WHERE id = 1
-    `).get() as { status: BotStatus; emergencyStop: number; dryRun: number } | undefined;
+    `).get() as { status: BotStatus; emergencyStop: number; dryRun: number; sessionStatus?: string } | undefined;
 
     if (!botStateRow) return stats;
 
@@ -93,6 +96,19 @@ export class CronRunner {
       SET last_heartbeat = ?, lock_holder_id = ?
       WHERE id = 1
     `).run(nowIso, this.workerId);
+
+    // If Messenger is not connected, immediately stop system so it cannot run
+    if (botStateRow.sessionStatus !== 'LOGGED_IN') {
+      if (botStateRow.status !== 'STOPPED') {
+        this.db.prepare(`
+          UPDATE bot_state
+          SET status = 'STOPPED', updated_at = CURRENT_TIMESTAMP
+          WHERE id = 1
+        `).run();
+        console.warn(`[Worker] Bot auto-stopped: Messenger session status is ${botStateRow.sessionStatus}`);
+      }
+      return stats;
+    }
 
     // If bot is stopped or emergency stopped, abort processing
     if (botStateRow.status !== 'RUNNING' || botStateRow.emergencyStop === 1) {
@@ -295,6 +311,8 @@ export class CronRunner {
    * Check and execute on-demand test dispatch requests
    */
   async processTestQueue(): Promise<void> {
+    if (this.isProcessingQueue) return;
+    this.isProcessingQueue = true;
     try {
       const pending = this.db.prepare(`
         SELECT id, reminder_id, target_thread_id, content, action_type, call_duration_seconds
@@ -315,20 +333,71 @@ export class CronRunner {
 
       this.db.prepare(`UPDATE test_dispatch_queue SET status = 'PROCESSING' WHERE id = ?`).run(pending.id);
 
-      const botStateRow = this.db.prepare(`
-        SELECT status, emergency_stop as emergencyStop, dry_run as dryRun
-        FROM bot_state
-        WHERE id = 1
-      `).get() as { status: BotStatus; emergencyStop: number; dryRun: number } | undefined;
-
       const actionType = pending.action_type || 'MESSAGE';
-      const callDuration = pending.call_duration_seconds || 25;
 
+      // 1. Special command: CHECK_SESSION
+      if (actionType === 'CHECK_SESSION') {
+        const sessionStatus = await this.messengerClient.checkSession(false);
+        const nextStatus = sessionStatus === 'LOGGED_IN' ? undefined : 'STOPPED';
+        if (nextStatus) {
+          this.db.prepare(`UPDATE bot_state SET session_status = ?, status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = 1`).run(sessionStatus, nextStatus);
+        } else {
+          this.db.prepare(`UPDATE bot_state SET session_status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = 1`).run(sessionStatus);
+        }
+        this.db.prepare(`UPDATE test_dispatch_queue SET status = 'COMPLETED', finished_at = ? WHERE id = ?`).run(
+          new Date().toISOString(),
+          pending.id
+        );
+        return;
+      }
+
+      // 2. Special command: CONNECT_MESSENGER
+      if (actionType === 'CONNECT_MESSENGER') {
+        await this.messengerClient.openLoginPage();
+        // Poll for login success every 2 seconds without reloading the page
+        let sessionStatus = 'UNAUTHENTICATED';
+        const start = Date.now();
+        while (Date.now() - start < 180000) {
+          sessionStatus = await this.messengerClient.checkSession(false);
+          if (sessionStatus === 'LOGGED_IN') {
+            break;
+          }
+          await new Promise((r) => setTimeout(r, 2000));
+        }
+        const isSuccess = sessionStatus === 'LOGGED_IN';
+        this.db.prepare(`UPDATE bot_state SET session_status = ?, status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = 1`).run(
+          sessionStatus,
+          isSuccess ? 'RUNNING' : 'STOPPED'
+        );
+        this.db.prepare(`UPDATE test_dispatch_queue SET status = ?, error = ?, finished_at = ? WHERE id = ?`).run(
+          isSuccess ? 'COMPLETED' : 'FAILED',
+          isSuccess ? null : 'Hết thời gian chờ đăng nhập',
+          new Date().toISOString(),
+          pending.id
+        );
+        return;
+      }
+
+      // 3. Special command: DISCONNECT
+      if (actionType === 'DISCONNECT') {
+        await this.messengerClient.disconnectSession();
+        this.db.prepare(`UPDATE bot_state SET session_status = 'UNAUTHENTICATED', status = 'STOPPED', updated_at = CURRENT_TIMESTAMP WHERE id = 1`).run();
+        this.db.prepare(`UPDATE test_dispatch_queue SET status = 'COMPLETED', finished_at = ? WHERE id = ?`).run(
+          new Date().toISOString(),
+          pending.id
+        );
+        return;
+      }
+
+      const callDuration = pending.call_duration_seconds || 25;
       let isSuccess = true;
       let errorMsg: string | undefined;
 
       if (actionType === 'MESSAGE' || actionType === 'MESSAGE_AND_CALL') {
-        const sendResult = await this.messengerClient.sendMessage(pending.target_thread_id, pending.content);
+        const sendResult = await this.messengerClient.sendMessage(
+          pending.target_thread_id,
+          pending.content
+        );
         if (!sendResult.success) {
           isSuccess = false;
           errorMsg = sendResult.error;
@@ -355,6 +424,11 @@ export class CronRunner {
           isSuccess = false;
           errorMsg = callResult.error;
         }
+      }
+
+      // If action failed due to unauthenticated session, immediately update session_status and STOP bot
+      if (!isSuccess && errorMsg && (errorMsg.includes('Phiên đăng nhập') || errorMsg.includes('login') || errorMsg.includes('checkpoint'))) {
+        this.db.prepare(`UPDATE bot_state SET session_status = 'UNAUTHENTICATED', status = 'STOPPED', updated_at = CURRENT_TIMESTAMP WHERE id = 1`).run();
       }
 
       const finishedAt = new Date().toISOString();
@@ -393,6 +467,28 @@ export class CronRunner {
       });
     } catch (err: any) {
       console.warn('[Worker] Error processing test queue:', err.message);
+    } finally {
+      this.isProcessingQueue = false;
+    }
+  }
+
+  /**
+   * Periodic check to synchronize actual Messenger session status with DB
+   */
+  async checkAndSyncSession(): Promise<void> {
+    if (this.isTicking || this.isProcessingQueue || this.isCheckingSession) return;
+    this.isCheckingSession = true;
+    try {
+      const status = await this.messengerClient.checkSession(false);
+      if (status !== 'LOGGED_IN') {
+        this.db.prepare(`UPDATE bot_state SET session_status = ?, status = 'STOPPED', updated_at = CURRENT_TIMESTAMP WHERE id = 1`).run(status);
+      } else {
+        this.db.prepare(`UPDATE bot_state SET session_status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = 1`).run(status);
+      }
+    } catch (err: any) {
+      console.warn('[Worker] Periodic session check error:', err.message);
+    } finally {
+      this.isCheckingSession = false;
     }
   }
 
@@ -414,6 +510,11 @@ export class CronRunner {
     this.testTimer = setInterval(() => {
       this.processTestQueue().catch(console.error);
     }, 1000);
+
+    // Periodically verify session status every 30 seconds
+    this.sessionTimer = setInterval(() => {
+      this.checkAndSyncSession().catch(console.error);
+    }, 30000);
   }
 
   /**
@@ -428,6 +529,10 @@ export class CronRunner {
     if (this.testTimer) {
       clearInterval(this.testTimer);
       this.testTimer = null;
+    }
+    if (this.sessionTimer) {
+      clearInterval(this.sessionTimer);
+      this.sessionTimer = null;
     }
     this.lockManager.releaseLock('worker_singleton', this.workerId);
     await this.messengerClient.close();

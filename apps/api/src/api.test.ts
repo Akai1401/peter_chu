@@ -14,7 +14,8 @@ test.before(() => {
   }
   process.env.DATABASE_PATH = TEST_DB_PATH;
   process.env.DRY_RUN = 'true';
-  initDatabase(TEST_DB_PATH);
+  const db = initDatabase(TEST_DB_PATH);
+  db.prepare("UPDATE bot_state SET session_status = 'LOGGED_IN' WHERE id = 1").run();
 });
 
 test.after(() => {

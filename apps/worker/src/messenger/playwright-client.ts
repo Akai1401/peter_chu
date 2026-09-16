@@ -1,6 +1,7 @@
 import { chromium, type BrowserContext, type Page } from 'playwright';
 import path from 'node:path';
 import fs from 'node:fs';
+import Database from 'better-sqlite3';
 import type { SessionStatus } from '@messenger/shared';
 
 export interface MessengerClientOptions {
@@ -53,6 +54,135 @@ export class MessengerClient {
   }
 
   /**
+   * Finds or selects the active Facebook / Messenger page in the context.
+   * If an extra about:blank page exists alongside a Facebook page, closes the blank page.
+   */
+  /**
+   * Cleans up orphaned Chromium processes and stale locks that could cause
+   * Chromium to delegate commands to an old session and pop open unwanted about:blank tabs.
+   */
+  cleanupOrphanedBrowserProcess(): void {
+    try {
+      const lockPath = path.join(this.userDataDir, 'SingletonLock');
+      if (fs.existsSync(lockPath)) {
+        let linkTarget = '';
+        try {
+          linkTarget = fs.readlinkSync(lockPath);
+        } catch {}
+
+        const match = linkTarget.match(/-(\d+)$/);
+        if (match && match[1]) {
+          const orphanPid = parseInt(match[1], 10);
+          if (orphanPid && orphanPid !== process.pid) {
+            try {
+              process.kill(orphanPid, 0); // Check if process is still alive
+              console.warn(`[MessengerClient] Terminating orphaned browser process (PID ${orphanPid}) holding profile lock...`);
+              try {
+                process.kill(orphanPid, 'SIGTERM');
+              } catch {}
+
+              // Wait briefly for process to exit
+              const start = Date.now();
+              while (Date.now() - start < 1000) {
+                try {
+                  process.kill(orphanPid, 0);
+                  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50);
+                } catch {
+                  break; // Process terminated
+                }
+              }
+
+              // Force kill if still stubbornly alive
+              try {
+                process.kill(orphanPid, 'SIGKILL');
+              } catch {}
+            } catch {
+              // Process does not exist
+            }
+          }
+        }
+
+        // Clean up stale lock files
+        try { fs.unlinkSync(lockPath); } catch {}
+        try { fs.unlinkSync(path.join(this.userDataDir, 'SingletonSocket')); } catch {}
+        try { fs.unlinkSync(path.join(this.userDataDir, 'SingletonCookie')); } catch {}
+      }
+    } catch (err: any) {
+      console.warn('[MessengerClient] Warning cleaning up orphaned browser lock:', err.message);
+    }
+  }
+
+  async getActivePage(): Promise<Page | null> {
+    if (!this.context) return null;
+    const pages = this.context.pages().filter((p) => !p.isClosed());
+    if (pages.length === 0) {
+      this.page = await this.context.newPage();
+      await this.page.goto('https://www.facebook.com/messages', { waitUntil: 'domcontentloaded' }).catch(() => {});
+      return this.page;
+    }
+
+    // 1. Prefer an open Facebook or Messenger tab
+    const fbPage = pages.find((p) => {
+      try {
+        const u = p.url();
+        return u.includes('facebook.com') || u.includes('messenger.com');
+      } catch {
+        return false;
+      }
+    });
+
+    if (fbPage) {
+      this.page = fbPage;
+      // Close any leftover about:blank tabs so they do not steal focus or clutter the browser
+      for (const p of pages) {
+        if (p !== fbPage && !p.isClosed()) {
+          try {
+            if (p.url() === 'about:blank') {
+              p.close().catch(() => {});
+            }
+          } catch {}
+        }
+      }
+      return this.page;
+    }
+
+    // 2. If current this.page is still open and not about:blank, keep using it
+    if (this.page && !this.page.isClosed()) {
+      try {
+        if (this.page.url() !== 'about:blank') {
+          return this.page;
+        }
+      } catch {}
+    }
+
+    // 3. If there are other open non-blank pages, use the latest
+    const nonBlank = pages.filter((p) => {
+      try {
+        return p.url() !== 'about:blank';
+      } catch {
+        return false;
+      }
+    });
+    if (nonBlank.length > 0) {
+      this.page = nonBlank[nonBlank.length - 1];
+      return this.page;
+    }
+
+    // 4. If all tabs are about:blank, use the first tab and navigate it immediately
+    this.page = pages[0];
+    if (this.page.url() === 'about:blank') {
+      await this.page.goto('https://www.facebook.com/messages', { waitUntil: 'domcontentloaded' }).catch(() => {});
+    }
+    // Close remaining about:blank duplicates
+    for (let i = 1; i < pages.length; i++) {
+      if (!pages[i].isClosed() && pages[i].url() === 'about:blank') {
+        pages[i].close().catch(() => {});
+      }
+    }
+    return this.page;
+  }
+
+  /**
    * Initializes the persistent browser context if not in DRY_RUN
    */
   async init(): Promise<void> {
@@ -66,67 +196,195 @@ export class MessengerClient {
     }
 
     if (!this.context) {
-      this.context = await chromium.launchPersistentContext(this.userDataDir, {
-        headless: this.headless,
-        viewport: { width: 1280, height: 800 },
-        permissions: ['microphone', 'camera'],
-        userAgent:
-          'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-        args: [
-          '--disable-blink-features=AutomationControlled',
-          '--no-sandbox',
-          '--disable-dev-shm-usage',
-          '--use-fake-ui-for-media-stream',
-          '--use-fake-device-for-media-stream'
-        ]
-      });
+      // Ensure no orphaned browser process is holding the profile before launching
+      this.cleanupOrphanedBrowserProcess();
 
-      const pages = this.context.pages();
-      this.page = pages.length > 0 ? pages[0] : await this.context.newPage();
+      const launchBrowser = async () => {
+        return chromium.launchPersistentContext(this.userDataDir, {
+          headless: this.headless,
+          viewport: { width: 1280, height: 800 },
+          permissions: ['microphone', 'camera'],
+          userAgent:
+            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+          args: [
+            '--disable-blink-features=AutomationControlled',
+            '--no-sandbox',
+            '--disable-dev-shm-usage',
+            '--use-fake-ui-for-media-stream',
+            '--use-fake-device-for-media-stream'
+          ]
+        });
+      };
+
+      try {
+        this.context = await launchBrowser();
+      } catch (err: any) {
+        if (err.message && err.message.includes('Opening in existing browser session')) {
+          console.warn('[MessengerClient] Browser profile was held by another session. Retrying after aggressive cleanup...');
+          this.cleanupOrphanedBrowserProcess();
+          this.context = await launchBrowser();
+        } else {
+          throw err;
+        }
+      }
+
+      this.page = await this.getActivePage();
+      if (this.page && this.page.url() === 'about:blank') {
+        // Navigate initial page to facebook.com/messages so it never stays on about:blank
+        await this.page.goto('https://www.facebook.com/messages', { waitUntil: 'domcontentloaded' }).catch(() => {});
+      }
+    }
+  }
+
+  /**
+   * Reads cookies directly from disk SQLite database without launching Chromium
+   */
+  checkSessionCookiesFromDisk(): SessionStatus {
+    const cookieDbPath = path.join(this.userDataDir, 'Default', 'Cookies');
+    if (!fs.existsSync(cookieDbPath)) {
+      return 'UNAUTHENTICATED';
+    }
+
+    try {
+      const db = new Database(cookieDbPath, { readonly: true, fileMustExist: true });
+      const row = db.prepare(`
+        SELECT COUNT(*) as count FROM cookies 
+        WHERE (host_key LIKE '%facebook.com%' OR host_key LIKE '%messenger.com%') 
+          AND name = 'c_user'
+      `).get() as { count: number } | undefined;
+      db.close();
+
+      return (row && row.count > 0) ? 'LOGGED_IN' : 'UNAUTHENTICATED';
+    } catch {
+      return 'UNKNOWN';
     }
   }
 
   /**
    * Check login / session status on Messenger Web
+   * @param forceNavigate If true, navigate to messages page if not already on Facebook/Messenger. If false, check existing DOM without reloading.
    */
-  async checkSession(): Promise<SessionStatus> {
+  async checkSession(forceNavigate: boolean = false): Promise<SessionStatus> {
     if (this.isDryRun) {
       // In DRY_RUN mode, simulate logged-in status
       return 'LOGGED_IN';
     }
 
-    try {
+    // CRITICAL: If the browser is NOT currently open and we are NOT forced to open it:
+    // Check session offline from disk cookies and DO NOT launch a visible GUI browser window!
+    if (!this.context) {
+      const offlineStatus = this.checkSessionCookiesFromDisk();
+      if (offlineStatus !== 'UNKNOWN') {
+        return offlineStatus;
+      }
+      if (!forceNavigate) {
+        return 'UNAUTHENTICATED';
+      }
+      // Only launch browser if explicitly forced by user
       await this.init();
-      if (!this.page) return 'UNKNOWN';
+    }
 
-      await this.page.goto('https://www.facebook.com/messages', {
-        waitUntil: 'domcontentloaded',
-        timeout: 20000
-      });
+    if (!this.context) return 'UNAUTHENTICATED';
 
-      // Check if redirected to login page
-      const currentUrl = this.page.url();
-      if (currentUrl.includes('/login') || currentUrl.includes('/checkpoint')) {
+    try {
+      // 1. Fast in-memory cookie check if context exists
+      const cookies = await this.context.cookies(['https://www.facebook.com', 'https://www.messenger.com']).catch(() => []);
+      const hasCUser = cookies.some((c) => c.name === 'c_user');
+      if (!hasCUser) {
         return 'UNAUTHENTICATED';
       }
 
-      // Check for login input fields
-      const loginInput = await this.page.$('input#email, input[name="email"]');
+      const page = await this.getActivePage();
+      if (!page) return 'UNKNOWN';
+
+      const currentUrl = page.url();
+      const isOnFbOrMessenger =
+        currentUrl.includes('facebook.com') || currentUrl.includes('messenger.com');
+
+      // Only navigate if explicitly requested AND not already on Facebook or Messenger
+      if (forceNavigate) {
+        if (!isOnFbOrMessenger || currentUrl === 'about:blank') {
+          await page.goto('https://www.facebook.com/messages', {
+            waitUntil: 'domcontentloaded',
+            timeout: 20000
+          });
+          await page.waitForTimeout(1000);
+        }
+      }
+
+      // If on about:blank and didn't force navigate, passively report UNAUTHENTICATED
+      if (page.url() === 'about:blank') {
+        return 'UNAUTHENTICATED';
+      }
+
+      const activeUrl = page.url();
+
+      // 1. Check if redirected to login page or checkpoint
+      if (
+        activeUrl.includes('/login') ||
+        activeUrl.includes('/checkpoint') ||
+        activeUrl.includes('login_attempt') ||
+        activeUrl.includes('/recover')
+      ) {
+        return 'UNAUTHENTICATED';
+      }
+
+      // 2. Check for login input fields or login buttons
+      const loginInput = await page.$(
+        'input#email, input[name="email"], input[type="password"], button[name="login"], form[action*="login"]'
+      );
       if (loginInput) {
         return 'UNAUTHENTICATED';
       }
 
-      // Check for messages UI or navigation
-      const chatApp = await this.page.$(
-        'div[role="navigation"], div[role="main"], div[role="textbox"], [aria-label*="Chats"]'
+      // 3. Check for messages UI or navigation
+      const chatApp = await page.$(
+        'div[role="navigation"], div[role="main"], div[role="textbox"], [aria-label*="Chats"], [aria-label*="Đoạn chat"]'
       );
       if (chatApp) {
         return 'LOGGED_IN';
       }
 
-      return 'UNKNOWN';
+      // 4. Check page title for login hints
+      const pageTitle = await page.title().catch(() => '');
+      if (/log in|sign up|đăng nhập/i.test(pageTitle)) {
+        return 'UNAUTHENTICATED';
+      }
+
+      return hasCUser ? 'LOGGED_IN' : 'UNKNOWN';
     } catch {
       return 'SESSION_EXPIRED';
+    }
+  }
+
+  /**
+   * Open Messenger login page and bring browser window to front
+   */
+  async openLoginPage(): Promise<void> {
+    await this.init();
+    const page = await this.getActivePage();
+    if (!page) return;
+    const currentUrl = page.url();
+    if (!currentUrl.includes('messenger.com') && !currentUrl.includes('facebook.com')) {
+      await page.goto('https://www.facebook.com/messages', { waitUntil: 'domcontentloaded' }).catch(() => {});
+    }
+    await page.bringToFront().catch(() => {});
+  }
+
+  /**
+   * Disconnect / clear session cookies and navigate to login
+   */
+  async disconnectSession(): Promise<void> {
+    try {
+      if (this.context) {
+        await this.context.clearCookies();
+        const page = await this.getActivePage();
+        if (page) {
+          await page.goto('https://www.facebook.com/login', { waitUntil: 'domcontentloaded' }).catch(() => {});
+        }
+      }
+    } catch (err: any) {
+      console.warn('[MessengerClient] Disconnect error:', err.message);
     }
   }
 
@@ -150,6 +408,7 @@ export class MessengerClient {
     // 2. Real browser automation
     try {
       await this.init();
+      this.page = await this.getActivePage();
       if (!this.page) {
         throw new Error('Browser page could not be initialized');
       }
@@ -308,6 +567,7 @@ export class MessengerClient {
 
     try {
       await this.init();
+      this.page = await this.getActivePage();
       if (!this.page) {
         throw new Error('Browser page could not be initialized');
       }
@@ -449,9 +709,14 @@ export class MessengerClient {
    */
   async close(): Promise<void> {
     if (this.context) {
-      await this.context.close();
+      try {
+        await this.context.close();
+      } catch (err: any) {
+        console.warn('[MessengerClient] Context close warning:', err.message);
+      }
       this.context = null;
       this.page = null;
     }
+    this.cleanupOrphanedBrowserProcess();
   }
 }

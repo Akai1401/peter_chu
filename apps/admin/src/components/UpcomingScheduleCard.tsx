@@ -1,25 +1,29 @@
 import React from 'react';
 import { CalendarClock, Hash } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
 import type { UpcomingSlot } from '@messenger/shared';
 
 interface Props {
   slots: UpcomingSlot[];
+  isEngineRunning?: boolean;
   loading: boolean;
 }
 
 const formatTimeRemaining = (minutes: number) => {
-  if (minutes === 0) return 'DUE NOW';
-  if (minutes < 60) return `IN ~${minutes}M`;
+  if (minutes === 0) return 'Due Now';
+  if (minutes < 60) return `In ~${minutes}m`;
   const hours = Math.floor(minutes / 60);
   const remainingMins = minutes % 60;
   if (remainingMins === 0) {
-    return `IN ~${hours}H`;
+    return `In ~${hours}H`;
   }
-  return `IN ~${hours}H ${remainingMins}M`;
+  return `In ~${hours}h ${remainingMins}m`;
 };
 
-export const UpcomingScheduleCard: React.FC<Props> = ({ slots, loading }) => {
+export const UpcomingScheduleCard: React.FC<Props> = ({ slots, isEngineRunning = true, loading }) => {
+  const effectiveSlots = isEngineRunning ? slots : [];
+
   return (
     <Card className="flex flex-col">
       <CardHeader className="flex flex-row items-center justify-between pb-4 border-b">
@@ -29,24 +33,29 @@ export const UpcomingScheduleCard: React.FC<Props> = ({ slots, loading }) => {
           </div>
           <CardTitle className="text-lg">Upcoming</CardTitle>
         </div>
-        <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground bg-muted px-2 py-1 rounded">
-          Next {slots.length}
-        </span>
+        <Badge variant={!isEngineRunning ? 'outline' : 'secondary'} className="text-[10px] font-bold tracking-wider">
+          {!isEngineRunning ? 'Engine Stopped' : `Next: ${effectiveSlots.length}`}
+        </Badge>
       </CardHeader>
 
       <CardContent className="pt-4 sm:pt-6 flex-1 flex flex-col min-h-0">
-        {loading && slots.length === 0 ? (
+        {loading && effectiveSlots.length === 0 ? (
           <div className="py-10 text-center text-sm font-medium text-muted-foreground bg-muted/30 rounded-lg border border-dashed">
             Loading schedules...
           </div>
-        ) : slots.length === 0 ? (
+        ) : !isEngineRunning ? (
+          <div className="py-10 text-center px-4 text-sm font-medium text-muted-foreground bg-muted/30 rounded-lg border border-dashed flex flex-col items-center justify-center gap-1.5">
+            <span className="font-semibold text-foreground/80">Engine is stopped</span>
+            <span className="text-xs text-muted-foreground">Start engine to activate upcoming schedules</span>
+          </div>
+        ) : effectiveSlots.length === 0 ? (
           <div className="py-10 text-center text-sm font-medium text-muted-foreground bg-muted/30 rounded-lg border border-dashed">
             No upcoming schedules.
           </div>
         ) : (
           <div className="max-h-[350px] overflow-y-auto pr-2 -mr-2 pb-2">
             <div className="space-y-3">
-              {slots.map((slot, index) => (
+              {effectiveSlots.map((slot, index) => (
                 <div key={index} className="p-3 rounded-lg border bg-card hover:bg-muted/30 transition-colors flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                   <div className="space-y-1.5 overflow-hidden min-w-0">
                     <p className="text-sm font-semibold truncate break-words">{slot.reminderTitle}</p>

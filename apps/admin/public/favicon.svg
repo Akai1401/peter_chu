@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <!-- Squircle Base for High Contrast on both Light & Dark Browser Tabs -->
+  <rect width="64" height="64" rx="16" fill="#09090B" />
+  <rect x="1" y="1" width="62" height="62" rx="15" stroke="#27272A" stroke-width="1.5" />
+
+  <!-- Antenna -->
+  <path d="M32 18V11H25" stroke="#FFFFFF" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" />
+  <circle cx="23" cy="11" r="2" fill="#38BDF8" />
+
+  <!-- Side Connectors -->
+  <path d="M12 32H16" stroke="#FFFFFF" stroke-width="3.5" stroke-linecap="round" />
+  <path d="M48 32H52" stroke="#FFFFFF" stroke-width="3.5" stroke-linecap="round" />
+
+  <!-- Bot Head -->
+  <rect x="16" y="19" width="32" height="26" rx="6" fill="#FFFFFF" fill-opacity="0.12" stroke="#FFFFFF" stroke-width="3.5" stroke-linejoin="round" />
+
+  <!-- Eyes -->
+  <circle cx="26" cy="30" r="3.5" fill="#38BDF8" />
+  <circle cx="38" cy="30" r="3.5" fill="#38BDF8" />
+
+  <!-- Smile Mouth -->
+  <path d="M26 38C26 38 29 40 32 40C35 40 38 38 38 38" stroke="#FFFFFF" stroke-width="2.5" stroke-linecap="round" />
+
+  <!-- Pulse Status Dot -->
+  <circle cx="50" cy="14" r="3.5" fill="#22C55E" />
+  <circle cx="50" cy="14" r="5" stroke="#22C55E" stroke-width="1.2" stroke-opacity="0.6" />
+</svg>
