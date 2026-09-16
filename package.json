@@ -14,6 +14,10 @@
     "dev:admin": "bun --filter=@messenger/admin run dev",
     "login:messenger": "tsx apps/worker/src/scripts/login.ts",
     "build": "bun run --workspaces build",
+    "start": "bun scripts/prod-runner.ts",
+    "start:api": "bun --filter=@messenger/api run start",
+    "start:worker": "bun --filter=@messenger/worker run start",
+    "start:admin": "bun --filter=@messenger/admin run preview",
     "typecheck": "bun run --workspaces typecheck",
     "lint": "bun run --workspaces lint",
     "test": "bun run --workspaces test"
