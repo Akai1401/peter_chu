@@ -351,3 +351,49 @@ test('GeminiService - learned persona is injected into generateReply prompt', as
     globalThis.fetch = originalFetch;
   }
 });
+
+test('GeminiService - generateDynamicReminderMessage creates contextual message with prompt and persona', async () => {
+  const originalFetch = globalThis.fetch;
+  try {
+    let capturedPrompt = '';
+    globalThis.fetch = (async (_url: any, options: any) => {
+      const body = JSON.parse(options.body);
+      capturedPrompt = body.contents[0].parts[0].text;
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          candidates: [
+            {
+              content: {
+                parts: [{ text: '"Bé iu ơi dậy uống nước đi nè =))"' }]
+              }
+            }
+          ]
+        })
+      } as any;
+    }) as any;
+
+    const gemini = new GeminiService({ apiKey: 'dummy_key' });
+    const msg = await gemini.generateDynamicReminderMessage({
+      promptDescription: 'Nhắc uống nước trêu đùa dễ thương',
+      reminderTitle: 'Nhắc uống nước mỗi sáng',
+      persona: {
+        styleSummary: 'Dễ thương, lầy lội',
+        pronouns: 'anh - bé iu',
+        tone: 'Cute, trêu đùa',
+        catchphrases: ['nè', '=))'],
+        sampleMessages: ['Dậy đi nè'],
+        rawPromptInstruction: 'Xưng anh gọi bé iu'
+      }
+    });
+
+    assert.strictEqual(msg, 'Bé iu ơi dậy uống nước đi nè =))');
+    assert.ok(capturedPrompt.includes('Nhắc uống nước trêu đùa dễ thương'));
+    assert.ok(capturedPrompt.includes('Nhắc uống nước mỗi sáng'));
+    assert.ok(capturedPrompt.includes('HỒ SƠ PHONG CÁCH CỦA TÔI'));
+    assert.ok(capturedPrompt.includes('anh - bé iu'));
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});

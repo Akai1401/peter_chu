@@ -25,6 +25,7 @@ export interface CallResult {
   threadId: string;
   callType: 'AUDIO' | 'VIDEO';
   durationSeconds: number;
+  callOutcome?: 'ANSWERED' | 'DECLINED' | 'NO_ANSWER' | 'TIMED_OUT';
   error?: string;
   timestamp: string;
 }
@@ -604,6 +605,7 @@ export class MessengerClient {
         threadId: targetThreadId,
         callType,
         durationSeconds,
+        callOutcome: 'NO_ANSWER',
         timestamp
       };
     }
@@ -701,10 +703,99 @@ export class MessengerClient {
         }
       } catch {}
 
-      // Ring for the specified duration (clamped between 5s and 180s)
+      // Ring for up to specified duration while monitoring for call answer or decline
       const effectiveDuration = Math.max(5, Math.min(durationSeconds, 180));
-      console.log(`[Messenger] Call is ringing. Waiting for ${effectiveDuration} seconds...`);
-      await new Promise((r) => setTimeout(r, effectiveDuration * 1000));
+      let callOutcome: 'ANSWERED' | 'DECLINED' | 'NO_ANSWER' | 'TIMED_OUT' = 'NO_ANSWER';
+      const pollIntervalMs = 1500;
+      const startTime = Date.now();
+      const maxEndTime = startTime + effectiveDuration * 1000;
+
+      console.log(`[Messenger] Call is ringing. Monitoring status for up to ${effectiveDuration}s...`);
+
+      while (Date.now() < maxEndTime) {
+        await new Promise((r) => setTimeout(r, pollIntervalMs));
+
+        // 1. If a separate popup window was opened and has closed, recipient declined/hung up
+        if (callPage && callPage !== this.page && callPage.isClosed()) {
+          console.log('[Messenger] Call popup window closed during call.');
+          callOutcome = 'DECLINED';
+          break;
+        }
+
+        // 2. Isolate evaluation strictly to the call page/container, NEVER the main chat message body
+        const pageToInspect = callPage && callPage !== this.page ? callPage : this.page;
+        if (pageToInspect.isClosed()) {
+          callOutcome = 'DECLINED';
+          break;
+        }
+
+        try {
+          const status = await pageToInspect.evaluate((isSeparatePopup) => {
+            let container: Element | null = null;
+            if (isSeparatePopup) {
+              container = document.body;
+            } else {
+              // Locate the call dialog/overlay inside main page
+              const endBtn = document.querySelector(
+                'div[aria-label*="Kết thúc" i], div[aria-label*="End" i], div[aria-label*="Gác máy" i], [data-testid="end_call_button"]'
+              );
+              container =
+                endBtn?.closest('div[role="dialog"], [data-pagelet*="Call" i], div[aria-label*="cuộc gọi" i]') ||
+                document.querySelector('div[role="dialog"]') ||
+                null;
+            }
+
+            if (!container) {
+              return { isRinging: false, hasTimer: false, isDeclined: false, foundContainer: false };
+            }
+
+            const rawText = (container as HTMLElement).innerText || '';
+            const lower = rawText.toLowerCase();
+
+            // Ringing indicators
+            const isRinging =
+              lower.includes('đang gọi') ||
+              lower.includes('đang đổ chuông') ||
+              lower.includes('đang chuông') ||
+              lower.includes('calling') ||
+              lower.includes('ringing');
+
+            // Decline indicators strictly within call container
+            const isDeclined =
+              lower.includes('đã từ chối') ||
+              lower.includes('từ chối cuộc gọi') ||
+              lower.includes('call declined') ||
+              lower.includes('người nhận bận') ||
+              lower.includes('busy');
+
+            // Answered indicators: has role="timer" or timer pattern AND not in ringing state
+            const timerEl = container.querySelector('[role="timer"], time');
+            const timerRegex = /\b0[0-9]:[0-5][0-9]\b/;
+            const hasTimer = !isRinging && (Boolean(timerEl) || timerRegex.test(rawText));
+
+            return { isRinging, hasTimer, isDeclined, foundContainer: true };
+          }, callPage !== this.page);
+
+          if (status.isDeclined) {
+            console.log('[Messenger] Recipient declined or call ended by peer.');
+            callOutcome = 'DECLINED';
+            break;
+          }
+
+          if (status.hasTimer) {
+            console.log('[Messenger] Call connected/answered by recipient.');
+            callOutcome = 'ANSWERED';
+            // Wait 3 seconds to let connection register cleanly
+            await new Promise((r) => setTimeout(r, 3000));
+            break;
+          }
+
+          const elapsedSec = Math.round((Date.now() - startTime) / 1000);
+          console.log(`[Messenger] Call ringing... (${elapsedSec}s / ${effectiveDuration}s)`);
+        } catch {
+          // Page might be navigating or rendering
+        }
+      }
 
       // End the call cleanly across all popup windows and in-page overlays
       try {
@@ -753,13 +844,14 @@ export class MessengerClient {
         console.warn('[Messenger] Could not cleanly hang up call:', err.message);
       }
 
-      console.log(`[Messenger] Call finished successfully.`);
+      console.log(`[Messenger] Call finished with outcome: ${callOutcome}`);
       return {
         success: true,
         dryRun: false,
         threadId: targetThreadId,
         callType,
         durationSeconds: effectiveDuration,
+        callOutcome,
         timestamp
       };
     } catch (err: any) {

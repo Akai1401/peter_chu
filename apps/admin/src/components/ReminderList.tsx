@@ -13,7 +13,9 @@ import {
   Power,
   Repeat,
   Calendar,
-  RotateCcw
+  RotateCcw,
+  AlarmClock,
+  Sparkles
 } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -196,6 +198,18 @@ export const ReminderList: React.FC<Props> = ({
                             Msg + Call ({reminder.callDurationSeconds || 25}s)
                           </Badge>
                         )}
+                        {reminder.wakeUpMode && (
+                          <Badge variant="warning" className="text-[10px] gap-1 px-1.5 py-0 font-medium">
+                            <AlarmClock className="w-3 h-3" />
+                            Gọi dậy
+                          </Badge>
+                        )}
+                        {reminder.aiGenerateMessage && (
+                          <Badge variant="outline" className="text-[10px] gap-1 px-1.5 py-0 border-purple-500/30 text-purple-600 dark:text-purple-400 bg-purple-500/10 font-medium">
+                            <Sparkles className="w-3 h-3" />
+                            AI Message
+                          </Badge>
+                        )}
                       </div>
                     </div>
 
@@ -324,6 +338,14 @@ export const ReminderList: React.FC<Props> = ({
                         <span className="italic">Audio call reminder (no text message)</span>
                       ) : reminder.actionType === 'VIDEO_CALL' ? (
                         <span className="italic">Video call reminder (no text message)</span>
+                      ) : reminder.aiGenerateMessage ? (
+                        <span className="flex items-start gap-1.5">
+                          <Sparkles className="w-3.5 h-3.5 mt-0.5 text-purple-500 shrink-0" />
+                          <span>
+                            <span className="font-semibold text-foreground/80">Prompt AI: </span>
+                            {reminder.content}
+                          </span>
+                        </span>
                       ) : (
                         reminder.content
                       )}

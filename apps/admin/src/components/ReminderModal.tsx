@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { MessageCircle, PhoneCall, Video, Settings2 } from 'lucide-react';
+import { MessageCircle, PhoneCall, Video, Settings2, AlarmClock, Sparkles } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -40,6 +40,8 @@ export const ReminderModal: React.FC<Props> = ({
   const [actionType, setActionType] = useState<any>('MESSAGE');
   const [callDurationSeconds, setCallDurationSeconds] = useState(25);
   const [isRepeat, setIsRepeat] = useState(false);
+  const [wakeUpMode, setWakeUpMode] = useState(false);
+  const [aiGenerateMessage, setAiGenerateMessage] = useState(false);
   const [targetDate, setTargetDate] = useState('');
   const [runTime, setRunTime] = useState('09:00');
   const [maxRuns, setMaxRuns] = useState<number>(0);
@@ -73,6 +75,8 @@ export const ReminderModal: React.FC<Props> = ({
       
       const isSingle = initialData.maxRuns === 1 || initialData.windowStart === initialData.windowEnd;
       setIsRepeat(!isSingle);
+      setWakeUpMode(Boolean(initialData.wakeUpMode));
+      setAiGenerateMessage(Boolean(initialData.aiGenerateMessage));
       setTargetDate(initialData.targetDate || '');
       setRunTime(initialData.windowStart || minTimeForToday);
       setMaxRuns(initialData.maxRuns || 0);
@@ -87,6 +91,8 @@ export const ReminderModal: React.FC<Props> = ({
       setActionType('MESSAGE');
       setCallDurationSeconds(25);
       setIsRepeat(false);
+      setWakeUpMode(false);
+      setAiGenerateMessage(false);
 
       setTargetDate(todayStr);
 
@@ -115,7 +121,7 @@ export const ReminderModal: React.FC<Props> = ({
 
     const isMessageRequired = actionType === 'MESSAGE' || actionType === 'MESSAGE_AND_CALL';
     if (isMessageRequired && !content.trim()) {
-      setError('Vui lòng nhập nội dung tin nhắn');
+      setError(aiGenerateMessage ? 'Vui lòng nhập mô tả/yêu cầu cho AI sinh tin nhắn' : 'Vui lòng nhập nội dung tin nhắn');
       return;
     }
 
@@ -153,6 +159,8 @@ export const ReminderModal: React.FC<Props> = ({
         windowStart: finalWindowStart,
         windowEnd: finalWindowEnd,
         intervalMinutes: finalInterval,
+        wakeUpMode: isRepeat ? wakeUpMode : false,
+        aiGenerateMessage: isMessageRequired ? aiGenerateMessage : false,
         active,
         resetRunCount: true
       });
@@ -239,10 +247,30 @@ export const ReminderModal: React.FC<Props> = ({
         )}
 
         {(actionType === 'MESSAGE' || actionType === 'MESSAGE_AND_CALL') && (
-          <div className="space-y-1.5">
+          <div className="space-y-1.5 p-3 rounded-xl bg-muted/20 border border-border/60">
             <div className="flex justify-between items-center">
-              <Label htmlFor="content" className="text-xs font-medium">Nội dung tin nhắn</Label>
-              <span className="text-[11px] text-muted-foreground">{content.length}/2000</span>
+              <div className="flex items-center gap-1.5">
+                <Label htmlFor="content" className="text-xs font-semibold cursor-pointer">
+                  {aiGenerateMessage ? 'Mô tả / Prompt tin nhắn cho AI' : 'Nội dung tin nhắn'}
+                </Label>
+                {aiGenerateMessage && (
+                  <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 gap-1 font-medium border-purple-500/40 text-purple-600 dark:text-purple-400 bg-purple-500/10">
+                    <Sparkles className="w-2.5 h-2.5" /> AI Dynamic
+                  </Badge>
+                )}
+              </div>
+              <div className="flex items-center gap-2">
+                <Label htmlFor="ai-gen-toggle" className="text-[11px] font-medium text-muted-foreground flex items-center gap-1 cursor-pointer hover:text-foreground transition-colors">
+                  <Sparkles className="w-3 h-3 text-purple-500" />
+                  <span>Dùng AI sinh</span>
+                </Label>
+                <Switch
+                  id="ai-gen-toggle"
+                  checked={aiGenerateMessage}
+                  onCheckedChange={setAiGenerateMessage}
+                  className="data-[state=checked]:bg-purple-600 scale-90"
+                />
+              </div>
             </div>
             <Textarea
               id="content"
@@ -250,9 +278,23 @@ export const ReminderModal: React.FC<Props> = ({
               rows={3}
               value={content}
               onChange={(e) => setContent(e.target.value)}
-              placeholder="Nhập nội dung tin nhắn gửi..."
-              className="resize-y min-h-[75px] text-xs"
+              placeholder={
+                aiGenerateMessage
+                  ? "Ví dụ: Nhắc bạn ấy đi ngủ bằng giọng điệu trêu đùa, cute, xưng hô anh - em, thêm icon dễ thương..."
+                  : "Nhập nội dung tin nhắn gửi..."
+              }
+              className="resize-y min-h-[75px] text-xs bg-background"
             />
+            <div className="flex justify-between items-center pt-0.5">
+              {aiGenerateMessage ? (
+                <p className="text-[11px] text-muted-foreground leading-tight flex items-center gap-1">
+                  <span>Mỗi lần chạy lịch, AI sẽ tự động sinh tin nhắn mới mẻ dựa trên mô tả này và văn phong hiện tại.</span>
+                </p>
+              ) : (
+                <span />
+              )}
+              <span className="text-[10px] text-muted-foreground shrink-0 font-mono">{content.length}/2000</span>
+            </div>
           </div>
         )}
 
@@ -371,6 +413,29 @@ export const ReminderModal: React.FC<Props> = ({
                     <span className="text-xs text-muted-foreground shrink-0 font-medium">lần</span>
                   </div>
                 </div>
+              </div>
+
+              {/* Chế độ gọi dậy (Wake-up Alarm) */}
+              <div className="pt-2.5 border-t flex items-start justify-between gap-3">
+                <div className="space-y-0.5">
+                  <div className="flex items-center gap-1.5">
+                    <AlarmClock className="w-3.5 h-3.5 text-amber-500" />
+                    <Label htmlFor="wake-up-mode" className="text-xs font-semibold cursor-pointer">
+                      Chế độ gọi dậy
+                    </Label>
+                    <Badge variant={wakeUpMode ? "warning" : "secondary"} className="text-[10px] px-1.5 py-0 h-4 font-medium">
+                      {wakeUpMode ? 'Bật' : 'Tắt'}
+                    </Badge>
+                  </div>
+                  <p className="text-[11px] text-muted-foreground leading-tight">
+                    Tự động dừng lặp khi khách nghe máy, tắt máy hoặc gửi tin nhắn lại.
+                  </p>
+                </div>
+                <Switch
+                  id="wake-up-mode"
+                  checked={wakeUpMode}
+                  onCheckedChange={setWakeUpMode}
+                />
               </div>
             </div>
           )}

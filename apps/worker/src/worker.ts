@@ -69,6 +69,8 @@ function initWorkerDatabase(dbPath: string): Database.Database {
       target_thread_id TEXT NOT NULL,
       action_type TEXT NOT NULL DEFAULT 'MESSAGE',
       call_duration_seconds INTEGER NOT NULL DEFAULT 30,
+      wake_up_mode INTEGER NOT NULL DEFAULT 0,
+      ai_generate_message INTEGER NOT NULL DEFAULT 0,
       schedule_cron TEXT,
       active INTEGER NOT NULL DEFAULT 1,
       window_start TEXT NOT NULL DEFAULT '00:00',
@@ -143,6 +145,12 @@ function initWorkerDatabase(dbPath: string): Database.Database {
   } catch {}
   try {
     db.exec(`ALTER TABLE reminders ADD COLUMN target_date TEXT`);
+  } catch {}
+  try {
+    db.exec(`ALTER TABLE reminders ADD COLUMN wake_up_mode INTEGER NOT NULL DEFAULT 0`);
+  } catch {}
+  try {
+    db.exec(`ALTER TABLE reminders ADD COLUMN ai_generate_message INTEGER NOT NULL DEFAULT 0`);
   } catch {}
   try {
     db.exec(`ALTER TABLE test_dispatch_queue ADD COLUMN action_type TEXT NOT NULL DEFAULT 'MESSAGE'`);

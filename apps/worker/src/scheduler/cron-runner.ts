@@ -20,6 +20,8 @@ export interface ReminderRow {
   target_thread_id: string;
   action_type?: string;
   call_duration_seconds?: number;
+  wake_up_mode?: number;
+  ai_generate_message?: number;
   max_runs?: number;
   run_count?: number;
   target_date?: string | null;
@@ -27,6 +29,7 @@ export interface ReminderRow {
   window_start: string;
   window_end: string;
   interval_minutes: number;
+  created_at?: string;
 }
 
 export class CronRunner {
@@ -138,8 +141,8 @@ export class CronRunner {
 
     // 3. Query active reminders
     const reminders = this.db.prepare(`
-      SELECT id, title, content, target_thread_id, action_type, call_duration_seconds, active,
-             max_runs, run_count, target_date, window_start, window_end, interval_minutes
+      SELECT id, title, content, target_thread_id, action_type, call_duration_seconds, wake_up_mode, ai_generate_message, active,
+             max_runs, run_count, target_date, window_start, window_end, interval_minutes, created_at
       FROM reminders
       WHERE active = 1
     `).all() as ReminderRow[];
@@ -189,6 +192,42 @@ export class CronRunner {
         continue;
       }
 
+      // Check Wake-up Mode (Chế độ gọi dậy): If customer has already replied, stop repeating immediately
+      if (reminder.wake_up_mode === 1) {
+        const recentReply = this.db.prepare(`
+          SELECT id, message_text FROM ai_processed_messages
+          WHERE thread_id = ? AND created_at >= ?
+          ORDER BY created_at DESC LIMIT 1
+        `).get(reminder.target_thread_id, reminder.created_at || '1970-01-01') as { id: string; message_text: string } | undefined;
+
+        let hasReplied = Boolean(recentReply);
+        let replySnippet = recentReply?.message_text;
+
+        if (!hasReplied && !this.messengerClient.getDryRun()) {
+          try {
+            const incoming = await this.messengerClient.getLatestUnreadIncomingMessage(reminder.target_thread_id);
+            if (incoming && incoming.messageText) {
+              hasReplied = true;
+              replySnippet = incoming.messageText;
+            }
+          } catch (e: any) {
+            console.warn('[CronRunner] Check incoming message for wake-up mode warning:', e.message);
+          }
+        }
+
+        if (hasReplied) {
+          this.db.prepare('UPDATE reminders SET active = 0, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(reminder.id);
+          this.recordAuditLog(
+            'WAKE_UP_CALL_STOPPED',
+            'cron_runner',
+            `Lịch gọi dậy "${reminder.title}" tự động dừng do nhận được tin nhắn từ khách: "${(replySnippet || '').slice(0, 50)}"`,
+            'INFO'
+          );
+          stats.skipped += 1;
+          continue;
+        }
+      }
+
       // Slot key format: "YYYY-MM-DD HH:mm" in ICT
       const slotKey = getCurrentSlotKey(now);
       const idempotencyKey = generateIdempotencyKey(
@@ -224,7 +263,7 @@ export class CronRunner {
       const rateCheck = this.rateLimiter.canSend(reminder.target_thread_id);
       const actionType = reminder.action_type || 'MESSAGE';
       const callDuration = reminder.call_duration_seconds || 25;
-      const preview = actionType === 'AUDIO_CALL'
+      const initialPreview = actionType === 'AUDIO_CALL'
         ? `[Cuộc gọi thoại Messenger (${callDuration}s)]`
         : actionType === 'VIDEO_CALL'
         ? `[Cuộc gọi video Messenger (${callDuration}s)]`
@@ -245,7 +284,7 @@ export class CronRunner {
           threadId: reminder.target_thread_id,
           status: 'SKIPPED_RATE_LIMITED',
           idempotencyKey,
-          messagePreview: preview,
+          messagePreview: initialPreview,
           details: { reason: rateCheck.reason, slotKey }
         });
         stats.skipped += 1;
@@ -255,11 +294,29 @@ export class CronRunner {
       // 6. Dispatch action via Playwright client
       let isSuccess = true;
       let errorMsg: string | undefined;
+      let effectiveMessageText = reminder.content;
 
       if (actionType === 'MESSAGE' || actionType === 'MESSAGE_AND_CALL') {
+        if (reminder.ai_generate_message === 1 && this.geminiService.isConfigured()) {
+          try {
+            const persona = this.getActivePersona();
+            const dynamicMsg = await this.geminiService.generateDynamicReminderMessage({
+              promptDescription: reminder.content,
+              persona,
+              reminderTitle: reminder.title
+            });
+            if (dynamicMsg) {
+              effectiveMessageText = dynamicMsg;
+              console.log(`[CronRunner] Generated dynamic AI message for "${reminder.title}": "${dynamicMsg.slice(0, 50)}"`);
+            }
+          } catch (aiErr: any) {
+            console.warn(`[CronRunner] Failed to generate AI message for "${reminder.title}", falling back to content:`, aiErr.message);
+          }
+        }
+
         const sendResult = await this.messengerClient.sendMessage(
           reminder.target_thread_id,
-          reminder.content
+          effectiveMessageText
         );
         if (!sendResult.dryRun && !sendResult.success) {
           isSuccess = false;
@@ -267,12 +324,15 @@ export class CronRunner {
         }
       }
 
+      let callOutcome: 'ANSWERED' | 'DECLINED' | 'NO_ANSWER' | 'TIMED_OUT' | undefined;
+
       if (isSuccess && (actionType === 'AUDIO_CALL' || actionType === 'MESSAGE_AND_CALL')) {
         const callResult = await this.messengerClient.startCall(
           reminder.target_thread_id,
           'AUDIO',
           callDuration
         );
+        callOutcome = callResult.callOutcome;
         if (!callResult.dryRun && !callResult.success) {
           isSuccess = false;
           errorMsg = callResult.error;
@@ -283,13 +343,33 @@ export class CronRunner {
           'VIDEO',
           callDuration
         );
+        callOutcome = callResult.callOutcome;
         if (!callResult.dryRun && !callResult.success) {
           isSuccess = false;
           errorMsg = callResult.error;
         }
       }
 
+      // Check Wake-up Mode (Chế độ gọi dậy): If call was answered or declined/hung up, stop repeating
+      if (reminder.wake_up_mode === 1 && (callOutcome === 'ANSWERED' || callOutcome === 'DECLINED')) {
+        this.db.prepare('UPDATE reminders SET active = 0, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(reminder.id);
+        const reason = callOutcome === 'ANSWERED' ? 'nghe máy' : 'tắt máy / từ chối cuộc gọi';
+        this.recordAuditLog(
+          'WAKE_UP_CALL_COMPLETED',
+          'cron_runner',
+          `Lịch gọi dậy "${reminder.title}" đã tự động dừng lặp do khách đã ${reason}.`,
+          'INFO'
+        );
+      }
+
       const execStatus = isSuccess ? 'SUCCESS' : 'FAILED';
+      const preview = actionType === 'AUDIO_CALL'
+        ? `[Cuộc gọi thoại Messenger (${callDuration}s)]`
+        : actionType === 'VIDEO_CALL'
+        ? `[Cuộc gọi video Messenger (${callDuration}s)]`
+        : actionType === 'MESSAGE_AND_CALL'
+        ? `${createMessagePreview(effectiveMessageText)} + [Gọi thoại Messenger]`
+        : createMessagePreview(effectiveMessageText);
 
       this.recordExecutionLog({
         reminderId: reminder.id,
@@ -300,6 +380,9 @@ export class CronRunner {
         details: {
           slotKey,
           actionType,
+          callOutcome,
+          aiGenerated: reminder.ai_generate_message === 1 && effectiveMessageText !== reminder.content,
+          effectiveMessage: reminder.ai_generate_message === 1 ? effectiveMessageText : undefined,
           error: errorMsg
         }
       });
@@ -322,6 +405,16 @@ export class CronRunner {
     this.isTicking = false;
   }
 }
+
+  private getActivePersona(): any {
+    try {
+      const botRow = this.db.prepare('SELECT learned_persona FROM bot_state WHERE id = 1').get() as { learned_persona?: string } | undefined;
+      if (botRow?.learned_persona) {
+        return JSON.parse(botRow.learned_persona);
+      }
+    } catch {}
+    return null;
+  }
 
   private recordExecutionLog(data: {
     reminderId: string;
@@ -602,11 +695,30 @@ export class CronRunner {
       const callDuration = pending.call_duration_seconds || 25;
       let isSuccess = true;
       let errorMsg: string | undefined;
+      let effectiveContent = pending.content;
 
       if (actionType === 'MESSAGE' || actionType === 'MESSAGE_AND_CALL') {
+        try {
+          const remRow = this.db.prepare('SELECT title, ai_generate_message FROM reminders WHERE id = ?').get(pending.reminder_id) as { title?: string; ai_generate_message?: number } | undefined;
+          if (remRow && remRow.ai_generate_message === 1 && this.geminiService.isConfigured()) {
+            const persona = this.getActivePersona();
+            const dynamicMsg = await this.geminiService.generateDynamicReminderMessage({
+              promptDescription: pending.content,
+              persona,
+              reminderTitle: remRow.title
+            });
+            if (dynamicMsg) {
+              effectiveContent = dynamicMsg;
+              console.log(`[TestQueue] Generated dynamic AI message for "${remRow.title}": "${dynamicMsg.slice(0, 50)}"`);
+            }
+          }
+        } catch (aiErr: any) {
+          console.warn('[TestQueue] Error generating dynamic message via AI, using original content:', aiErr.message);
+        }
+
         const sendResult = await this.messengerClient.sendMessage(
           pending.target_thread_id,
-          pending.content
+          effectiveContent
         );
         if (!sendResult.success) {
           isSuccess = false;
@@ -656,8 +768,8 @@ export class CronRunner {
         : actionType === 'VIDEO_CALL'
         ? `[Cuộc gọi video Messenger (${callDuration}s)]`
         : actionType === 'MESSAGE_AND_CALL'
-        ? `${createMessagePreview(pending.content)} + [Gọi thoại Messenger]`
-        : createMessagePreview(pending.content);
+        ? `${createMessagePreview(effectiveContent)} + [Gọi thoại Messenger]`
+        : createMessagePreview(effectiveContent);
 
       const slotKey = `test-${Date.now()}`;
       const idempotencyKey = generateIdempotencyKey(pending.reminder_id, pending.target_thread_id, slotKey);

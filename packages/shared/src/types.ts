@@ -26,6 +26,8 @@ export interface Reminder {
   runCount?: number;
   scheduleCron?: string | null;
   targetDate?: string | null; // e.g. "2026-09-17"
+  wakeUpMode?: boolean; // When true, recurring schedule stops when recipient answers, declines, or replies
+  aiGenerateMessage?: boolean; // When true, generates dynamic message via AI based on content prompt
   active: boolean;
   windowStart: string; // e.g. "18:00"
   windowEnd: string; // e.g. "22:00"

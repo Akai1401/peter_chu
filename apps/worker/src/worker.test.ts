@@ -60,6 +60,8 @@ function setupTestDb(): Database.Database {
       run_count INTEGER NOT NULL DEFAULT 0,
       schedule_cron TEXT,
       target_date TEXT,
+      wake_up_mode INTEGER NOT NULL DEFAULT 0,
+      ai_generate_message INTEGER NOT NULL DEFAULT 0,
       active INTEGER NOT NULL DEFAULT 1,
       window_start TEXT NOT NULL DEFAULT '18:00',
       window_end TEXT NOT NULL DEFAULT '22:00',

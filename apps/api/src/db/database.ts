@@ -66,6 +66,15 @@ export function initDatabase(dbPath?: string): Database.Database {
     db.exec(`ALTER TABLE reminders ADD COLUMN target_date TEXT`);
   } catch {}
   try {
+    db.exec(`ALTER TABLE reminders ADD COLUMN schedule_cron TEXT`);
+  } catch {}
+  try {
+    db.exec(`ALTER TABLE reminders ADD COLUMN wake_up_mode INTEGER NOT NULL DEFAULT 0`);
+  } catch {}
+  try {
+    db.exec(`ALTER TABLE reminders ADD COLUMN ai_generate_message INTEGER NOT NULL DEFAULT 0`);
+  } catch {}
+  try {
     db.exec(`ALTER TABLE test_dispatch_queue ADD COLUMN action_type TEXT NOT NULL DEFAULT 'MESSAGE'`);
   } catch {}
   try {

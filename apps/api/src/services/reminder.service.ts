@@ -23,7 +23,8 @@ export class ReminderService {
       SELECT id, title, content, target_thread_id as targetThreadId,
              action_type as actionType, call_duration_seconds as callDurationSeconds,
              max_runs as maxRuns, run_count as runCount,
-             schedule_cron as scheduleCron, target_date as targetDate, active,
+             schedule_cron as scheduleCron, target_date as targetDate,
+             wake_up_mode as wakeUpMode, ai_generate_message as aiGenerateMessage, active,
              window_start as windowStart, window_end as windowEnd,
              interval_minutes as intervalMinutes,
              created_at as createdAt, updated_at as updatedAt
@@ -41,6 +42,8 @@ export class ReminderService {
       runCount?: number;
       scheduleCron: string | null;
       targetDate?: string | null;
+      wakeUpMode?: number;
+      aiGenerateMessage?: number;
       active: number;
       windowStart: string;
       windowEnd: string;
@@ -64,6 +67,8 @@ export class ReminderService {
         maxRuns: r.maxRuns || 0,
         runCount: r.runCount || 0,
         targetDate: r.targetDate || null,
+        wakeUpMode: Boolean(r.wakeUpMode),
+        aiGenerateMessage: Boolean(r.aiGenerateMessage),
         active: activeBool
       };
     });
@@ -74,7 +79,8 @@ export class ReminderService {
       SELECT id, title, content, target_thread_id as targetThreadId,
              action_type as actionType, call_duration_seconds as callDurationSeconds,
              max_runs as maxRuns, run_count as runCount,
-             schedule_cron as scheduleCron, target_date as targetDate, active,
+             schedule_cron as scheduleCron, target_date as targetDate,
+             wake_up_mode as wakeUpMode, ai_generate_message as aiGenerateMessage, active,
              window_start as windowStart, window_end as windowEnd,
              interval_minutes as intervalMinutes,
              created_at as createdAt, updated_at as updatedAt
@@ -92,6 +98,8 @@ export class ReminderService {
       runCount?: number;
       scheduleCron: string | null;
       targetDate?: string | null;
+      wakeUpMode?: number;
+      aiGenerateMessage?: number;
       active: number;
       windowStart: string;
       windowEnd: string;
@@ -108,6 +116,8 @@ export class ReminderService {
       maxRuns: row.maxRuns || 0,
       runCount: row.runCount || 0,
       targetDate: row.targetDate || null,
+      wakeUpMode: Boolean(row.wakeUpMode),
+      aiGenerateMessage: Boolean(row.aiGenerateMessage),
       active: Boolean(row.active)
     };
   }
@@ -123,14 +133,16 @@ export class ReminderService {
     const callDurationSeconds = data.callDurationSeconds ?? 30;
     const maxRuns = data.maxRuns ?? 0;
     const targetDate = data.targetDate || null;
+    const wakeUpModeInt = data.wakeUpMode ? 1 : 0;
+    const aiGenerateMessageInt = data.aiGenerateMessage ? 1 : 0;
 
     const stmt = this.db.prepare(`
       INSERT INTO reminders (
         id, title, content, target_thread_id, action_type, call_duration_seconds,
-        max_runs, run_count, schedule_cron, target_date,
+        max_runs, run_count, schedule_cron, target_date, wake_up_mode, ai_generate_message,
         active, window_start, window_end, interval_minutes,
         created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     stmt.run(
@@ -144,6 +156,8 @@ export class ReminderService {
       0,
       data.scheduleCron || null,
       targetDate,
+      wakeUpModeInt,
+      aiGenerateMessageInt,
       activeInt,
       windowStart,
       windowEnd,
@@ -169,6 +183,8 @@ export class ReminderService {
     const maxRuns = data.maxRuns !== undefined ? data.maxRuns : (existing.maxRuns ?? 0);
     const scheduleCron = data.scheduleCron !== undefined ? data.scheduleCron : existing.scheduleCron;
     const targetDate = data.targetDate !== undefined ? data.targetDate : existing.targetDate;
+    const wakeUpModeInt = data.wakeUpMode !== undefined ? (data.wakeUpMode ? 1 : 0) : (existing.wakeUpMode ? 1 : 0);
+    const aiGenerateMessageInt = data.aiGenerateMessage !== undefined ? (data.aiGenerateMessage ? 1 : 0) : (existing.aiGenerateMessage ? 1 : 0);
     const activeInt = data.active !== undefined ? (data.active ? 1 : 0) : (existing.active ? 1 : 0);
     const windowStart = data.windowStart ?? existing.windowStart;
     const windowEnd = data.windowEnd ?? existing.windowEnd;
@@ -197,7 +213,7 @@ export class ReminderService {
       UPDATE reminders
       SET title = ?, content = ?, target_thread_id = ?, action_type = ?,
           call_duration_seconds = ?, max_runs = ?, run_count = ?, schedule_cron = ?, target_date = ?,
-          active = ?, window_start = ?, window_end = ?, interval_minutes = ?,
+          wake_up_mode = ?, ai_generate_message = ?, active = ?, window_start = ?, window_end = ?, interval_minutes = ?,
           updated_at = ?
       WHERE id = ?
     `);
@@ -212,6 +228,8 @@ export class ReminderService {
       runCount,
       scheduleCron,
       targetDate,
+      wakeUpModeInt,
+      aiGenerateMessageInt,
       activeInt,
       windowStart,
       windowEnd,

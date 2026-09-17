@@ -486,6 +486,103 @@ ${contextSnippet}
     throw lastError || new Error('Không thể sinh tin nhắn chủ động từ Gemini');
   }
 
+  /**
+   * Generates a dynamic reminder/scheduled message based on a prompt/description,
+   * fully reflecting the active learned persona.
+   */
+  async generateDynamicReminderMessage(options: {
+    promptDescription: string;
+    persona?: LearnedPersona | null;
+    reminderTitle?: string;
+    targetName?: string;
+  }): Promise<string> {
+    if (!this.isConfigured()) {
+      throw new Error('Gemini API key is not configured');
+    }
+
+    const { promptDescription, persona, reminderTitle, targetName } = options;
+    const recipient = targetName || 'đối phương';
+    const now = new Date();
+    const timeParts = getLocalTimeParts(now);
+    const timeFormatted = `${String(timeParts.hour).padStart(2, '0')}:${String(timeParts.minute).padStart(2, '0')}`;
+
+    let prompt = `Bạn đang đóng vai "Tôi (Chủ tài khoản)" trên Facebook Messenger.
+Hiện tại là ${timeFormatted} (Giờ Việt Nam).
+Nhiệm vụ: Hãy soạn một tin nhắn để gửi cho "${recipient}" theo yêu cầu / mô tả dưới đây.
+
+${reminderTitle ? `• Tên lịch nhắc: ${reminderTitle}` : ''}
+• Mô tả / Yêu cầu nội dung: "${promptDescription}"
+
+YÊU CẦU:
+1. Soạn tin nhắn tự nhiên, chân thật, đời thường như người thật nhắn tin trên Facebook Messenger.
+2. Đúng trọng tâm yêu cầu/mô tả nhưng câu từ biến hóa sinh động, không rập khuôn máy móc.
+3. CHỈ TRẢ VỀ DUY NHẤT 1 ĐOẠN TIN NHẮN (ngắn gọn 1-3 câu), KHÔNG kèm lời giải thích hay chào hỏi AI, KHÔNG bọc dấu ngoặc kép, KHÔNG dùng markdown phức tạp.
+`;
+
+    if (persona && persona.styleSummary) {
+      prompt += `\n--- HỒ SƠ PHONG CÁCH CỦA TÔI ---
+• Tóm tắt phong cách: ${persona.styleSummary}
+• Giọng điệu chủ đạo: ${persona.tone}
+• Quy tắc xưng hô: ${persona.pronouns}
+• Từ cửa miệng hay dùng: ${persona.catchphrases.join(', ')}
+${persona.sampleMessages && persona.sampleMessages.length > 0 ? `• Các câu nói mẫu tiêu biểu:\n${persona.sampleMessages.map((m) => `  - "${m}"`).join('\n')}\n` : ''}• Chỉ dẫn bổ sung: ${persona.rawPromptInstruction}
+YÊU CẦU: Áp dụng chuẩn xác cách xưng hô và các từ cửa miệng trên để câu từ tự nhiên 100%!
+--- HẾT HỒ SƠ PHONG CÁCH ---\n`;
+    }
+
+    const candidateModels = Array.from(new Set([
+      this.model,
+      'gemini-2.5-flash-lite',
+      'gemini-3.5-flash-lite',
+      'gemini-3.1-flash-lite'
+    ])).filter(Boolean);
+
+    let lastError: Error | null = null;
+
+    for (const modelName of candidateModels) {
+      const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${this.apiKey}`;
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 20000);
+
+      try {
+        const response = await fetch(endpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          signal: controller.signal,
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: prompt }] }],
+            generationConfig: {
+              temperature: 0.85,
+              maxOutputTokens: 250
+            }
+          })
+        });
+
+        if (!response.ok) {
+          const errorBody = await response.text().catch(() => '');
+          lastError = new Error(`Gemini API error (HTTP ${response.status}): ${errorBody}`);
+          continue;
+        }
+
+        const data = (await response.json()) as any;
+        const parts: any[] = data?.candidates?.[0]?.content?.parts || [];
+        const responsePart = parts.filter((p: any) => !p.thought).pop();
+        let reply = (responsePart?.text || '').trim();
+
+        reply = reply.replace(/^["'«“]/, '').replace(/["'»”]$/, '').trim();
+        if (reply) {
+          return reply;
+        }
+      } catch (err: any) {
+        lastError = err;
+      } finally {
+        clearTimeout(timeout);
+      }
+    }
+
+    throw lastError || new Error('Không thể sinh tin nhắn nhắc nhở từ Gemini');
+  }
+
   private buildPrompt(
     incomingMessage: string,
     senderName?: string,
