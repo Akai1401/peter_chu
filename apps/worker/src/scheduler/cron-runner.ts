@@ -106,10 +106,11 @@ export class CronRunner {
 
       // 2. Read bot state
       const botStateRow = this.db.prepare(`
-      SELECT status, emergency_stop as emergencyStop, dry_run as dryRun, session_status as sessionStatus
+      SELECT status, emergency_stop as emergencyStop, dry_run as dryRun, session_status as sessionStatus,
+             ai_target_thread as aiTargetThread
       FROM bot_state
       WHERE id = 1
-    `).get() as { status: BotStatus; emergencyStop: number; dryRun: number; sessionStatus?: string } | undefined;
+    `).get() as { status: BotStatus; emergencyStop: number; dryRun: number; sessionStatus?: string; aiTargetThread?: string } | undefined;
 
     if (!botStateRow) return stats;
 
@@ -179,6 +180,13 @@ export class CronRunner {
 
       stats.processed += 1;
 
+      const effectiveThreadId = (reminder.target_thread_id || '').trim() || (botStateRow.aiTargetThread || '').trim();
+      if (!effectiveThreadId) {
+        console.warn(`[CronRunner] Skipping reminder "${reminder.title}": No target thread configured.`);
+        stats.skipped += 1;
+        continue;
+      }
+
       // Check if current minute in Asia/Ho_Chi_Minh matches window and interval
       const isSlot = isSlotTriggerMinute(
         now,
@@ -198,14 +206,14 @@ export class CronRunner {
           SELECT id, message_text FROM ai_processed_messages
           WHERE thread_id = ? AND created_at >= ?
           ORDER BY created_at DESC LIMIT 1
-        `).get(reminder.target_thread_id, reminder.created_at || '1970-01-01') as { id: string; message_text: string } | undefined;
+        `).get(effectiveThreadId, reminder.created_at || '1970-01-01') as { id: string; message_text: string } | undefined;
 
         let hasReplied = Boolean(recentReply);
         let replySnippet = recentReply?.message_text;
 
         if (!hasReplied && !this.messengerClient.getDryRun()) {
           try {
-            const incoming = await this.messengerClient.getLatestUnreadIncomingMessage(reminder.target_thread_id);
+            const incoming = await this.messengerClient.getLatestUnreadIncomingMessage(effectiveThreadId);
             if (incoming && incoming.messageText) {
               hasReplied = true;
               replySnippet = incoming.messageText;
@@ -232,7 +240,7 @@ export class CronRunner {
       const slotKey = getCurrentSlotKey(now);
       const idempotencyKey = generateIdempotencyKey(
         reminder.id,
-        reminder.target_thread_id,
+        effectiveThreadId,
         slotKey
       );
 
@@ -260,7 +268,7 @@ export class CronRunner {
       );
 
       // 5. Rate limiting check
-      const rateCheck = this.rateLimiter.canSend(reminder.target_thread_id);
+      const rateCheck = this.rateLimiter.canSend(effectiveThreadId);
       const actionType = reminder.action_type || 'MESSAGE';
       const callDuration = reminder.call_duration_seconds || 25;
       const initialPreview = actionType === 'AUDIO_CALL'
@@ -281,7 +289,7 @@ export class CronRunner {
         // Record rate-limited skip
         this.recordExecutionLog({
           reminderId: reminder.id,
-          threadId: reminder.target_thread_id,
+          threadId: effectiveThreadId,
           status: 'SKIPPED_RATE_LIMITED',
           idempotencyKey,
           messagePreview: initialPreview,
@@ -315,7 +323,7 @@ export class CronRunner {
         }
 
         const sendResult = await this.messengerClient.sendMessage(
-          reminder.target_thread_id,
+          effectiveThreadId,
           effectiveMessageText
         );
         if (!sendResult.dryRun && !sendResult.success) {
@@ -328,7 +336,7 @@ export class CronRunner {
 
       if (isSuccess && (actionType === 'AUDIO_CALL' || actionType === 'MESSAGE_AND_CALL')) {
         const callResult = await this.messengerClient.startCall(
-          reminder.target_thread_id,
+          effectiveThreadId,
           'AUDIO',
           callDuration
         );
@@ -339,7 +347,7 @@ export class CronRunner {
         }
       } else if (isSuccess && actionType === 'VIDEO_CALL') {
         const callResult = await this.messengerClient.startCall(
-          reminder.target_thread_id,
+          effectiveThreadId,
           'VIDEO',
           callDuration
         );
@@ -373,7 +381,7 @@ export class CronRunner {
 
       this.recordExecutionLog({
         reminderId: reminder.id,
-        threadId: reminder.target_thread_id,
+        threadId: effectiveThreadId,
         status: execStatus,
         idempotencyKey,
         messagePreview: preview,
@@ -387,7 +395,7 @@ export class CronRunner {
         }
       });
 
-      this.rateLimiter.recordSend(reminder.target_thread_id);
+      this.rateLimiter.recordSend(effectiveThreadId);
       stats.dispatched += 1;
 
       if (!isSuccess) {
@@ -414,6 +422,15 @@ export class CronRunner {
       }
     } catch {}
     return null;
+  }
+
+  private getActiveTargetThread(): string {
+    try {
+      const row = this.db.prepare('SELECT ai_target_thread FROM bot_state WHERE id = 1').get() as { ai_target_thread?: string } | undefined;
+      return (row?.ai_target_thread || '').trim();
+    } catch {
+      return '';
+    }
   }
 
   private recordExecutionLog(data: {
@@ -693,6 +710,7 @@ export class CronRunner {
       }
 
       const callDuration = pending.call_duration_seconds || 25;
+      const effectiveTargetThread = (pending.target_thread_id || '').trim() || this.getActiveTargetThread();
       let isSuccess = true;
       let errorMsg: string | undefined;
       let effectiveContent = pending.content;
@@ -717,7 +735,7 @@ export class CronRunner {
         }
 
         const sendResult = await this.messengerClient.sendMessage(
-          pending.target_thread_id,
+          effectiveTargetThread,
           effectiveContent
         );
         if (!sendResult.success) {
@@ -728,7 +746,7 @@ export class CronRunner {
 
       if (isSuccess && (actionType === 'AUDIO_CALL' || actionType === 'MESSAGE_AND_CALL')) {
         const callResult = await this.messengerClient.startCall(
-          pending.target_thread_id,
+          effectiveTargetThread,
           'AUDIO',
           callDuration
         );
@@ -738,7 +756,7 @@ export class CronRunner {
         }
       } else if (isSuccess && actionType === 'VIDEO_CALL') {
         const callResult = await this.messengerClient.startCall(
-          pending.target_thread_id,
+          effectiveTargetThread,
           'VIDEO',
           callDuration
         );
@@ -772,11 +790,11 @@ export class CronRunner {
         : createMessagePreview(effectiveContent);
 
       const slotKey = `test-${Date.now()}`;
-      const idempotencyKey = generateIdempotencyKey(pending.reminder_id, pending.target_thread_id, slotKey);
+      const idempotencyKey = generateIdempotencyKey(pending.reminder_id, effectiveTargetThread, slotKey);
 
       this.recordExecutionLog({
         reminderId: pending.reminder_id,
-        threadId: pending.target_thread_id,
+        threadId: effectiveTargetThread,
         status: isSuccess ? 'SUCCESS' : 'FAILED',
         idempotencyKey,
         messagePreview: preview,

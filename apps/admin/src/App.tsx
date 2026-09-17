@@ -537,6 +537,7 @@ export function App() {
       <ReminderModal
         isOpen={isModalOpen}
         initialData={editingReminder}
+        defaultTargetThread={botState?.aiTargetThread || ''}
         onClose={() => {
           setIsModalOpen(false);
           setEditingReminder(null);

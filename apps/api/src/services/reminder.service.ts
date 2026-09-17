@@ -122,10 +122,19 @@ export class ReminderService {
     };
   }
 
+  getGlobalTargetThread(): string {
+    try {
+      const row = this.db.prepare('SELECT ai_target_thread as aiTargetThread FROM bot_state WHERE id = 1').get() as any;
+      return (row?.aiTargetThread || '').trim();
+    } catch {
+      return '';
+    }
+  }
+
   createReminder(data: CreateReminderInput, actor: string = 'admin'): Reminder {
     const id = randomUUID();
     const now = new Date().toISOString();
-    const activeInt = data.active !== false ? 1 : 0;
+    const activeInt = data.active !== undefined ? (data.active ? 1 : 0) : 1;
     const windowStart = data.windowStart || '00:00';
     const windowEnd = data.windowEnd || '23:59';
     const intervalMinutes = data.intervalMinutes ?? 10;
@@ -135,6 +144,14 @@ export class ReminderService {
     const targetDate = data.targetDate || null;
     const wakeUpModeInt = data.wakeUpMode ? 1 : 0;
     const aiGenerateMessageInt = data.aiGenerateMessage ? 1 : 0;
+
+    let targetThreadId = (data.targetThreadId || '').trim();
+    if (!targetThreadId) {
+      targetThreadId = this.getGlobalTargetThread();
+    }
+    if (!targetThreadId) {
+      throw new Error('Vui lòng nhập Target Thread ID hoặc cấu hình Target Thread chung trước!');
+    }
 
     const stmt = this.db.prepare(`
       INSERT INTO reminders (
@@ -149,7 +166,7 @@ export class ReminderService {
       id,
       data.title,
       data.content,
-      data.targetThreadId,
+      targetThreadId,
       actionType,
       callDurationSeconds,
       maxRuns,
@@ -177,7 +194,10 @@ export class ReminderService {
 
     const title = data.title ?? existing.title;
     const content = data.content ?? existing.content;
-    const targetThreadId = data.targetThreadId ?? existing.targetThreadId;
+    let targetThreadId = data.targetThreadId !== undefined ? data.targetThreadId.trim() : existing.targetThreadId;
+    if (!targetThreadId) {
+      targetThreadId = this.getGlobalTargetThread() || existing.targetThreadId;
+    }
     const actionType = data.actionType ?? existing.actionType;
     const callDurationSeconds = data.callDurationSeconds ?? existing.callDurationSeconds;
     const maxRuns = data.maxRuns !== undefined ? data.maxRuns : (existing.maxRuns ?? 0);

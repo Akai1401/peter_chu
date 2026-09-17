@@ -805,7 +805,7 @@ export const PersonaConfigModal: React.FC<Props> = ({
                         </div>
 
                         {/* Right: Actions */}
-                        <div className="flex items-center gap-1 shrink-0 self-end sm:self-center">
+                        <div className="flex items-center gap-1.5 shrink-0 self-end sm:self-center flex-wrap pt-1 sm:pt-0">
                           <Button
                             type="button"
                             size="sm"
@@ -814,10 +814,10 @@ export const PersonaConfigModal: React.FC<Props> = ({
                               e.stopPropagation();
                               handleOpenEdit(profile);
                             }}
-                            className="h-7 px-2 text-xs gap-1 font-medium"
+                            className="h-8 sm:h-7 px-2.5 text-xs gap-1 font-medium"
                             title="Chỉnh sửa chi tiết bộ văn phong này"
                           >
-                            <Pencil className="w-3 h-3 text-muted-foreground" />
+                            <Pencil className="w-3.5 h-3.5 text-muted-foreground" />
                             <span>Sửa</span>
                           </Button>
 
@@ -829,10 +829,10 @@ export const PersonaConfigModal: React.FC<Props> = ({
                               e.stopPropagation();
                               handleDuplicateProfile(profile);
                             }}
-                            className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
+                            className="h-8 w-8 sm:h-7 sm:w-7 p-0 text-muted-foreground hover:text-foreground"
                             title="Nhân bản bộ cấu hình này"
                           >
-                            <Copy className="w-3 h-3" />
+                            <Copy className="w-3.5 h-3.5" />
                           </Button>
 
                           <Button
@@ -844,10 +844,10 @@ export const PersonaConfigModal: React.FC<Props> = ({
                               e.stopPropagation();
                               handleDeleteProfile(profile.id, profile.name);
                             }}
-                            className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
+                            className="h-8 w-8 sm:h-7 sm:w-7 p-0 text-muted-foreground hover:text-destructive"
                             title="Xóa bộ cấu hình này"
                           >
-                            <Trash2 className="w-3 h-3" />
+                            <Trash2 className="w-3.5 h-3.5" />
                           </Button>
 
                           {/* Apply button */}
@@ -861,14 +861,14 @@ export const PersonaConfigModal: React.FC<Props> = ({
                                 e.stopPropagation();
                                 handleActivateProfile(profile.id);
                               }}
-                              className="h-7 px-2.5 text-xs gap-1 font-medium hover:bg-primary hover:text-primary-foreground transition-colors shrink-0 ml-1"
+                              className="h-8 sm:h-7 px-3 text-xs gap-1 font-medium hover:bg-primary hover:text-primary-foreground transition-colors shrink-0 ml-0.5"
                               title="Kích hoạt áp dụng bộ này cho Bot"
                             >
-                              <Check className="w-3 h-3" />
+                              <Check className="w-3.5 h-3.5" />
                               <span>{isActivating ? 'Đang áp dụng...' : 'Áp dụng'}</span>
                             </Button>
                           ) : (
-                            <span className="text-[11px] font-medium text-muted-foreground flex items-center gap-1 px-1.5 shrink-0 ml-1">
+                            <span className="text-[11px] font-medium text-muted-foreground flex items-center gap-1 px-1.5 shrink-0 ml-0.5 h-8 sm:h-7">
                               <CheckCircle2 className="w-3.5 h-3.5 text-foreground" />
                               <span>Đang dùng</span>
                             </span>

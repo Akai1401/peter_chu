@@ -199,8 +199,42 @@ export const BotStatusCard: React.FC<Props> = ({
           )}
         </div>
 
+        {/* ── Unified Target Thread Bar (Single Source of Truth) ── */}
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5 p-3 rounded-lg border border-border bg-muted/20">
+          <div className="flex items-center gap-2.5 min-w-0 flex-1">
+            <div className="w-8 h-8 rounded-lg bg-background border border-border/80 flex items-center justify-center shrink-0 text-foreground">
+              <Link2 className="w-4 h-4 text-muted-foreground" />
+            </div>
+            <div className="min-w-0 space-y-0.5">
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <span className="text-xs sm:text-sm font-semibold text-foreground">Cuộc trò chuyện mục tiêu (Target Thread)</span>
+                <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 font-normal text-muted-foreground border-border bg-background">
+                  Dùng chung
+                </Badge>
+              </div>
+              <p className="text-[11px] sm:text-xs text-muted-foreground font-mono truncate max-w-[280px] sm:max-w-md" title={state.aiTargetThread}>
+                {state.aiTargetThread ? (
+                  <span className="text-foreground font-medium">{state.aiTargetThread}</span>
+                ) : (
+                  <span className="italic text-muted-foreground">Chưa cấu hình (Lịch & AI sẽ quét tự do hoặc chờ chỉ định)</span>
+                )}
+              </p>
+            </div>
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => setIsAiConfigOpen(true)}
+            className="w-full sm:w-auto h-8 px-3 text-xs gap-1.5 font-medium shrink-0 shadow-2xs"
+          >
+            <Pencil className="w-3.5 h-3.5 text-muted-foreground" />
+            <span>{state.aiTargetThread ? 'Đổi Target Thread' : 'Cấu hình Target Thread'}</span>
+          </Button>
+        </div>
+
         {/* 3-Column AI Capabilities Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 md:gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5 sm:gap-3 md:gap-4">
           {/* 1. Auto-Reply Card */}
           <div className="p-3 md:p-3.5 rounded-lg border border-border/80 bg-muted/20 space-y-2 md:space-y-2.5 transition-colors">
             <div className="flex items-center justify-between">
@@ -233,25 +267,16 @@ export const BotStatusCard: React.FC<Props> = ({
                 </span>
               </div>
 
-              {/* Target thread selector / badge */}
-              <div className="flex items-center justify-between gap-1 pt-0.5 text-[11px] md:text-xs text-muted-foreground">
-                <span className="truncate flex items-center gap-1 min-w-0">
-                  <Link2 className="w-3 h-3 md:w-3.5 md:h-3.5 shrink-0 text-muted-foreground" />
-                  {state.aiTargetThread ? (
-                    <span className="font-mono truncate" title={state.aiTargetThread}>
-                      ID: {state.aiTargetThread.match(/\/t\/([^/?#]+)/i)?.[1] || state.aiTargetThread.replace(/^https?:\/\/(www\.)?facebook\.com\/messages\//i, '')}
-                    </span>
-                  ) : (
-                    <span>Quét toàn bộ hộp thư</span>
-                  )}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => setIsAiConfigOpen(true)}
-                  className="text-foreground hover:underline text-[10px] md:text-xs font-medium shrink-0 ml-1"
-                >
-                  {state.aiTargetThread ? 'Đổi' : 'Chỉ định'}
-                </button>
+              {/* Target thread indicator */}
+              <div className="flex items-center gap-1.5 pt-0.5 text-[11px] md:text-xs text-muted-foreground">
+                <Link2 className="w-3 h-3 md:w-3.5 md:h-3.5 shrink-0 text-muted-foreground" />
+                {state.aiTargetThread ? (
+                  <span className="truncate font-mono">
+                    Theo Target Thread chung
+                  </span>
+                ) : (
+                  <span>Quét toàn bộ hộp thư</span>
+                )}
               </div>
             </div>
           </div>
@@ -268,9 +293,9 @@ export const BotStatusCard: React.FC<Props> = ({
                 variant="outline"
                 size="sm"
                 onClick={() => setIsPersonaModalOpen(true)}
-                className="h-6 md:h-7 px-2 md:px-2.5 text-[10px] md:text-xs gap-1 font-medium"
+                className="h-8 sm:h-7 px-3 sm:px-2.5 text-xs sm:text-xs gap-1 font-medium shadow-2xs"
               >
-                <Pencil className="w-2.5 h-2.5 md:w-3 md:h-3 text-muted-foreground" />
+                <Pencil className="w-3 h-3 text-muted-foreground" />
                 <span>Quản lý</span>
               </Button>
             </div>
@@ -299,7 +324,7 @@ export const BotStatusCard: React.FC<Props> = ({
                 variant="outline"
                 size="sm"
                 onClick={() => setIsProactiveModalOpen(true)}
-                className="h-6 md:h-7 px-2 md:px-2.5 text-[10px] md:text-xs gap-1 font-medium"
+                className="h-8 sm:h-7 px-3 sm:px-2.5 text-xs sm:text-xs gap-1 font-medium shadow-2xs"
               >
                 <span>Cấu hình</span>
               </Button>
