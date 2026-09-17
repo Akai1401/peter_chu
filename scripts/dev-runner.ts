@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { spawn, ChildProcess } from 'node:child_process';
+import { spawn, execSync, ChildProcess } from 'node:child_process';
 import { acquireProcessLock, findWorkspaceRoot, isProcessAlive } from '@messenger/shared/node';
 
 const rootDir = findWorkspaceRoot();
@@ -46,6 +46,16 @@ console.log('============================================================');
 console.log('🚀 Đang khởi động hệ thống Messenger AI Bot Control Center...');
 console.log(`🔒 Single-instance lock: ${lockPath}`);
 console.log('============================================================');
+
+// 3. Ensure @messenger/shared is built for apps (tsx/vite)
+try {
+  console.log('📦 Đang đồng bộ @messenger/shared...');
+  execSync('bun --filter=@messenger/shared run build', { cwd: rootDir, stdio: 'inherit' });
+} catch (err) {
+  console.error('❌ Lỗi khi build @messenger/shared:', err);
+  release();
+  process.exit(1);
+}
 
 interface ServiceConfig {
   name: string;

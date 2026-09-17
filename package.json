@@ -8,6 +8,11 @@
     "apps/*"
   ],
   "scripts": {
+    "build:shared": "bun --filter=@messenger/shared run build",
+    "predev": "bun run build:shared",
+    "predev:api": "bun run build:shared",
+    "predev:worker": "bun run build:shared",
+    "predev:admin": "bun run build:shared",
     "dev": "bun scripts/dev-runner.ts",
     "dev:api": "bun --filter=@messenger/api run dev",
     "dev:worker": "bun --filter=@messenger/worker run dev",
