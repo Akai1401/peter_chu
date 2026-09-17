@@ -540,8 +540,22 @@ export class BotControlService {
     }
 
     if (config.targetThread !== undefined) {
+      const trimmedThread = config.targetThread.trim();
       updates.push('ai_target_thread = ?');
-      params.push(config.targetThread.trim());
+      params.push(trimmedThread);
+
+      // Keep proactive chat config synchronized with the central target thread
+      try {
+        const currentProactive = this.getProactiveConfig();
+        if (currentProactive && currentProactive.targetThread !== trimmedThread) {
+          this.updateProactiveConfig({
+            ...currentProactive,
+            targetThread: trimmedThread
+          });
+        }
+      } catch (err: any) {
+        console.warn('Could not sync proactive chat config targetThread:', err.message);
+      }
     }
 
     if (updates.length > 0) {

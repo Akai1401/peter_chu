@@ -22,6 +22,7 @@ import { getLocalTimeParts } from '@messenger/shared';
 interface Props {
   isOpen: boolean;
   initialData?: Reminder | null;
+  defaultTargetThread?: string;
   onClose: () => void;
   onSubmit: (data: CreateReminderInput & { resetRunCount?: boolean }) => Promise<void>;
   loading: boolean;
@@ -30,6 +31,7 @@ interface Props {
 export const ReminderModal: React.FC<Props> = ({
   isOpen,
   initialData,
+  defaultTargetThread = '',
   onClose,
   onSubmit,
   loading
@@ -87,7 +89,7 @@ export const ReminderModal: React.FC<Props> = ({
     } else if (isOpen) {
       setTitle('');
       setContent('');
-      setTargetThreadId('');
+      setTargetThreadId(defaultTargetThread || '');
       setActionType('MESSAGE');
       setCallDurationSeconds(25);
       setIsRepeat(false);
@@ -110,12 +112,18 @@ export const ReminderModal: React.FC<Props> = ({
       setActive(true);
     }
     setError(null);
-  }, [initialData, isOpen]);
+  }, [initialData, isOpen, defaultTargetThread]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!title.trim() || !targetThreadId.trim()) {
-      setError('Vui lòng điền tiêu đề và Thread ID');
+    if (!title.trim()) {
+      setError('Vui lòng điền tiêu đề nhắc nhở');
+      return;
+    }
+
+    const finalThreadId = (targetThreadId.trim() || defaultTargetThread || '').trim();
+    if (!finalThreadId) {
+      setError('Vui lòng nhập Target Thread ID hoặc cấu hình Target Thread chung trước');
       return;
     }
 
@@ -151,7 +159,7 @@ export const ReminderModal: React.FC<Props> = ({
       await onSubmit({
         title: title.trim(),
         content: isMessageRequired ? content.trim() : (actionType === 'AUDIO_CALL' ? 'Audio Call' : 'Video Call'),
-        targetThreadId: targetThreadId.trim(),
+        targetThreadId: finalThreadId,
         actionType,
         callDurationSeconds: Number(callDurationSeconds),
         maxRuns: finalMaxRuns,
@@ -198,15 +206,30 @@ export const ReminderModal: React.FC<Props> = ({
             />
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="target" className="text-xs font-medium">Target Thread ID / Link</Label>
+            <div className="flex items-center justify-between">
+              <Label htmlFor="target" className="text-xs font-medium">Target Thread ID / Link</Label>
+              {defaultTargetThread && defaultTargetThread !== targetThreadId && (
+                <button
+                  type="button"
+                  onClick={() => setTargetThreadId(defaultTargetThread)}
+                  className="text-[10px] text-muted-foreground hover:text-foreground underline underline-offset-2"
+                >
+                  Dùng theo cấu hình chung
+                </button>
+              )}
+            </div>
             <Input
               id="target"
-              required
               value={targetThreadId}
               onChange={(e) => setTargetThreadId(e.target.value)}
-              placeholder="e.g. 1000123456789"
+              placeholder={defaultTargetThread ? `Mặc định: ${defaultTargetThread}` : "e.g. 1000123456789"}
               className="font-mono text-xs h-9"
             />
+            {defaultTargetThread && (
+              <p className="text-[10px] text-muted-foreground">
+                ✓ Tự động dùng theo Target Thread chung nếu để trống.
+              </p>
+            )}
           </div>
         </div>
 

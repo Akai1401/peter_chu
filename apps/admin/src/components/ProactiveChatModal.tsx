@@ -24,7 +24,6 @@ import {
   HelpCircle,
   Link2
 } from 'lucide-react';
-import type { ProactiveChatConfig } from '@messenger/shared';
 import { api } from '@/api';
 
 interface Props {
@@ -96,8 +95,9 @@ export const ProactiveChatModal: React.FC<Props> = ({
   }, [isOpen, defaultThreadUrl]);
 
   const handleSave = async () => {
-    if (enabled && !targetThread.trim()) {
-      onNotify?.('Vui lòng nhập link cuộc hội thoại để bot biết cần nhắn cho ai!', 'error');
+    const finalTarget = targetThread.trim() || defaultThreadUrl.trim();
+    if (enabled && !finalTarget) {
+      onNotify?.('Vui lòng cấu hình Target Thread chung trước khi kích hoạt chủ động nhắn tin!', 'error');
       return;
     }
 
@@ -113,27 +113,20 @@ export const ProactiveChatModal: React.FC<Props> = ({
 
     setIsSaving(true);
     try {
-      const payload: Partial<ProactiveChatConfig> = {
+      await api.updateProactiveConfig({
         enabled,
-        targetThread: targetThread.trim(),
+        targetThread: finalTarget,
         minIntervalMinutes: Number(minIntervalMinutes),
         maxIntervalMinutes: Number(maxIntervalMinutes),
         activeHoursStart,
         activeHoursEnd,
         promptGuidance: promptGuidance.trim()
-      };
-
-      await api.updateProactiveConfig(payload);
-      onNotify?.(
-        enabled
-          ? 'Đã bật chế độ chủ động nhắn tin ngẫu nhiên!'
-          : 'Đã tắt chế độ chủ động nhắn tin.',
-        'success'
-      );
+      });
+      onNotify?.('Đã lưu cấu hình chủ động nhắn tin thành công!', 'success');
       onSuccess?.();
       onClose();
     } catch (err: any) {
-      onNotify?.(err.message || 'Lỗi khi lưu cấu hình', 'error');
+      onNotify?.(err.message || 'Lỗi khi lưu cấu hình chủ động nhắn tin', 'error');
     } finally {
       setIsSaving(false);
     }
@@ -142,7 +135,7 @@ export const ProactiveChatModal: React.FC<Props> = ({
   const handleTestNow = async () => {
     const target = targetThread.trim() || defaultThreadUrl.trim();
     if (!target) {
-      onNotify?.('Vui lòng nhập link cuộc hội thoại để thử nghiệm!', 'error');
+      onNotify?.('Chưa có link hội thoại để gửi thử. Vui lòng cấu hình Target Thread chung trên Dashboard trước.', 'error');
       return;
     }
 
@@ -234,29 +227,25 @@ export const ProactiveChatModal: React.FC<Props> = ({
             />
           </div>
 
-          {/* Target Thread Link */}
-          <div className="space-y-1">
+          {/* Target Thread (Synchronized from Central Config) */}
+          <div className="space-y-1.5 p-3 bg-muted/20 rounded-lg border border-border/80">
             <div className="flex items-center justify-between">
               <Label className="text-xs font-medium text-foreground flex items-center gap-1.5">
                 <Link2 className="w-3.5 h-3.5 text-muted-foreground" />
-                Hội thoại Messenger mục tiêu: <span className="text-destructive">*</span>
+                Hội thoại Messenger mục tiêu:
               </Label>
-              {defaultThreadUrl && defaultThreadUrl !== targetThread && (
-                <button
-                  type="button"
-                  onClick={() => setTargetThread(defaultThreadUrl)}
-                  className="text-[11px] text-muted-foreground hover:text-foreground underline underline-offset-2"
-                >
-                  Dùng link đang theo dõi
-                </button>
-              )}
+              <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-border text-muted-foreground bg-background">
+                Theo cấu hình chung
+              </Badge>
             </div>
-            <Input
-              value={targetThread}
-              onChange={(e) => setTargetThread(e.target.value)}
-              placeholder="VD: https://www.facebook.com/messages/t/100040388333156 hoặc ID số"
-              className="text-xs font-mono h-8 bg-background"
-            />
+            <div className="p-2 bg-background rounded-md border border-border/70">
+              <span className="font-mono text-xs truncate text-foreground font-medium block" title={targetThread || defaultThreadUrl}>
+                {targetThread.trim() || defaultThreadUrl || 'Chưa thiết lập (Vui lòng cấu hình trên Dashboard)'}
+              </span>
+            </div>
+            <p className="text-[10px] text-muted-foreground">
+              ✓ Tự động đồng bộ theo Target Thread chung của bot. Để đổi hội thoại, hãy chỉnh sửa ở thanh Target Thread trên Dashboard.
+            </p>
           </div>
 
           {/* Random Wait Interval (Min - Max) */}
@@ -366,7 +355,7 @@ export const ProactiveChatModal: React.FC<Props> = ({
                   key={i}
                   type="button"
                   onClick={() => setPromptGuidance(topic)}
-                  className="text-[10px] px-2 py-0.5 rounded-full bg-muted hover:bg-muted/80 text-foreground border border-border/80 transition-colors cursor-pointer"
+                  className="text-[11px] px-2.5 py-1 rounded-full bg-muted hover:bg-muted/80 text-foreground border border-border/80 transition-colors cursor-pointer min-h-[28px] inline-flex items-center"
                 >
                   {topic}
                 </button>
@@ -390,31 +379,31 @@ export const ProactiveChatModal: React.FC<Props> = ({
         </div>
 
         {/* Modal Footer with Test Trigger & Save Button */}
-        <DialogFooter className="pt-3 border-t sm:justify-between items-center gap-2">
+        <DialogFooter className="pt-3 border-t flex-col-reverse sm:flex-row gap-2 sm:justify-between items-stretch sm:items-center">
           <Button
             type="button"
             variant="outline"
             size="sm"
             onClick={handleTestNow}
-            disabled={isTesting || !targetThread.trim()}
-            className="text-xs h-8 px-3 gap-1.5 font-medium"
+            disabled={isTesting || (!targetThread.trim() && !defaultThreadUrl.trim())}
+            className="text-xs h-9 sm:h-8 px-3 gap-1.5 font-medium w-full sm:w-auto"
             title="Thử nghiệm tạo câu mở đầu và gửi tin nhắn ngay lập tức"
           >
             {isTesting ? (
-              <RefreshCw className="w-3 h-3 animate-spin text-muted-foreground" />
+              <RefreshCw className="w-3.5 h-3.5 animate-spin text-muted-foreground" />
             ) : (
-              <Send className="w-3 h-3 text-muted-foreground" />
+              <Send className="w-3.5 h-3.5 text-muted-foreground" />
             )}
             <span>{isTesting ? 'Đang gửi thử...' : 'Gửi thử nghiệm'}</span>
           </Button>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
             <Button
               type="button"
               variant="outline"
               size="sm"
               onClick={onClose}
-              className="text-xs h-8 px-3"
+              className="text-xs h-9 sm:h-8 px-3.5 flex-1 sm:flex-none"
             >
               Đóng
             </Button>
@@ -424,7 +413,7 @@ export const ProactiveChatModal: React.FC<Props> = ({
               size="sm"
               onClick={handleSave}
               disabled={isSaving || isLoading}
-              className="text-xs h-8 px-3.5 gap-1.5 shadow-xs"
+              className="text-xs h-9 sm:h-8 px-4 gap-1.5 shadow-xs flex-1 sm:flex-none font-medium"
             >
               <Check className="w-3.5 h-3.5" />
               <span>{isSaving ? 'Đang lưu...' : 'Lưu cấu hình'}</span>
