@@ -1007,7 +1007,7 @@ export class CronRunner {
 
       // 5. Gather existing active / upcoming reminders for this conversation thread
       const existingRemindersRows = this.db.prepare(`
-        SELECT title, action_type, target_date, window_start, active, run_count, max_runs
+        SELECT title, action_type, target_date, window_start, active, run_count, max_runs, wake_up_mode
         FROM reminders
         WHERE target_thread_id = ? OR target_thread_id LIKE ?
         ORDER BY created_at DESC
@@ -1020,13 +1020,15 @@ export class CronRunner {
         active: number;
         run_count: number;
         max_runs: number;
+        wake_up_mode?: number;
       }>;
 
       let existingRemindersInfo = '';
       if (existingRemindersRows.length > 0) {
         existingRemindersInfo = existingRemindersRows.map((r, i) => {
           const status = r.active === 1 ? 'ĐANG CHỜ CHẠY' : `ĐÃ HOÀN TẤT (${r.run_count}/${r.max_runs} lần)`;
-          return `${i + 1}. "${r.title}" (${r.action_type}) - Ngày: ${r.target_date || 'Hàng ngày'}, Giờ: ${r.window_start} - Trạng thái: ${status}`;
+          const modeTag = r.wake_up_mode === 1 ? ' [Chế độ gọi dậy: BẬT]' : '';
+          return `${i + 1}. "${r.title}" (${r.action_type}${modeTag}) - Ngày: ${r.target_date || 'Hàng ngày'}, Giờ: ${r.window_start} - Trạng thái: ${status}`;
         }).join('\n');
       }
 
@@ -1107,12 +1109,13 @@ export class CronRunner {
         try {
           createdReminderId = randomUUID();
           const nowIso = new Date().toISOString();
+          const wakeUpModeInt = reminderPayload.wakeUpMode ? 1 : 0;
           this.db.prepare(`
             INSERT INTO reminders (
               id, title, content, target_thread_id, action_type, call_duration_seconds,
               max_runs, run_count, active, window_start, window_end, interval_minutes, target_date,
-              created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, 0, 1, ?, ?, ?, ?, ?, ?)
+              wake_up_mode, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, 0, 1, ?, ?, ?, ?, ?, ?, ?)
           `).run(
             createdReminderId,
             reminderPayload.title,
@@ -1125,16 +1128,18 @@ export class CronRunner {
             reminderPayload.windowEnd,
             reminderPayload.intervalMinutes,
             reminderPayload.targetDate,
+            wakeUpModeInt,
             nowIso,
             nowIso
           );
 
-          console.log(`[AI-AutoReply] Auto-created reminder "${reminderPayload.title}" (${reminderPayload.actionType}) at ${reminderPayload.windowStart} ${reminderPayload.targetDate} for ${threadId}`);
+          const modeNotice = reminderPayload.wakeUpMode ? ' [Chế độ gọi dậy: BẬT]' : '';
+          console.log(`[AI-AutoReply] Auto-created reminder "${reminderPayload.title}" (${reminderPayload.actionType}${modeNotice}) at ${reminderPayload.windowStart} ${reminderPayload.targetDate} for ${threadId}`);
 
           this.recordAuditLog(
             'AI_REMINDER_CREATED',
             'gemini_bot',
-            `Tự động tạo lịch nhắc "${reminderPayload.title}" cho khách ${senderDisplay} lúc ${reminderPayload.windowStart} ngày ${reminderPayload.targetDate} (Hình thức: ${reminderPayload.actionType})`,
+            `Tự động tạo lịch nhắc "${reminderPayload.title}"${modeNotice} cho khách ${senderDisplay} lúc ${reminderPayload.windowStart} ngày ${reminderPayload.targetDate} (Hình thức: ${reminderPayload.actionType})`,
             'INFO'
           );
         } catch (dbErr: any) {
@@ -1193,7 +1198,8 @@ export class CronRunner {
 
       if (reminderPayload && createdReminderId) {
         actionType = 'AI_REMINDER_CREATED';
-        previewText = `📅 [Tự Tạo Lịch Nhắc] "${reminderPayload.title}" (${reminderPayload.windowStart} ${reminderPayload.targetDate} - ${reminderPayload.actionType}) ➔ Khách: "${createMessagePreview(replyText)}"`;
+        const modeTag = reminderPayload.wakeUpMode ? ' [Gọi dậy]' : '';
+        previewText = `📅 [Tự Tạo Lịch Nhắc${modeTag}] "${reminderPayload.title}" (${reminderPayload.windowStart} ${reminderPayload.targetDate} - ${reminderPayload.actionType}) ➔ Khách: "${createMessagePreview(replyText)}"`;
       } else if (isQuotaFallback) {
         actionType = 'AI_QUOTA_REPLY';
         previewText = `⚠️ [AI Hết Quota] Khách: "${createMessagePreview(messageText)}" ➔ Phản hồi: "${createMessagePreview(replyText)}"`;

@@ -171,52 +171,61 @@ export const BotStatusCard: React.FC<Props> = ({
       </div>
 
       {/* ── Dedicated AI Copilot & Automation Hub ── */}
-      <div className="pt-2 md:pt-3 border-t border-border/60 space-y-2.5 md:space-y-3">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Sparkles className="w-3.5 h-3.5 md:w-4 md:h-4 text-foreground" />
-            <h3 className="text-xs md:text-sm font-semibold text-foreground tracking-tight">
-              Trợ lý AI & Tự động hoá
-            </h3>
-            {isAnyAiActive && isRunning && (
-              <span className="w-1.5 h-1.5 md:w-2 md:h-2 rounded-full bg-emerald-500 animate-pulse" title="AI đang hoạt động" />
-            )}
+      <div className="rounded-xl md:rounded-2xl p-3.5 sm:p-4 md:p-4.5 bg-gradient-to-b from-purple-500/[0.04] to-transparent border border-purple-500/15 dark:border-purple-500/20 space-y-3 md:space-y-3.5 shadow-2xs">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2.5">
+            <div className="w-7 h-7 rounded-lg bg-purple-500/15 border border-purple-500/20 flex items-center justify-center text-purple-600 dark:text-purple-400 shrink-0 shadow-2xs">
+              <Sparkles className="w-3.5 h-3.5" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="text-xs sm:text-sm font-semibold text-foreground tracking-tight">
+                  Trợ lý AI & Tự động hoá
+                </h3>
+                {isAnyAiActive && isRunning && (
+                  <span className="inline-flex items-center gap-1 text-[10px] font-medium text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-1.5 py-0.2 rounded border border-emerald-500/20">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                    AI Online
+                  </span>
+                )}
+              </div>
+            </div>
           </div>
 
           {onCheckIncoming && (
             <Button
               type="button"
-              variant="ghost"
+              variant="outline"
               size="sm"
               disabled={loading || isCheckingIncoming}
               onClick={onCheckIncoming}
-              className="h-7 md:h-8 px-2 md:px-2.5 text-xs md:text-sm gap-1.5 font-medium text-muted-foreground hover:text-foreground"
+              className="h-8 sm:h-7.5 px-2.5 sm:px-3 text-xs gap-1.5 font-medium text-foreground bg-background hover:bg-muted active:scale-[0.98] transition-all shadow-2xs shrink-0"
               title="Quét tin nhắn Messenger mới ngay lập tức"
             >
-              <RefreshCw className={`w-3 h-3 md:w-3.5 md:h-3.5 ${isCheckingIncoming ? 'animate-spin text-foreground' : ''}`} />
+              <RefreshCw className={`w-3.5 h-3.5 ${isCheckingIncoming ? 'animate-spin text-purple-600 dark:text-purple-400' : 'text-muted-foreground'}`} />
               <span>{isCheckingIncoming ? 'Đang quét...' : 'Quét tin nhắn'}</span>
             </Button>
           )}
         </div>
 
         {/* ── Unified Target Thread Bar (Single Source of Truth) ── */}
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5 p-3 rounded-lg border border-border bg-muted/20">
-          <div className="flex items-center gap-2.5 min-w-0 flex-1">
-            <div className="w-8 h-8 rounded-lg bg-background border border-border/80 flex items-center justify-center shrink-0 text-foreground">
-              <Link2 className="w-4 h-4 text-muted-foreground" />
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 p-3 sm:p-3.5 rounded-xl border border-border/80 bg-background dark:bg-card/70 backdrop-blur-xs shadow-2xs">
+          <div className="flex items-start sm:items-center gap-2.5 min-w-0 flex-1">
+            <div className="w-8.5 h-8.5 rounded-lg bg-muted/60 border border-border/70 flex items-center justify-center shrink-0 text-foreground mt-0.5 sm:mt-0">
+              <Link2 className="w-4 h-4 text-purple-600 dark:text-purple-400" />
             </div>
-            <div className="min-w-0 space-y-0.5">
+            <div className="min-w-0 space-y-0.5 flex-1">
               <div className="flex items-center gap-1.5 flex-wrap">
                 <span className="text-xs sm:text-sm font-semibold text-foreground">Cuộc trò chuyện mục tiêu (Target Thread)</span>
-                <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 font-normal text-muted-foreground border-border bg-background">
+                <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 font-normal text-muted-foreground border-border bg-muted/40">
                   Dùng chung
                 </Badge>
               </div>
-              <p className="text-[11px] sm:text-xs text-muted-foreground font-mono truncate max-w-[280px] sm:max-w-md" title={state.aiTargetThread}>
+              <p className="text-xs sm:text-[11px] text-muted-foreground font-mono break-all line-clamp-1" title={state.aiTargetThread}>
                 {state.aiTargetThread ? (
                   <span className="text-foreground font-medium">{state.aiTargetThread}</span>
                 ) : (
-                  <span className="italic text-muted-foreground">Chưa cấu hình (Lịch & AI sẽ quét tự do hoặc chờ chỉ định)</span>
+                  <span className="italic text-muted-foreground">Chưa cấu hình (Lịch & AI sẽ quét tự do trong hộp thư)</span>
                 )}
               </p>
             </div>
@@ -226,7 +235,7 @@ export const BotStatusCard: React.FC<Props> = ({
             variant="outline"
             size="sm"
             onClick={() => setIsAiConfigOpen(true)}
-            className="w-full sm:w-auto h-8 px-3 text-xs gap-1.5 font-medium shrink-0 shadow-2xs"
+            className="w-full sm:w-auto h-9 sm:h-8 px-3.5 text-xs gap-1.5 font-medium shrink-0 active:scale-[0.98] shadow-2xs"
           >
             <Pencil className="w-3.5 h-3.5 text-muted-foreground" />
             <span>{state.aiTargetThread ? 'Đổi Target Thread' : 'Cấu hình Target Thread'}</span>
@@ -234,12 +243,18 @@ export const BotStatusCard: React.FC<Props> = ({
         </div>
 
         {/* 3-Column AI Capabilities Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5 sm:gap-3 md:gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5 sm:gap-3 md:gap-3.5">
           {/* 1. Auto-Reply Card */}
-          <div className="p-3 md:p-3.5 rounded-lg border border-border/80 bg-muted/20 space-y-2 md:space-y-2.5 transition-colors">
+          <div className={`p-3.5 rounded-xl border transition-all ${
+            aiEnabled
+              ? 'border-emerald-500/30 bg-emerald-500/[0.03] dark:bg-emerald-950/10'
+              : 'border-border/80 bg-background dark:bg-card/50'
+          } space-y-2.5 shadow-2xs`}>
             <div className="flex items-center justify-between">
-              <div className="flex items-center gap-1.5 text-xs md:text-sm font-semibold text-foreground">
-                <Bot className="w-3.5 h-3.5 md:w-4 md:h-4 text-muted-foreground" />
+              <div className="flex items-center gap-2 text-xs sm:text-sm font-semibold text-foreground">
+                <div className="w-6 h-6 rounded-md bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
+                  <Bot className="w-3.5 h-3.5" />
+                </div>
                 <span>Tự động trả lời</span>
               </div>
               {onToggleAiAutoReply && (
@@ -254,38 +269,45 @@ export const BotStatusCard: React.FC<Props> = ({
                       setIsTogglingAi(false);
                     }
                   }}
+                  className="data-[state=checked]:bg-emerald-600"
                   title={`Bấm để ${aiEnabled ? 'Tắt' : 'Bật'} tự động trả lời`}
                 />
               )}
             </div>
 
-            <div className="space-y-1 md:space-y-1.5">
-              <div className="flex items-center gap-1.5 text-[11px] md:text-xs">
-                <span className={`w-1.5 h-1.5 rounded-full ${aiEnabled ? (isRunning ? 'bg-emerald-500' : 'bg-amber-400') : 'bg-muted-foreground'}`} />
+            <div className="space-y-1.5">
+              <div className="flex items-center gap-1.5 text-xs">
+                <span className={`w-2 h-2 rounded-full shrink-0 ${aiEnabled ? (isRunning ? 'bg-emerald-500 animate-pulse' : 'bg-amber-400 animate-pulse') : 'bg-muted-foreground'}`} />
                 <span className="font-medium text-foreground">
                   {!aiEnabled ? 'Đang tắt' : isRunning ? 'Đang hoạt động' : 'Chờ bật Engine'}
                 </span>
               </div>
 
               {/* Target thread indicator */}
-              <div className="flex items-center gap-1.5 pt-0.5 text-[11px] md:text-xs text-muted-foreground">
-                <Link2 className="w-3 h-3 md:w-3.5 md:h-3.5 shrink-0 text-muted-foreground" />
+              <div className="flex items-center gap-1.5 pt-0.5 text-xs text-muted-foreground">
+                <Link2 className="w-3.5 h-3.5 shrink-0 text-muted-foreground" />
                 {state.aiTargetThread ? (
-                  <span className="truncate font-mono">
+                  <span className="truncate font-mono text-[11px]">
                     Theo Target Thread chung
                   </span>
                 ) : (
-                  <span>Quét toàn bộ hộp thư</span>
+                  <span className="text-[11px]">Quét toàn bộ hộp thư</span>
                 )}
               </div>
             </div>
           </div>
 
           {/* 2. Persona Card */}
-          <div className="p-3 md:p-3.5 rounded-lg border border-border/80 bg-muted/20 space-y-2 md:space-y-2.5 transition-colors">
+          <div className={`p-3.5 rounded-xl border transition-all ${
+            state.activePersonaName || state.learnedPersona?.tone
+              ? 'border-purple-500/30 bg-purple-500/[0.03] dark:bg-purple-950/10'
+              : 'border-border/80 bg-background dark:bg-card/50'
+          } space-y-2.5 shadow-2xs`}>
             <div className="flex items-center justify-between">
-              <div className="flex items-center gap-1.5 text-xs md:text-sm font-semibold text-foreground">
-                <GraduationCap className="w-3.5 h-3.5 md:w-4 md:h-4 text-muted-foreground" />
+              <div className="flex items-center gap-2 text-xs sm:text-sm font-semibold text-foreground">
+                <div className="w-6 h-6 rounded-md bg-purple-500/10 text-purple-600 dark:text-purple-400 flex items-center justify-center">
+                  <GraduationCap className="w-3.5 h-3.5" />
+                </div>
                 <span>Văn phong hội thoại</span>
               </div>
               <Button
@@ -293,18 +315,18 @@ export const BotStatusCard: React.FC<Props> = ({
                 variant="outline"
                 size="sm"
                 onClick={() => setIsPersonaModalOpen(true)}
-                className="h-8 sm:h-7 px-3 sm:px-2.5 text-xs sm:text-xs gap-1 font-medium shadow-2xs"
+                className="h-8 sm:h-7 px-3 sm:px-2.5 text-xs gap-1 font-medium shadow-2xs active:scale-[0.98]"
               >
                 <Pencil className="w-3 h-3 text-muted-foreground" />
                 <span>Quản lý</span>
               </Button>
             </div>
 
-            <div className="space-y-0.5 md:space-y-1">
-              <p className="text-xs md:text-sm font-semibold text-foreground truncate" title={state.activePersonaName || state.learnedPersona?.tone}>
+            <div className="space-y-1">
+              <p className="text-xs sm:text-sm font-semibold text-foreground truncate" title={state.activePersonaName || state.learnedPersona?.tone}>
                 {state.activePersonaName || (state.learnedPersona?.tone ? `Văn phong: ${state.learnedPersona.tone}` : 'Mặc định (Tự nhiên)')}
               </p>
-              <p className="text-[11px] md:text-xs text-muted-foreground truncate">
+              <p className="text-xs sm:text-[11px] text-muted-foreground truncate">
                 {state.learnedPersona?.pronouns
                   ? `Xưng hô: ${state.learnedPersona.pronouns}`
                   : 'Chưa thiết lập cá nhân hoá'}
@@ -313,10 +335,16 @@ export const BotStatusCard: React.FC<Props> = ({
           </div>
 
           {/* 3. Proactive Chat Card */}
-          <div className="p-3 md:p-3.5 rounded-lg border border-border/80 bg-muted/20 space-y-2 md:space-y-2.5 transition-colors">
+          <div className={`p-3.5 rounded-xl border transition-all ${
+            state.proactiveChat?.enabled
+              ? 'border-pink-500/30 bg-pink-500/[0.03] dark:bg-pink-950/10'
+              : 'border-border/80 bg-background dark:bg-card/50'
+          } space-y-2.5 shadow-2xs`}>
             <div className="flex items-center justify-between">
-              <div className="flex items-center gap-1.5 text-xs md:text-sm font-semibold text-foreground">
-                <MessageCircleHeart className="w-3.5 h-3.5 md:w-4 md:h-4 text-muted-foreground" />
+              <div className="flex items-center gap-2 text-xs sm:text-sm font-semibold text-foreground">
+                <div className="w-6 h-6 rounded-md bg-pink-500/10 text-pink-600 dark:text-pink-400 flex items-center justify-center">
+                  <MessageCircleHeart className="w-3.5 h-3.5" />
+                </div>
                 <span>Chủ động nhắn tin</span>
               </div>
               <Button
@@ -324,25 +352,25 @@ export const BotStatusCard: React.FC<Props> = ({
                 variant="outline"
                 size="sm"
                 onClick={() => setIsProactiveModalOpen(true)}
-                className="h-8 sm:h-7 px-3 sm:px-2.5 text-xs sm:text-xs gap-1 font-medium shadow-2xs"
+                className="h-8 sm:h-7 px-3 sm:px-2.5 text-xs gap-1 font-medium shadow-2xs active:scale-[0.98]"
               >
                 <span>Cấu hình</span>
               </Button>
             </div>
 
-            <div className="space-y-0.5 md:space-y-1">
-              <div className="flex items-center gap-1.5 text-[11px] md:text-xs">
-                <span className={`w-1.5 h-1.5 rounded-full ${state.proactiveChat?.enabled ? 'bg-emerald-500 animate-pulse' : 'bg-muted-foreground'}`} />
+            <div className="space-y-1">
+              <div className="flex items-center gap-1.5 text-xs flex-wrap">
+                <span className={`w-2 h-2 rounded-full shrink-0 ${state.proactiveChat?.enabled ? 'bg-pink-500 animate-pulse' : 'bg-muted-foreground'}`} />
                 <span className="font-medium text-foreground">
                   {state.proactiveChat?.enabled ? 'Đang bật' : 'Đang tắt'}
                 </span>
                 {state.proactiveChat?.enabled && (
-                  <span className="text-muted-foreground text-[10px] md:text-[11px]">
-                    ({(state.proactiveChat.minIntervalMinutes || 120) / 60}h-{(state.proactiveChat.maxIntervalMinutes || 360) / 60}h)
+                  <span className="text-muted-foreground text-[10px] sm:text-[11px] bg-muted/60 px-1.5 py-0.2 rounded border border-border/50">
+                    {(state.proactiveChat.minIntervalMinutes || 120) / 60}h - {(state.proactiveChat.maxIntervalMinutes || 360) / 60}h
                   </span>
                 )}
               </div>
-              <p className="text-[11px] md:text-xs text-muted-foreground truncate">
+              <p className="text-xs sm:text-[11px] text-muted-foreground truncate">
                 {state.proactiveChat?.enabled && state.proactiveChat.nextScheduledAt
                   ? `Lần tới: ${new Date(state.proactiveChat.nextScheduledAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
                   : 'Tự động mở lời khi rảnh'}

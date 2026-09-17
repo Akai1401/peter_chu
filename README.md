@@ -168,9 +168,21 @@ Hệ thống hỗ trợ AI bot **tự động và chủ động nhắn tin trư�
   - Hiển thị thông báo badge trạng thái trực quan: *Chủ động: Đang chạy (lần tới: 14:25)* hoặc *Chủ động: Tắt*.
   - Nút **"Gửi thử nghiệm ngay"**: Gửi tức thì 1 tin nhắn chủ động tới cuộc hội thoại chỉ định để kiểm tra câu chữ và chất lượng câu mở màn do AI sinh ra.
 
+### 6. Tự Động Lên Lịch & Chế Độ Gọi Dậy (Wake-Up Mode) Qua Tin Nhắn
+Người dùng có thể trò chuyện tự nhiên với bot qua Messenger để yêu cầu hẹn giờ hoặc gọi dậy:
+- **Tự động nhận diện ý định (Intent Extraction)**:
+  - Khi người dùng gửi các tin nhắn như: *"mai 6h gọi tao dậy nhé"*, *"mai nhớ nhắc tao uống thuốc lúc 8h"*, *"7h sáng mai alo đánh thức tao nha"*:
+  - Gemini AI tự động trích xuất các thông số: thời gian (`targetDate`, `windowStart`, `windowEnd`), hình thức nhắc (`MESSAGE` hoặc `MESSAGE_AND_CALL`), số lần lặp lại (`maxRuns`, `intervalMinutes`).
+- **Tự động kích hoạt Chế Độ Gọi Dậy (`wakeUpMode: true`)**:
+  - Khi phát hiện yêu cầu "gọi dậy", "đánh thức", "báo thức": AI tự động bật `wakeUpMode: true` cùng hình thức `MESSAGE_AND_CALL` và lên lịch gọi lặp lại (ví dụ 3 lần, mỗi 5 phút).
+  - Lịch được lưu trực tiếp vào cơ sở dữ liệu SQLite (`reminders`).
+- **Cơ chế Tự Động Ngắt Chuông Thông Minh**:
+  - Khi đến giờ hẹn, hệ thống thực hiện cuộc gọi thoại Messenger kèm tin nhắn.
+  - Ngay khi người dùng **nghe máy**, **tắt máy / từ chối cuộc gọi**, hoặc **nhắn tin trả lời lại trong đoạn chat**, hệ thống tự động nhận diện và ngắt lịch nhắc (`active = 0`), không tiếp tục làm phiền người dùng.
+
 ---
 
-### 4. Chạy Phát Triển (Development)
+### 7. Chạy Phát Triển (Development)
 
 Mở 3 terminal riêng biệt để chạy các thành phần:
 

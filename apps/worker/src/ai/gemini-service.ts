@@ -14,6 +14,7 @@ export interface AiCreatedReminderPayload {
   windowEnd: string; // HH:mm
   intervalMinutes: number;
   maxRuns: number;
+  wakeUpMode?: boolean;
 }
 
 export interface ImageAttachment {
@@ -80,6 +81,7 @@ export function extractReminderPayload(rawReplyText: string): ParseAiReplyResult
       const windowEnd = normalizeTime(parsed.windowEnd || parsed.windowStart);
       const intervalMinutes = Math.max(1, Number(parsed.intervalMinutes) || 1);
       const maxRuns = Math.max(1, Number(parsed.maxRuns) || 1);
+      const wakeUpMode = Boolean(parsed.wakeUpMode);
 
       reminderPayload = {
         title,
@@ -89,7 +91,8 @@ export function extractReminderPayload(rawReplyText: string): ParseAiReplyResult
         windowStart,
         windowEnd,
         intervalMinutes,
-        maxRuns
+        maxRuns,
+        wakeUpMode
       };
     }
   } catch (err: any) {
@@ -628,14 +631,24 @@ ${existingRemindersInfo && existingRemindersInfo.trim() ? existingRemindersInfo.
 --- HẾT TRẠNG THÁI LỊCH NHẮC ---
 
 QUY TẮC BẮT BUỘC: TỰ ĐỘNG HỖ TRỢ LÊN LỊCH & NHẮC NHỞ (CHỐNG HỨA LÈO / MÕM)
-Khi khách có ý định muốn được nhắc nhở, hẹn giờ, lên lịch làm một việc gì đó (ví dụ chứa các từ như "nhắc", "nhắc nhở", "hẹn giờ", "lên lịch", "nhớ nhắc", "mai nhắc tao", "mai nhớ gọi", "gọi dậy",...):
+Khi khách có ý định muốn được nhắc nhở, hẹn giờ, lên lịch làm một việc gì đó (ví dụ chứa các từ như "nhắc", "nhắc nhở", "hẹn giờ", "lên lịch", "nhớ nhắc", "mai nhắc tao", "mai nhớ gọi", "gọi dậy", "đánh thức", "báo thức",...):
 1. Các thông tin BẮT BUỘC cần có để tạo lịch nhắc:
    - Nội dung việc cần nhắc (Ví dụ: Uống thuốc, đi đón con, gọi dậy, họp công ty,...).
    - Thời gian cần nhắc: Ngày nào (quy đổi ra ngày cụ thể theo định dạng YYYY-MM-DD dựa vào ngày hiện tại ${todayFormatted}) và Giờ nào (định dạng 24h HH:mm, ví dụ 6h sáng là 06:00, 8h tối là 20:00).
    - Hình thức nhắc (actionType):
-     • Nếu khách có nói các từ như "gọi", "call", "gọi điện", "nhá máy", "alo cho tôi" ➔ actionType là "MESSAGE_AND_CALL" (Cả gọi điện và nhắn tin).
+     • Nếu khách có nói các từ như "gọi", "call", "gọi điện", "nhá máy", "alo cho tôi" HOẶC yêu cầu gọi dậy/đánh thức/báo thức ➔ actionType là "MESSAGE_AND_CALL" (Cả gọi điện và nhắn tin).
      • Nếu khách KHÔNG yêu cầu gọi ➔ actionType là "MESSAGE" (Chỉ nhắn tin).
-   - Số lần lặp (maxRuns): Mặc định nếu khách không nói gì thì nhắc 1 lần (maxRuns = 1, intervalMinutes = 1, windowEnd = windowStart). Nếu khách yêu cầu nhắc lại nhiều lần thì đặt maxRuns tương ứng.
+   - CHẾ ĐỘ GỌI DẬY (wakeUpMode):
+     • Nếu khách yêu cầu "gọi dậy", "đánh thức", "báo thức", "gọi tao dậy", "kêu tao dậy":
+       * BẮT BUỘC đặt "wakeUpMode": true.
+       * BẮT BUỘC đặt "actionType": "MESSAGE_AND_CALL".
+       * Để đảm bảo khách thức dậy, hãy đặt lịch gọi lặp lại: ví dụ "intervalMinutes": 5 (hoặc 10), "maxRuns": 3 (hoặc 5), và "windowEnd" cách "windowStart" tương ứng (ví dụ: windowStart "06:00", maxRuns 3 mỗi 5 phút thì windowEnd "06:15").
+       * Lưu ý: Khi "wakeUpMode": true, hệ thống sẽ tự động dừng gọi ngay khi khách nghe máy, từ chối cuộc gọi, hoặc nhắn tin trả lời.
+     • Nếu là nhắc nhở việc thông thường (không phải gọi dậy/đánh thức): Đặt "wakeUpMode": false.
+   - Số lần lặp (maxRuns):
+     • Nếu là việc thông thường và khách không yêu cầu lặp: maxRuns = 1, intervalMinutes = 1, windowEnd = windowStart.
+     • Nếu là gọi dậy: Đặt maxRuns = 3 (mỗi 5 phút) để gọi lại nếu chưa dậy.
+     • Nếu khách có yêu cầu lặp cụ thể: Đặt maxRuns và intervalMinutes tương ứng.
 2. NẾU THÔNG TIN CHƯA ĐẦY ĐỦ:
    - Bạn PHẢI tiếp tục hỏi khách ngắn gọn về thông tin còn thiếu (ví dụ: hỏi mấy giờ, hoặc ngày nào).
    - TUYỆT ĐỐI KHÔNG xuất block <<<CREATE_REMINDER>>> khi thông tin thời gian chưa rõ ràng!
@@ -653,9 +666,11 @@ Khi khách có ý định muốn được nhắc nhở, hẹn giờ, lên lịch
   "windowStart": "HH:mm",
   "windowEnd": "HH:mm",
   "intervalMinutes": 1,
-  "maxRuns": 1
+  "maxRuns": 1,
+  "wakeUpMode": false
 }
 >>>
+
 \n\n`;
 
     if (conversationHistory && conversationHistory.length > 0) {

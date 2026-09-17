@@ -339,92 +339,88 @@ export const LogViewer: React.FC<Props> = ({
                       {/* Clickable Card Header */}
                       <div
                         onClick={() => toggleExpand(log.id)}
-                        className="p-3 flex items-start gap-2.5 cursor-pointer hover:bg-muted/40 transition-colors"
+                        className="p-3 sm:p-3.5 flex items-start gap-2.5 cursor-pointer hover:bg-muted/40 transition-colors"
                       >
-                        <div className="text-muted-foreground shrink-0 mt-0.5">
-                          {isExpanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+                        <div className="text-muted-foreground shrink-0 mt-1">
+                          {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
                         </div>
 
-                        <div className="flex flex-col gap-2 min-w-0 flex-1">
+                        <div className="flex flex-col gap-2.5 min-w-0 flex-1">
                           {/* Metadata row */}
-                          <div className="flex items-center gap-2 flex-wrap">
-                            {/* Status badge */}
-                            {isError ? (
-                              <Badge variant="destructive" className="text-[10px] px-1.5 py-0 h-4.5 font-semibold">
-                                Lỗi phản hồi
-                              </Badge>
-                            ) : isAiReply ? (
-                              <Badge
-                                variant="outline"
-                                className="text-[10px] px-2 py-0 h-4.5 gap-1 font-semibold text-purple-700 border-purple-200 bg-purple-50 dark:text-purple-300 dark:bg-purple-950/40 dark:border-purple-800"
-                              >
-                                <Sparkles className="w-2.5 h-2.5 text-purple-500" /> AI Phản hồi
-                              </Badge>
-                            ) : (
-                              <Badge
-                                variant="outline"
-                                className="text-[10px] px-2 py-0 h-4.5 font-medium text-muted-foreground border-border bg-muted/30"
-                              >
-                                Chỉ ghi nhận
-                              </Badge>
-                            )}
+                          <div className="flex items-center justify-between gap-2 flex-wrap">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              {/* Status badge */}
+                              {isError ? (
+                                <Badge variant="destructive" className="text-[10px] px-1.5 py-0 h-4.5 font-semibold">
+                                  Lỗi phản hồi
+                                </Badge>
+                              ) : isAiReply ? (
+                                <Badge
+                                  variant="outline"
+                                  className="text-[10px] px-2 py-0 h-4.5 gap-1 font-semibold text-purple-700 border-purple-300 bg-purple-50 dark:text-purple-300 dark:bg-purple-950/50 dark:border-purple-700"
+                                >
+                                  <Sparkles className="w-2.5 h-2.5 text-purple-500" /> AI Phản hồi
+                                </Badge>
+                              ) : (
+                                <Badge
+                                  variant="outline"
+                                  className="text-[10px] px-2 py-0 h-4.5 font-medium text-muted-foreground border-border bg-muted/30"
+                                >
+                                  Chỉ ghi nhận
+                                </Badge>
+                              )}
 
-                            {/* Sender Name */}
-                            <span className="text-xs font-semibold text-foreground truncate max-w-[180px]">
-                              {sender}
-                            </span>
-
-                            {/* Thread ID */}
-                            <span className="text-[10px] font-mono text-muted-foreground bg-muted/50 px-1.5 py-0.5 rounded border border-border/50">
-                              {threadClean}
-                            </span>
-
-                            {/* Model Pill */}
-                            {details.model && (
-                              <span className="text-[10px] font-mono text-purple-700 dark:text-purple-300 bg-purple-50 dark:bg-purple-950/40 px-1.5 py-0.5 rounded border border-purple-200 dark:border-purple-800">
-                                {details.model}
+                              {/* Sender Name */}
+                              <span className="text-xs font-semibold text-foreground truncate max-w-[140px] sm:max-w-[200px]">
+                                {sender}
                               </span>
-                            )}
 
-                            {/* Context History Count Pill */}
-                            {details.contextMessagesCount > 0 && (
-                              <span className="text-[10px] font-mono text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/40 px-1.5 py-0.5 rounded border border-emerald-200 dark:border-emerald-800" title={`Đã đọc và hiểu ${details.contextMessagesCount} tin nhắn trước đó`}>
-                                {details.contextMessagesCount} context
+                              {/* Thread ID */}
+                              <span className="text-[10px] font-mono text-muted-foreground bg-muted/60 px-1.5 py-0.5 rounded border border-border/50">
+                                {threadClean}
                               </span>
-                            )}
 
-                            {/* Target Thread Pill */}
-                            {details.targetThread && (
-                              <span className="text-[10px] font-mono text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-950/40 px-1.5 py-0.5 rounded border border-blue-200 dark:border-blue-800" title="Chỉ định theo liên kết cuộc hội thoại">
-                                target
-                              </span>
-                            )}
+                              {/* Model Pill */}
+                              {details.model && (
+                                <span className="text-[10px] font-mono text-purple-700 dark:text-purple-300 bg-purple-50 dark:bg-purple-950/40 px-1.5 py-0.5 rounded border border-purple-200 dark:border-purple-800">
+                                  {details.model}
+                                </span>
+                              )}
+
+                              {/* Context History Count Pill */}
+                              {details.contextMessagesCount > 0 && (
+                                <span className="text-[10px] font-mono text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/40 px-1.5 py-0.5 rounded border border-emerald-200 dark:border-emerald-800" title={`Đã đọc và hiểu ${details.contextMessagesCount} tin nhắn trước đó`}>
+                                  {details.contextMessagesCount} ctx
+                                </span>
+                              )}
+                            </div>
 
                             {/* Timestamp */}
-                            <span className="text-[11px] font-mono text-muted-foreground ml-auto shrink-0">
-                              {new Date(log.executedAt).toLocaleTimeString()}
+                            <span className="text-[11px] font-mono text-muted-foreground shrink-0">
+                              {new Date(log.executedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
                             </span>
                           </div>
 
                           {/* Dialogue Bubble Area */}
-                          <div className="space-y-1.5 pt-0.5">
+                          <div className="space-y-2 pt-0.5">
                             {/* Customer Message Bubble */}
-                            <div className="flex items-start gap-2 text-xs">
-                              <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground shrink-0 w-11 pt-1 select-none">
+                            <div className="flex flex-col sm:flex-row sm:items-start gap-1 sm:gap-2 text-xs">
+                              <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground shrink-0 sm:w-12 pt-0 sm:pt-1 select-none flex items-center gap-1">
+                                <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground/60" />
                                 Khách:
                               </span>
-                              <div className="bg-muted/50 text-foreground px-3 py-1.5 rounded-lg border border-border/50 max-w-[90%] leading-relaxed text-xs">
+                              <div className="bg-muted/50 dark:bg-muted/30 text-foreground px-3.5 py-2 rounded-2xl rounded-tl-xs sm:rounded-tl-2xl border border-border/60 max-w-full sm:max-w-[90%] leading-relaxed text-xs">
                                 {incomingText || log.messagePreview}
                               </div>
                             </div>
 
                             {/* AI Reply Bubble */}
                             {isAiReply && replyText && (
-                              <div className="flex items-start gap-2 text-xs">
-                                <span className="text-[10px] font-medium uppercase tracking-wider text-purple-600 dark:text-purple-400 shrink-0 w-11 pt-1 flex items-center gap-1 select-none">
-                                  <Sparkles className="w-2.5 h-2.5" /> AI:
+                              <div className="flex flex-col sm:flex-row sm:items-start gap-1 sm:gap-2 text-xs">
+                                <span className="text-[10px] font-semibold uppercase tracking-wider text-purple-600 dark:text-purple-400 shrink-0 sm:w-12 pt-0 sm:pt-1 flex items-center gap-1 select-none">
+                                  <Sparkles className="w-2.5 h-2.5 text-purple-500" /> AI:
                                 </span>
-                                <div className="bg-purple-50/70 dark:bg-purple-950/30 text-foreground px-3 py-1.5 rounded-lg border border-purple-200/60 dark:border-purple-800/60 max-w-[90%] leading-relaxed text-xs font-normal">
+                                <div className="bg-purple-500/[0.07] dark:bg-purple-950/40 text-foreground px-3.5 py-2 rounded-2xl rounded-tl-xs sm:rounded-tl-2xl border border-purple-500/25 dark:border-purple-800/60 max-w-full sm:max-w-[90%] leading-relaxed text-xs font-normal shadow-2xs">
                                   {replyText}
                                 </div>
                               </div>
@@ -432,15 +428,15 @@ export const LogViewer: React.FC<Props> = ({
 
                             {/* AI Disabled Note */}
                             {!isAiReply && !isError && (
-                              <div className="text-[11px] text-muted-foreground flex items-center gap-1.5 pl-[52px] pt-0.5">
+                              <div className="text-[11px] text-muted-foreground flex items-center gap-1.5 pt-0.5 pl-1 sm:pl-14">
                                 <span className="w-1.5 h-1.5 rounded-full bg-slate-400" />
-                                <span>Chế độ AI Auto-Reply đang Tắt (chỉ lưu vết tin nhắn đến)</span>
+                                <span>Chế độ AI Auto-Reply đang Tắt (chỉ ghi nhận tin nhắn)</span>
                               </div>
                             )}
 
                             {/* Error Note */}
                             {isError && (
-                              <div className="text-[11px] text-destructive flex items-center gap-1.5 pl-[52px] pt-0.5">
+                              <div className="text-[11px] text-destructive flex items-center gap-1.5 pt-0.5 pl-1 sm:pl-14">
                                 <span className="w-1.5 h-1.5 rounded-full bg-destructive" />
                                 <span>{details.error || log.messagePreview}</span>
                               </div>

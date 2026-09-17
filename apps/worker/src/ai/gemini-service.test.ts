@@ -175,6 +175,33 @@ test('extractReminderPayload - handles markdown code fence inside tag and normal
   assert.strictEqual(res.cleanReplyText, 'Dạ em đã đặt lịch nhắc họp lúc 8h sáng mai cho anh rồi ạ!');
 });
 
+test('extractReminderPayload - correctly parses wakeUpMode when enabled', () => {
+  const text = `Dạ mình đã lên lịch gọi dậy sáng mai lúc 06:00 cho bạn rồi nhé! Hệ thống sẽ gọi và nhắc bạn dậy, khi bạn nghe máy hoặc nhắn tin thì chuông sẽ tự dừng nha! 😊
+<<<CREATE_REMINDER
+{
+  "title": "Gọi dậy buổi sáng",
+  "content": "Dậy đi thôi nào, trời sáng rồi!",
+  "actionType": "MESSAGE_AND_CALL",
+  "targetDate": "2026-09-18",
+  "windowStart": "06:00",
+  "windowEnd": "06:15",
+  "intervalMinutes": 5,
+  "maxRuns": 3,
+  "wakeUpMode": true
+}
+>>>`;
+
+  const res = extractReminderPayload(text);
+  assert.ok(res.reminderPayload !== null);
+  assert.strictEqual(res.reminderPayload?.title, 'Gọi dậy buổi sáng');
+  assert.strictEqual(res.reminderPayload?.actionType, 'MESSAGE_AND_CALL');
+  assert.strictEqual(res.reminderPayload?.windowStart, '06:00');
+  assert.strictEqual(res.reminderPayload?.windowEnd, '06:15');
+  assert.strictEqual(res.reminderPayload?.intervalMinutes, 5);
+  assert.strictEqual(res.reminderPayload?.maxRuns, 3);
+  assert.strictEqual(res.reminderPayload?.wakeUpMode, true);
+});
+
 test('GeminiService - existing reminders status included in prompt context', async () => {
   const originalFetch = globalThis.fetch;
   try {

@@ -270,31 +270,36 @@ export const ReminderModal: React.FC<Props> = ({
         )}
 
         {(actionType === 'MESSAGE' || actionType === 'MESSAGE_AND_CALL') && (
-          <div className="space-y-1.5 p-3 rounded-xl bg-muted/20 border border-border/60">
-            <div className="flex justify-between items-center">
-              <div className="flex items-center gap-1.5">
-                <Label htmlFor="content" className="text-xs font-semibold cursor-pointer">
+          <div className={`space-y-2 p-3.5 rounded-xl border transition-all ${
+            aiGenerateMessage
+              ? 'bg-purple-500/[0.04] dark:bg-purple-950/15 border-purple-500/30'
+              : 'bg-muted/20 border-border/60'
+          }`}>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <Label htmlFor="content" className="text-xs sm:text-sm font-semibold cursor-pointer text-foreground">
                   {aiGenerateMessage ? 'Mô tả / Prompt tin nhắn cho AI' : 'Nội dung tin nhắn'}
                 </Label>
                 {aiGenerateMessage && (
-                  <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 gap-1 font-medium border-purple-500/40 text-purple-600 dark:text-purple-400 bg-purple-500/10">
+                  <Badge variant="outline" className="text-[10px] px-2 py-0 h-4.5 gap-1 font-medium border-purple-500/40 text-purple-600 dark:text-purple-400 bg-purple-500/10">
                     <Sparkles className="w-2.5 h-2.5" /> AI Dynamic
                   </Badge>
                 )}
               </div>
-              <div className="flex items-center gap-2">
-                <Label htmlFor="ai-gen-toggle" className="text-[11px] font-medium text-muted-foreground flex items-center gap-1 cursor-pointer hover:text-foreground transition-colors">
-                  <Sparkles className="w-3 h-3 text-purple-500" />
+              <div className="flex items-center gap-2 self-start sm:self-auto pt-0.5 sm:pt-0">
+                <Label htmlFor="ai-gen-toggle" className="text-xs sm:text-[11px] font-medium text-muted-foreground flex items-center gap-1.5 cursor-pointer hover:text-foreground transition-colors">
+                  <Sparkles className="w-3.5 h-3.5 text-purple-500" />
                   <span>Dùng AI sinh</span>
                 </Label>
                 <Switch
                   id="ai-gen-toggle"
                   checked={aiGenerateMessage}
                   onCheckedChange={setAiGenerateMessage}
-                  className="data-[state=checked]:bg-purple-600 scale-90"
+                  className="data-[state=checked]:bg-purple-600"
                 />
               </div>
             </div>
+
             <Textarea
               id="content"
               required
@@ -306,12 +311,33 @@ export const ReminderModal: React.FC<Props> = ({
                   ? "Ví dụ: Nhắc bạn ấy đi ngủ bằng giọng điệu trêu đùa, cute, xưng hô anh - em, thêm icon dễ thương..."
                   : "Nhập nội dung tin nhắn gửi..."
               }
-              className="resize-y min-h-[75px] text-xs bg-background"
+              className="resize-y min-h-[75px] text-xs sm:text-xs bg-background focus-visible:ring-purple-500/30"
             />
+
+            {aiGenerateMessage && (
+              <div className="flex flex-wrap gap-1.5 pt-0.5">
+                <span className="text-[10px] text-muted-foreground self-center mr-0.5">Gợi ý prompt:</span>
+                {[
+                  'Cute, trêu đùa, xưng hô anh - em',
+                  'Nhẹ nhàng, quan tâm tình cảm',
+                  'Hài hước, lầy lội, năng lượng'
+                ].map((sug, idx) => (
+                  <button
+                    key={idx}
+                    type="button"
+                    onClick={() => setContent(sug)}
+                    className="text-[10px] sm:text-[11px] px-2.5 py-1 rounded-full bg-muted hover:bg-muted/80 text-foreground border border-border/70 transition-all cursor-pointer min-h-[26px] active:scale-95"
+                  >
+                    {sug}
+                  </button>
+                ))}
+              </div>
+            )}
+
             <div className="flex justify-between items-center pt-0.5">
               {aiGenerateMessage ? (
                 <p className="text-[11px] text-muted-foreground leading-tight flex items-center gap-1">
-                  <span>Mỗi lần chạy lịch, AI sẽ tự động sinh tin nhắn mới mẻ dựa trên mô tả này và văn phong hiện tại.</span>
+                  <span>Mỗi lần chạy, AI sẽ tự sinh tin nhắn mới mẻ dựa trên mô tả này và văn phong hiện tại.</span>
                 </p>
               ) : (
                 <span />
