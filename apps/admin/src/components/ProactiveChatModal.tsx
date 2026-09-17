@@ -101,12 +101,15 @@ export const ProactiveChatModal: React.FC<Props> = ({
       return;
     }
 
-    if (minIntervalMinutes < 5) {
+    const minVal = Number(minIntervalMinutes) || 5;
+    const maxVal = Number(maxIntervalMinutes) || 10;
+
+    if (minVal < 5) {
       onNotify?.('Khoảng cách tối thiểu phải từ 5 phút trở lên', 'error');
       return;
     }
 
-    if (maxIntervalMinutes < minIntervalMinutes) {
+    if (maxVal < minVal) {
       onNotify?.('Khoảng cách tối đa phải lớn hơn khoảng cách tối thiểu', 'error');
       return;
     }
@@ -116,8 +119,8 @@ export const ProactiveChatModal: React.FC<Props> = ({
       await api.updateProactiveConfig({
         enabled,
         targetThread: finalTarget,
-        minIntervalMinutes: Number(minIntervalMinutes),
-        maxIntervalMinutes: Number(maxIntervalMinutes),
+        minIntervalMinutes: minVal,
+        maxIntervalMinutes: maxVal,
         activeHoursStart,
         activeHoursEnd,
         promptGuidance: promptGuidance.trim()
@@ -177,27 +180,27 @@ export const ProactiveChatModal: React.FC<Props> = ({
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && !isSaving && onClose()}>
-      <DialogContent className="w-[calc(100vw-20px)] sm:max-w-[560px] max-h-[92dvh] sm:max-h-[88vh] overflow-y-auto p-3.5 sm:p-5 rounded-2xl sm:rounded-xl">
-        <DialogHeader className="space-y-2 pb-3 border-b">
+      <DialogContent className="w-[calc(100vw-20px)] sm:max-w-[560px] max-h-[90vh] flex flex-col p-0 gap-0 overflow-hidden rounded-2xl sm:rounded-xl">
+        <DialogHeader className="p-4 sm:p-5 border-b shrink-0 text-left space-y-1">
           <div className="flex items-start sm:items-center gap-3">
             <div className="w-9 h-9 rounded-xl bg-pink-500/10 border border-pink-500/20 flex items-center justify-center text-pink-600 dark:text-pink-400 shrink-0 mt-0.5 sm:mt-0 shadow-2xs">
               <MessageCircleHeart className="w-4.5 h-4.5" />
             </div>
-            <div className="space-y-0.5">
-              <DialogTitle className="text-sm sm:text-base font-semibold flex items-center gap-2 text-foreground">
+            <div className="space-y-0.5 min-w-0 flex-1 pr-6">
+              <DialogTitle className="text-sm sm:text-base font-semibold flex items-center gap-2 text-foreground truncate">
                 Chủ động Nói chuyện (Proactive Chat)
-                <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4.5 font-medium text-pink-600 dark:text-pink-400 border-pink-500/30 bg-pink-500/10">
+                <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4.5 font-medium text-pink-600 dark:text-pink-400 border-pink-500/30 bg-pink-500/10 shrink-0">
                   Auto-Initiate
                 </Badge>
               </DialogTitle>
-              <DialogDescription className="text-xs text-muted-foreground leading-relaxed">
+              <DialogDescription className="text-xs text-muted-foreground leading-relaxed line-clamp-2 sm:line-clamp-1">
                 Tự động chọn thời điểm ngẫu nhiên để nhắn tin hỏi thăm hoặc trêu đùa theo văn phong cá nhân.
               </DialogDescription>
             </div>
           </div>
         </DialogHeader>
 
-        <div className="py-2 space-y-3.5">
+        <div className="overflow-y-auto overflow-x-hidden p-4 sm:p-5 flex-1 min-h-0 space-y-3.5">
           {/* Main Switch Card */}
           <div className="flex items-center justify-between p-3.5 bg-muted/40 dark:bg-muted/20 rounded-xl border border-border/80">
             <div className="space-y-0.5 pr-3">
@@ -382,14 +385,14 @@ export const ProactiveChatModal: React.FC<Props> = ({
         </div>
 
         {/* Modal Footer with Test Trigger & Save Button */}
-        <DialogFooter className="pt-3 border-t flex flex-col-reverse sm:flex-row gap-2 sm:justify-between items-stretch sm:items-center">
+        <DialogFooter className="p-3.5 sm:px-5 sm:py-3.5 shrink-0 border-t flex flex-col-reverse sm:flex-row gap-2.5 sm:justify-between items-stretch sm:items-center w-full">
           <Button
             type="button"
             variant="outline"
             size="sm"
             onClick={handleTestNow}
             disabled={isTesting || (!targetThread.trim() && !defaultThreadUrl.trim())}
-            className="text-xs h-10 sm:h-8.5 px-3.5 gap-1.5 font-medium w-full sm:w-auto active:scale-[0.98]"
+            className="text-xs h-9 sm:h-8.5 px-3.5 gap-1.5 font-medium shrink-0 active:scale-[0.98]"
             title="Thử nghiệm tạo câu mở đầu và gửi tin nhắn ngay lập tức"
           >
             {isTesting ? (
@@ -400,13 +403,13 @@ export const ProactiveChatModal: React.FC<Props> = ({
             <span>{isTesting ? 'Đang gửi thử...' : 'Gửi thử nghiệm ngay'}</span>
           </Button>
 
-          <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+          <div className="flex items-center gap-2 shrink-0 justify-end">
             <Button
               type="button"
               variant="outline"
               size="sm"
               onClick={onClose}
-              className="text-xs h-10 sm:h-8.5 px-4 flex-1 sm:flex-none active:scale-[0.98]"
+              className="text-xs h-9 sm:h-8.5 px-4 flex-1 sm:flex-initial active:scale-[0.98]"
             >
               Đóng
             </Button>
@@ -416,7 +419,7 @@ export const ProactiveChatModal: React.FC<Props> = ({
               size="sm"
               onClick={handleSave}
               disabled={isSaving || isLoading}
-              className="text-xs h-10 sm:h-8.5 px-4.5 gap-1.5 shadow-xs flex-1 sm:flex-none font-medium active:scale-[0.98]"
+              className="text-xs h-9 sm:h-8.5 px-4 gap-1.5 shadow-xs flex-1 sm:flex-initial font-medium active:scale-[0.98]"
             >
               <Check className="w-3.5 h-3.5" />
               <span>{isSaving ? 'Đang lưu...' : 'Lưu cấu hình'}</span>
