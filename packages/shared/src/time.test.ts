@@ -5,7 +5,9 @@ import {
   isSlotTriggerMinute,
   getUpcomingSlots,
   timeStringToMinutes,
-  getLocalTimeParts
+  getLocalTimeParts,
+  formatDurationMinutes,
+  isSchedulePastDue
 } from './time.js';
 
 test('timeStringToMinutes parses properly', () => {
@@ -62,3 +64,30 @@ test('getUpcomingSlots generates valid upcoming slots', () => {
   assert.ok(slots[1].slotLocal.includes('18:10'));
   assert.ok(slots[2].slotLocal.includes('18:20'));
 });
+
+test('formatDurationMinutes formats minutes into concise strings', () => {
+  assert.equal(formatDurationMinutes(0), '0m');
+  assert.equal(formatDurationMinutes(5), '5m');
+  assert.equal(formatDurationMinutes(30), '30m');
+  assert.equal(formatDurationMinutes(60), '1h');
+  assert.equal(formatDurationMinutes(90), '1h 30m');
+  assert.equal(formatDurationMinutes(120), '2h');
+  assert.equal(formatDurationMinutes(360), '6h');
+});
+
+test('isSchedulePastDue - daily recurring reminder is never marked past due', () => {
+  // Current time: 23:30 ICT
+  const now = new Date('2026-09-18T16:30:00Z'); // 23:30 ICT
+  // Daily reminder at 23:00 (windowStart = 23:00, windowEnd = 23:00, maxRuns = 0, targetDate = null)
+  const pastDue = isSchedulePastDue(null, '23:00', 0, '23:00', now);
+  assert.equal(pastDue, false, 'Daily recurring reminder should not be marked past due');
+});
+
+test('isSchedulePastDue - one-off reminder today is past due after window end', () => {
+  const now = new Date('2026-09-18T16:30:00Z'); // 23:30 ICT
+  // Today's one-off reminder with targetDate = 2026-09-18 at 15:00
+  const pastDue = isSchedulePastDue('2026-09-18', '15:00', 1, '15:00', now);
+  assert.equal(pastDue, true, 'One-off reminder from earlier today should be past due');
+});
+
+

@@ -168,11 +168,19 @@ Hệ thống hỗ trợ AI bot **tự động và chủ động nhắn tin trư�
   - Hiển thị thông báo badge trạng thái trực quan: *Chủ động: Đang chạy (lần tới: 14:25)* hoặc *Chủ động: Tắt*.
   - Nút **"Gửi thử nghiệm ngay"**: Gửi tức thì 1 tin nhắn chủ động tới cuộc hội thoại chỉ định để kiểm tra câu chữ và chất lượng câu mở màn do AI sinh ra.
 
-### 6. Tự Động Lên Lịch & Chế Độ Gọi Dậy (Wake-Up Mode) Qua Tin Nhắn
-Người dùng có thể trò chuyện tự nhiên với bot qua Messenger để yêu cầu hẹn giờ hoặc gọi dậy:
-- **Tự động nhận diện ý định (Intent Extraction)**:
-  - Khi người dùng gửi các tin nhắn như: *"mai 6h gọi tao dậy nhé"*, *"mai nhớ nhắc tao uống thuốc lúc 8h"*, *"7h sáng mai alo đánh thức tao nha"*:
-  - Gemini AI tự động trích xuất các thông số: thời gian (`targetDate`, `windowStart`, `windowEnd`), hình thức nhắc (`MESSAGE` hoặc `MESSAGE_AND_CALL`), số lần lặp lại (`maxRuns`, `intervalMinutes`).
+### 6. Tự Động Lên Lịch, Chế Độ Lặp Lại Hàng Ngày & Hủy Reminder Qua Tin Nhắn
+Người dùng có thể trò chuyện tự nhiên với bot qua Messenger để yêu cầu hẹn giờ, lặp lại hàng ngày, hoặc gọi dậy:
+- **Chế độ Lặp lại Hàng ngày (Daily Recurring) & Nhắc 1 lần (Specific Date)**:
+  - Khi tin nhắn có từ khóa *"hàng ngày"*, *"mỗi ngày"*, *"mỗi sáng"*, *"mỗi tối"* (ví dụ: *"hàng ngày 11h tối nhắc tao skincare"*):
+    - Gemini AI tự động nhận diện chế độ lặp hàng ngày (`isDaily: true`, `targetDate = null`, `maxRuns = 0`). Lịch sẽ chạy liên tục mỗi ngày vào mốc giờ quy định và không bị vô hiệu hóa khi hết ngày.
+  - Khi tin nhắn nhắc cho ngày cụ thể (ví dụ: *"mai 6h gọi tao dậy nhé"*):
+    - Hệ thống lên lịch với `targetDate` cụ thể và tự động hoàn thành sau khi chạy đủ số lần.
+  - Trên **Admin Dashboard**, giao diện có 2 nút chọn trực quan **Daily (Hàng ngày)** và **Specific Date (Ngày cụ thể)**, kèm badge trạng thái xanh lá `Daily (Hàng ngày)` giúp phân biệt rõ ràng với các lịch chạy 1 lần `(Once)`.
+- **Hỗ trợ Tạo Nhiều Task Reminder Từ 1 Tin Nhắn Duy Nhất**:
+  - Ví dụ: *"11h tối nhắc tao học bài, 6h sáng mai gọi tao dậy nhé"* -> AI phân tích cú pháp và tự động tạo đồng thời 2 bản ghi reminder độc lập với cấu hình tương ứng (nhắn tin lúc 23:00 và gọi dậy lúc 06:00 sáng mai).
+- **Hỗ trợ Dừng / Xóa Task Reminder Dựa Vào Tin Nhắn**:
+  - Khi người dùng gửi: *"tao học bài xong rồi 11h tối ko cần nhắc nữa"*, *"hủy báo thức 6h sáng mai"*:
+    - AI tự động đối chiếu các task reminder đang hoạt động của người dùng, tìm đúng task phù hợp về nội dung và thời gian để vô hiệu hóa (`active = 0`), sau đó phản hồi xác nhận rõ ràng, lịch sự cho người dùng.
 - **Tự động kích hoạt Chế Độ Gọi Dậy (`wakeUpMode: true`)**:
   - Khi phát hiện yêu cầu "gọi dậy", "đánh thức", "báo thức": AI tự động bật `wakeUpMode: true` cùng hình thức `MESSAGE_AND_CALL` và lên lịch gọi lặp lại (ví dụ 3 lần, mỗi 5 phút).
   - Lịch được lưu trực tiếp vào cơ sở dữ liệu SQLite (`reminders`).
@@ -280,5 +288,9 @@ Hệ thống cung cấp đầy đủ các scripts chạy đồng thời trên to
      - Khách không yêu cầu gọi: Tạo lịch với `action_type = 'MESSAGE'` (chỉ nhắn tin).
    - **Tự động lưu vào SQLite**: Tạo bản ghi mới vào bảng `reminders` với đầy đủ ngày giờ, số lần lặp, thread ID của khách.
    - **Phản hồi xác nhận**: Gửi tin nhắn xác nhận lịch hẹn thành công thân thiện cho khách ngay trong đoạn chat và ghi nhận log `AI_REMINDER_CREATED`.
-
-
+   - **Tạo nhiều Reminder & Hủy lịch (Multi-Reminder & Cancellation)**:
+     - Hỗ trợ tạo đồng thời nhiều lịch nhắc trong 1 câu lệnh bằng mảng JSON payload `<<<CREATE_REMINDER [ ... ] >>>`.
+     - Hỗ trợ hủy một hoặc toàn bộ lịch nhắc dựa theo tin nhắn của khách bằng `<<<CANCEL_REMINDER { "cancelAll": true, ... } >>>`.
+     - **Cơ chế Triệt Tiêu Lộ Lệnh (Leak-Proof & Partial Recovery)**: Tự động lọc sạch các khối thẻ lệnh AI (`<<<CREATE_REMINDER`, `<<<CANCEL_REMINDER`) kể cả khi phản hồi bị cắt cụt do giới hạn token (EOF), đồng thời khôi phục từng đối tượng JSON hoàn chỉnh và dùng `Shift+Enter` khi gõ tin nhắn để bảo đảm không rò rỉ mã lệnh thô sang Messenger.
+     - **Chống Tạo Task Sớm & Hỏi Giờ Đàng Hoàng**: Nghiêm cấm AI tự đoán giờ khi gặp từ ngữ thời gian mơ hồ (*"tí"*, *"lát"*, *"chút nữa"*, *"tối"*). Bắt buộc phải hỏi lại giờ cụ thể một cách nghiêm túc, đàng hoàng trước khi tạo task.
+     - **Báo Cáo Minh Bạch & Ghi Đè/Dời Giờ Tự Động (Auto-Rescheduling)**: Bắt buộc thông báo rõ ràng tên việc và mốc giờ chính xác khi lên lịch thành công (override giới hạn từ của Persona). Tự động cập nhật mốc giờ cho cùng một công việc trong ngày thay vì tạo nhiều task trùng lặp.

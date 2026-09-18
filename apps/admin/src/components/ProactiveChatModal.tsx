@@ -25,6 +25,7 @@ import {
   Link2
 } from 'lucide-react';
 import { api } from '@/api';
+import { formatDurationMinutes } from '@messenger/shared';
 
 interface Props {
   isOpen: boolean;
@@ -263,7 +264,7 @@ export const ProactiveChatModal: React.FC<Props> = ({
                 <div className="flex items-center justify-between text-xs text-muted-foreground">
                   <span>Minimum (minutes):</span>
                   <span className="font-mono text-foreground font-semibold text-[11px]">
-                    {(minIntervalMinutes / 60).toFixed(1)}h
+                    {formatDurationMinutes(minIntervalMinutes)}
                   </span>
                 </div>
                 <Input
@@ -281,7 +282,7 @@ export const ProactiveChatModal: React.FC<Props> = ({
                 <div className="flex items-center justify-between text-xs text-muted-foreground">
                   <span>Maximum (minutes):</span>
                   <span className="font-mono text-foreground font-semibold text-[11px]">
-                    {(maxIntervalMinutes / 60).toFixed(1)}h
+                    {formatDurationMinutes(maxIntervalMinutes)}
                   </span>
                 </div>
                 <Input
@@ -297,7 +298,7 @@ export const ProactiveChatModal: React.FC<Props> = ({
             </div>
             <p className="text-[10px] text-muted-foreground flex items-start gap-1 pt-0.5 leading-relaxed">
               <HelpCircle className="w-3.5 h-3.5 text-muted-foreground shrink-0 mt-0.5" />
-              <span>Bot will randomly pick between {minIntervalMinutes} and {maxIntervalMinutes} minutes after each message to schedule the next one.</span>
+              <span>Bot will randomly pick between {formatDurationMinutes(minIntervalMinutes)} and {formatDurationMinutes(maxIntervalMinutes)} after each message to schedule the next one.</span>
             </p>
           </div>
 
@@ -344,11 +345,11 @@ export const ProactiveChatModal: React.FC<Props> = ({
             </div>
 
             <Textarea
-              rows={2}
+              rows={3}
               value={promptGuidance}
               onChange={(e) => setPromptGuidance(e.target.value)}
               placeholder="e.g. Ask how their day is going, playful teasing, or inviting for coffee..."
-              className="text-xs bg-muted/20 resize-none min-h-[60px]"
+              className="text-xs bg-muted/20 resize-y min-h-[80px] leading-relaxed focus-visible:ring-purple-500/30"
             />
 
             {/* Quick suggestions */}

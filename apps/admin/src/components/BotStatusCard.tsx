@@ -22,7 +22,7 @@ import { Switch } from "@/components/ui/switch";
 import { AiConfigModal } from "./AiConfigModal";
 import { PersonaConfigModal } from "./PersonaConfigModal";
 import { ProactiveChatModal } from "./ProactiveChatModal";
-import type { BotState } from "@messenger/shared";
+import { formatDurationMinutes, type BotState } from "@messenger/shared";
 
 interface Props {
   state: BotState | null;
@@ -448,16 +448,15 @@ export const BotStatusCard: React.FC<Props> = ({
                   {state.proactiveChat?.enabled ? "Enabled" : "Disabled"}
                 </span>
                 {state.proactiveChat?.enabled && (
-                  <span className="text-muted-foreground text-[10px] sm:text-[11px] bg-muted/60 px-1.5 py-0.2 rounded border border-border/50">
-                    {(state.proactiveChat.minIntervalMinutes || 120) / 60}h -{" "}
-                    {(state.proactiveChat.maxIntervalMinutes || 360) / 60}h
+                  <span className="text-muted-foreground text-[10px] sm:text-[11px] bg-muted/60 px-1.5 py-0.2 rounded border border-border/50 font-mono">
+                    {formatDurationMinutes(state.proactiveChat.minIntervalMinutes || 120)} - {formatDurationMinutes(state.proactiveChat.maxIntervalMinutes || 360)}
                   </span>
                 )}
               </div>
               <p className="text-xs sm:text-[11px] text-muted-foreground truncate">
                 {state.proactiveChat?.enabled &&
                 state.proactiveChat.nextScheduledAt
-                  ? `Next: ${new Date(state.proactiveChat.nextScheduledAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`
+                  ? `Next: ${new Date(state.proactiveChat.nextScheduledAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false })}`
                   : "Auto-initiate conversation"}
               </p>
             </div>

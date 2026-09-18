@@ -429,6 +429,17 @@ export class MessengerClient {
   async sendMessage(targetThreadId: string, message: string): Promise<SendResult> {
     const timestamp = new Date().toISOString();
 
+    if (!message || message.trim() === '') {
+      return {
+        success: false,
+        dryRun: Boolean(this.isDryRun),
+        threadId: targetThreadId,
+        message: '',
+        timestamp,
+        error: 'Cannot send empty message'
+      };
+    }
+
     // 1. If DRY_RUN is active, simulate success immediately without touching network
     if (this.isDryRun) {
       return {
@@ -525,9 +536,19 @@ export class MessengerClient {
       await inputLocator.click({ force: true });
       await this.page.waitForTimeout(500);
 
-      // 5. Type message text simulating user keystrokes
+      // 5. Type message text simulating user keystrokes (use Shift+Enter for newlines so multiline messages don't dispatch prematurely)
       console.log(`[Messenger] Typing message to thread: ${message.slice(0, 30)}...`);
-      await this.page.keyboard.type(message, { delay: 35 });
+      const lines = message.split('\n');
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        if (line) {
+          await this.page.keyboard.type(line, { delay: 25 });
+        }
+        if (i < lines.length - 1) {
+          await this.page.keyboard.press('Shift+Enter');
+          await this.page.waitForTimeout(80);
+        }
+      }
       await this.page.waitForTimeout(600);
 
       // 6. Send message: Press Enter and also click send button if present

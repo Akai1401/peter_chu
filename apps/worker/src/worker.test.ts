@@ -436,3 +436,298 @@ test('CronRunner - schedule execution takes strict priority over AI Auto-Reply w
   }
 });
 
+test('CronRunner - incoming message creates multiple reminders concurrently', async () => {
+  const db = setupTestDb();
+  db.prepare(`UPDATE bot_state SET status = 'RUNNING', session_status = 'LOGGED_IN' WHERE id = 1`).run();
+
+  const client = new MessengerClient({ isDryRun: true });
+  const simulatedIncoming = {
+    threadId: 't_user_multi_rem',
+    senderName: 'Nguyen Van Multi',
+    messageText: '11h tối nhắc tao học bài, 6h sáng gọi tao dậy'
+  };
+  client.getLatestUnreadIncomingMessage = async () => simulatedIncoming as any;
+
+  const sentMessages: Array<{ threadId: string; message: string }> = [];
+  client.sendMessage = async (threadId: string, message: string) => {
+    sentMessages.push({ threadId, message });
+    return { success: true, dryRun: true, threadId, message, timestamp: new Date().toISOString() };
+  };
+
+  const gemini = new GeminiService({ apiKey: 'dummy_key' });
+  gemini.generateReply = async () => `Dạ mình đã lên lịch 23:00 nhắc bạn học bài và 06:00 sáng mai gọi bạn dậy rồi nhé!
+<<<CREATE_REMINDER
+{
+  "title": "Nhắc học bài",
+  "content": "23h rồi, vào bàn học bài thôi!",
+  "actionType": "MESSAGE",
+  "targetDate": "2026-09-18",
+  "windowStart": "23:00",
+  "windowEnd": "23:00",
+  "intervalMinutes": 1,
+  "maxRuns": 1
+}
+>>>
+<<<CREATE_REMINDER
+{
+  "title": "Gọi dậy sáng mai",
+  "content": "Dậy thôi nào, 6h sáng rồi!",
+  "actionType": "MESSAGE_AND_CALL",
+  "targetDate": "2026-09-19",
+  "windowStart": "06:00",
+  "windowEnd": "06:15",
+  "intervalMinutes": 5,
+  "maxRuns": 3,
+  "wakeUpMode": true
+}
+>>>`;
+
+  const lock = new LockManager(db);
+  const limiter = new RateLimiter(db, { minSecondsBetween: 0, maxPerHour: 100 });
+  const runner = new CronRunner(db, client, lock, limiter, 'test-worker-multi', gemini);
+
+  const replied = await runner.checkAndReplyIncomingMessages();
+  assert.equal(replied, true);
+  assert.equal(sentMessages.length, 1);
+  assert.equal(sentMessages[0].message, 'Dạ mình đã lên lịch 23:00 nhắc bạn học bài và 06:00 sáng mai gọi bạn dậy rồi nhé!');
+
+  // Verify both reminders are created in database
+  const createdReminders = db.prepare(`
+    SELECT * FROM reminders WHERE target_thread_id = 't_user_multi_rem' ORDER BY window_start ASC
+  `).all() as any[];
+
+  assert.equal(createdReminders.length, 2);
+  assert.equal(createdReminders[0].title, 'Gọi dậy sáng mai');
+  assert.equal(createdReminders[0].window_start, '06:00');
+  assert.equal(createdReminders[0].action_type, 'MESSAGE_AND_CALL');
+  assert.equal(createdReminders[0].wake_up_mode, 1);
+  assert.equal(createdReminders[0].active, 1);
+
+  assert.equal(createdReminders[1].title, 'Nhắc học bài');
+  assert.equal(createdReminders[1].window_start, '23:00');
+  assert.equal(createdReminders[1].action_type, 'MESSAGE');
+  assert.equal(createdReminders[1].wake_up_mode, 0);
+  assert.equal(createdReminders[1].active, 1);
+
+  // Verify audit logs
+  const auditLogs = db.prepare(`
+    SELECT * FROM audit_logs WHERE action = 'AI_REMINDER_CREATED'
+  `).all() as any[];
+  assert.equal(auditLogs.length, 2);
+
+  await runner.stop();
+  db.close();
+  if (fs.existsSync(TEST_DB)) {
+    fs.unlinkSync(TEST_DB);
+  }
+});
+
+test('CronRunner - incoming message cancels active reminder', async () => {
+  const db = setupTestDb();
+  db.prepare(`UPDATE bot_state SET status = 'RUNNING', session_status = 'LOGGED_IN' WHERE id = 1`).run();
+
+  // Pre-seed an active reminder for this user
+  db.prepare(`
+    INSERT INTO reminders (id, title, content, target_thread_id, window_start, window_end, interval_minutes, active)
+    VALUES ('rem_target_to_cancel', 'Nhắc học bài 23h', 'Học bài đi nhé!', 't_user_cancel', '23:00', '23:00', 1, 1)
+  `).run();
+
+  const client = new MessengerClient({ isDryRun: true });
+  const simulatedIncoming = {
+    threadId: 't_user_cancel',
+    senderName: 'Nguyen Van Cancel',
+    messageText: 'tao học bài xong rồi 11h ko cần nhắc nữa'
+  };
+  client.getLatestUnreadIncomingMessage = async () => simulatedIncoming as any;
+
+  const sentMessages: Array<{ threadId: string; message: string }> = [];
+  client.sendMessage = async (threadId: string, message: string) => {
+    sentMessages.push({ threadId, message });
+    return { success: true, dryRun: true, threadId, message, timestamp: new Date().toISOString() };
+  };
+
+  const gemini = new GeminiService({ apiKey: 'dummy_key' });
+  gemini.generateReply = async () => `Dạ ok bạn nhé, mình đã hủy lịch nhắc học bài 23h cho bạn rồi!
+<<<CANCEL_REMINDER
+{
+  "reminderId": "rem_target_to_cancel",
+  "reason": "Khách báo đã học xong"
+}
+>>>`;
+
+  const lock = new LockManager(db);
+  const limiter = new RateLimiter(db, { minSecondsBetween: 0, maxPerHour: 100 });
+  const runner = new CronRunner(db, client, lock, limiter, 'test-worker-cancel', gemini);
+
+  const replied = await runner.checkAndReplyIncomingMessages();
+  assert.equal(replied, true);
+  assert.equal(sentMessages.length, 1);
+  assert.equal(sentMessages[0].message, 'Dạ ok bạn nhé, mình đã hủy lịch nhắc học bài 23h cho bạn rồi!');
+
+  // Verify that the reminder is now inactive (active = 0)
+  const targetReminder = db.prepare(`
+    SELECT * FROM reminders WHERE id = 'rem_target_to_cancel'
+  `).get() as any;
+
+  assert.ok(targetReminder);
+  assert.equal(targetReminder.active, 0);
+
+  // Verify audit log for cancellation
+  const auditLogs = db.prepare(`
+    SELECT * FROM audit_logs WHERE action = 'AI_REMINDER_CANCELLED'
+  `).all() as any[];
+  assert.equal(auditLogs.length, 1);
+  assert.ok(auditLogs[0].details.includes('Khách báo đã học xong'));
+
+  await runner.stop();
+  db.close();
+  if (fs.existsSync(TEST_DB)) {
+    fs.unlinkSync(TEST_DB);
+  }
+});
+
+test('CronRunner - Deduplication: skips creating duplicate active reminder for same thread and time slot', async () => {
+  const db = setupTestDb();
+
+  // Seed an existing active reminder for thread_dup
+  db.prepare(`
+    INSERT INTO reminders (
+      id, title, content, target_thread_id, action_type, call_duration_seconds,
+      max_runs, run_count, active, window_start, window_end, interval_minutes, target_date,
+      wake_up_mode, created_at, updated_at
+    ) VALUES (
+      'rem_existing_study', 'Học bài', 'Đến giờ học bài rồi!', 'thread_dup', 'MESSAGE',
+      25, 1, 0, 1, '18:00', '18:00', 1, '2026-09-18', 0, '2026-09-18T06:00:00.000Z', '2026-09-18T06:00:00.000Z'
+    )
+  `).run();
+
+  const client = new MessengerClient();
+  client.getLatestUnreadIncomingMessage = async () => ({
+    threadId: 'thread_dup',
+    senderName: 'User',
+    messageText: 'đúng rồi',
+    messageId: 'msg_dup_1',
+    timestamp: '13:30'
+  } as any);
+
+  const sentMessages: Array<{ threadId: string; message: string }> = [];
+  client.sendMessage = async (threadId: string, message: string) => {
+    sentMessages.push({ threadId, message });
+    return { success: true, dryRun: true, threadId, message, timestamp: new Date().toISOString() };
+  };
+
+  const gemini = new GeminiService({ apiKey: 'dummy_key' });
+  // Gemini emits duplicate reminder creation for the same slot
+  gemini.generateReply = async () => `Tao ghim chặt rồi đấy, cấm quên!
+<<<CREATE_REMINDER
+{
+  "title": "Học bài",
+  "content": "Đến giờ học bài rồi!",
+  "actionType": "MESSAGE",
+  "targetDate": "2026-09-18",
+  "windowStart": "18:00",
+  "windowEnd": "18:00"
+}
+>>>`;
+
+  const lock = new LockManager(db);
+  const limiter = new RateLimiter(db, { minSecondsBetween: 0, maxPerHour: 100 });
+  const runner = new CronRunner(db, client, lock, limiter, 'test-worker-dedup', gemini);
+
+  const replied = await runner.checkAndReplyIncomingMessages();
+  assert.equal(replied, true);
+  assert.equal(sentMessages.length, 1);
+  assert.equal(sentMessages[0].message, 'Tao ghim chặt rồi đấy, cấm quên!');
+
+  // Reminders count for 'thread_dup' must remain exactly 1, not 2
+  const reminders = db.prepare(`
+    SELECT * FROM reminders WHERE target_thread_id = 'thread_dup' AND active = 1
+  `).all() as Array<{ id: string }>;
+  assert.equal(reminders.length, 1);
+  assert.equal(reminders[0].id, 'rem_existing_study');
+
+  await runner.stop();
+  db.close();
+  if (fs.existsSync(TEST_DB)) {
+    fs.unlinkSync(TEST_DB);
+  }
+});
+
+test('CronRunner - Reschedule: updates time on existing unrun reminder when user refines time for same task', async () => {
+  const db = setupTestDb();
+
+  // Seed an existing reminder for "Ăn cơm" at 12:00 tomorrow
+  db.prepare(`
+    INSERT INTO reminders (
+      id, title, content, target_thread_id, action_type, call_duration_seconds,
+      max_runs, run_count, active, window_start, window_end, interval_minutes, target_date,
+      wake_up_mode, created_at, updated_at
+    ) VALUES (
+      'rem_lunch_vague', 'Ăn cơm', 'Đến giờ ăn cơm rồi!', 'thread_resched', 'MESSAGE',
+      25, 1, 0, 1, '12:00', '12:00', 1, '2026-09-19', 0, '2026-09-18T06:00:00.000Z', '2026-09-18T06:00:00.000Z'
+    )
+  `).run();
+
+  const client = new MessengerClient();
+  client.getLatestUnreadIncomingMessage = async () => ({
+    threadId: 'thread_resched',
+    senderName: 'Thủy',
+    messageText: '3h',
+    messageId: 'msg_resched_1',
+    timestamp: '13:48'
+  } as any);
+
+  const sentMessages: Array<{ threadId: string; message: string }> = [];
+  client.sendMessage = async (threadId: string, message: string) => {
+    sentMessages.push({ threadId, message });
+    return { success: true, dryRun: true, threadId, message, timestamp: new Date().toISOString() };
+  };
+
+  const gemini = new GeminiService({ apiKey: 'dummy_key' });
+  // Gemini emits updated reminder with 15:00 and clear confirmation message
+  gemini.generateReply = async () => `Ok Thủy, tao đã ghim lịch nhắc mày 'Ăn cơm' lúc 15:00 (3h chiều) ngày mai rồi nhé!
+<<<CREATE_REMINDER
+{
+  "title": "Ăn cơm",
+  "content": "Thủy ơi 3h chiều ăn cơm nhé!",
+  "actionType": "MESSAGE",
+  "targetDate": "2026-09-19",
+  "windowStart": "15:00",
+  "windowEnd": "15:00"
+}
+>>>`;
+
+  const lock = new LockManager(db);
+  const limiter = new RateLimiter(db, { minSecondsBetween: 0, maxPerHour: 100 });
+  const runner = new CronRunner(db, client, lock, limiter, 'test-worker-resched', gemini);
+
+  const replied = await runner.checkAndReplyIncomingMessages();
+  assert.equal(replied, true);
+  assert.equal(sentMessages.length, 1);
+  assert.equal(sentMessages[0].message, "Ok Thủy, tao đã ghim lịch nhắc mày 'Ăn cơm' lúc 15:00 (3h chiều) ngày mai rồi nhé!");
+
+  // Total active reminders for 'thread_resched' must remain exactly 1, not 2
+  const reminders = db.prepare(`
+    SELECT * FROM reminders WHERE target_thread_id = 'thread_resched' AND active = 1
+  `).all() as Array<{ id: string; window_start: string; title: string }>;
+  assert.equal(reminders.length, 1);
+  assert.equal(reminders[0].id, 'rem_lunch_vague');
+  assert.equal(reminders[0].window_start, '15:00');
+
+  // Verify audit log for rescheduling
+  const auditLogs = db.prepare(`
+    SELECT * FROM audit_logs WHERE action = 'AI_REMINDER_UPDATED'
+  `).all() as Array<{ details: string }>;
+  assert.equal(auditLogs.length, 1);
+  assert.ok(auditLogs[0].details.includes('15:00'));
+
+  await runner.stop();
+  db.close();
+  if (fs.existsSync(TEST_DB)) {
+    fs.unlinkSync(TEST_DB);
+  }
+});
+
+
+
+

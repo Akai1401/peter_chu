@@ -363,19 +363,32 @@ export const ReminderList: React.FC<Props> = ({
                       isPastDue ? "bg-destructive/10 border-destructive/30 text-destructive font-medium" : "bg-muted"
                     )}>
                       <Clock className={cn("h-3 w-3 shrink-0", isPastDue && "text-destructive")} />
-                      {reminder.maxRuns === 1 || reminder.windowStart === reminder.windowEnd ? (
-                        <span>{reminder.windowStart} (Once){isPastDue ? ' - Past Due' : ''}</span>
+                      {!reminder.targetDate ? (
+                        reminder.windowStart === reminder.windowEnd ? (
+                          <span>{reminder.windowStart} (Daily)</span>
+                        ) : (
+                          <span>{reminder.windowStart}–{reminder.windowEnd} ({reminder.intervalMinutes}m/day)</span>
+                        )
                       ) : (
-                        <span>{reminder.windowStart}–{reminder.windowEnd} ({reminder.intervalMinutes}m){isPastDue ? ' - Past Due' : ''}</span>
+                        reminder.maxRuns === 1 || reminder.windowStart === reminder.windowEnd ? (
+                          <span>{reminder.windowStart} (Once){isPastDue ? ' - Past Due' : ''}</span>
+                        ) : (
+                          <span>{reminder.windowStart}–{reminder.windowEnd} ({reminder.intervalMinutes}m){isPastDue ? ' - Past Due' : ''}</span>
+                        )
                       )}
                     </div>
-                    {Boolean(reminder.targetDate) && (
+                    {Boolean(reminder.targetDate) ? (
                       <div className={cn(
                         "flex items-center gap-1 border px-2 py-1 rounded-md whitespace-nowrap",
                         isPastDue ? "bg-destructive/10 border-destructive/30 text-destructive font-medium" : "bg-muted"
                       )}>
                         <Calendar className={cn("h-3 w-3 shrink-0", isPastDue && "text-destructive")} />
                         <span>{reminder.targetDate}</span>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-1 border px-2 py-1 rounded-md whitespace-nowrap bg-emerald-500/10 border-emerald-500/30 text-emerald-600 dark:text-emerald-400 font-medium">
+                        <Repeat className="h-3 w-3 shrink-0" />
+                        <span>Daily</span>
                       </div>
                     )}
                     {Boolean(reminder.maxRuns && reminder.maxRuns > 0) && (

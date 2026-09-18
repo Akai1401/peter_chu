@@ -26,7 +26,9 @@ import {
   CheckCircle2,
   Copy,
   Pencil,
-  ArrowLeft
+  ArrowLeft,
+  Maximize2,
+  Minimize2
 } from 'lucide-react';
 import type { LearnedPersona, PersonaProfile } from '@messenger/shared';
 import { api } from '@/api';
@@ -71,6 +73,7 @@ export const PersonaConfigModal: React.FC<Props> = ({
   const [formCatchphrases, setFormCatchphrases] = useState<string[]>([]);
   const [formSampleMessages, setFormSampleMessages] = useState<string[]>([]);
   const [formInstruction, setFormInstruction] = useState<string>('');
+  const [isPromptExpanded, setIsPromptExpanded] = useState<boolean>(false);
   const [newCatchphraseInput, setNewCatchphraseInput] = useState<string>('');
   const [newSampleMessageInput, setNewSampleMessageInput] = useState<string>('');
 
@@ -626,17 +629,42 @@ export const PersonaConfigModal: React.FC<Props> = ({
 
       {/* Prompt Instruction */}
       <div className="space-y-1.5">
-        <Label className="text-xs font-medium text-foreground flex items-center gap-1.5">
-          <Bot className="w-3.5 h-3.5 text-muted-foreground" />
-          Additional System Prompt Instructions:
-        </Label>
+        <div className="flex items-center justify-between">
+          <Label className="text-xs font-medium text-foreground flex items-center gap-1.5">
+            <Bot className="w-3.5 h-3.5 text-muted-foreground" />
+            Additional System Prompt Instructions:
+          </Label>
+          <button
+            type="button"
+            onClick={() => setIsPromptExpanded(!isPromptExpanded)}
+            className="text-[11px] text-purple-600 dark:text-purple-400 hover:underline flex items-center gap-1 font-medium cursor-pointer transition-colors"
+          >
+            {isPromptExpanded ? (
+              <>
+                <Minimize2 className="w-3 h-3" />
+                <span>Collapse</span>
+              </>
+            ) : (
+              <>
+                <Maximize2 className="w-3 h-3" />
+                <span>Expand View</span>
+              </>
+            )}
+          </button>
+        </div>
         <Textarea
-          rows={2}
+          rows={isPromptExpanded ? 12 : 6}
           value={formInstruction}
           onChange={(e) => setFormInstruction(e.target.value)}
-          className="text-xs font-mono bg-background resize-none min-h-[60px]"
-          placeholder="Additional instructions for AI roleplay..."
+          className={`text-xs font-mono bg-background resize-y leading-relaxed focus-visible:ring-purple-500/30 transition-all ${
+            isPromptExpanded ? 'min-h-[280px]' : 'min-h-[130px]'
+          }`}
+          placeholder="Additional instructions for AI roleplay (e.g., custom persona guidelines, boundaries, specific behaviors...)"
         />
+        <div className="flex items-center justify-between text-[10px] text-muted-foreground pt-0.5">
+          <span>Tip: Drag the bottom-right corner to resize freely</span>
+          <span>{formInstruction.length} characters</span>
+        </div>
       </div>
 
       {/* Form Action Buttons */}

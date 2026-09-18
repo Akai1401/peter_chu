@@ -9,12 +9,13 @@ export interface AiCreatedReminderPayload {
   title: string;
   content: string;
   actionType: 'MESSAGE' | 'MESSAGE_AND_CALL';
-  targetDate: string; // YYYY-MM-DD
+  targetDate?: string | null; // YYYY-MM-DD or null for daily recurring
   windowStart: string; // HH:mm
   windowEnd: string; // HH:mm
   intervalMinutes: number;
-  maxRuns: number;
+  maxRuns: number; // 0 for unlimited daily recurring
   wakeUpMode?: boolean;
+  isDaily?: boolean;
 }
 
 export interface ImageAttachment {
@@ -22,85 +23,231 @@ export interface ImageAttachment {
   data: string; // base64 representation
 }
 
+export interface CancelReminderPayload {
+  reminderId?: string;
+  title?: string;
+  cancelAll?: boolean;
+  reason?: string;
+}
+
 export interface ParseAiReplyResult {
   cleanReplyText: string;
+  reminderPayloads: AiCreatedReminderPayload[];
+  cancelPayloads: CancelReminderPayload[];
   reminderPayload: AiCreatedReminderPayload | null;
 }
 
+function parseSingleReminderObject(rawObj: any, defaultDate: string): AiCreatedReminderPayload | null {
+  if (!rawObj || typeof rawObj !== 'object') return null;
+
+  const title = String(rawObj.title || 'Reminder').trim();
+  const content = String(rawObj.content || title).trim();
+  const actionType: 'MESSAGE' | 'MESSAGE_AND_CALL' =
+    rawObj.actionType === 'MESSAGE_AND_CALL' ? 'MESSAGE_AND_CALL' : 'MESSAGE';
+
+  const isDaily =
+    rawObj.isDaily === true ||
+    rawObj.targetDate === null ||
+    rawObj.targetDate === '' ||
+    String(rawObj.targetDate).toUpperCase() === 'DAILY';
+
+  let targetDate: string | null = null;
+  if (!isDaily) {
+    if (typeof rawObj.targetDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(rawObj.targetDate.trim())) {
+      targetDate = rawObj.targetDate.trim();
+    } else {
+      targetDate = defaultDate;
+    }
+  }
+
+  const normalizeTime = (t?: string): string => {
+    if (!t || typeof t !== 'string') return '08:00';
+    const parts = t.trim().split(':');
+    if (parts.length >= 2) {
+      const h = String(parseInt(parts[0], 10) || 0).padStart(2, '0');
+      const m = String(parseInt(parts[1], 10) || 0).padStart(2, '0');
+      return `${h}:${m}`;
+    }
+    return '08:00';
+  };
+
+  const windowStart = normalizeTime(rawObj.windowStart);
+  const windowEnd = normalizeTime(rawObj.windowEnd || rawObj.windowStart);
+  const intervalMinutes = Math.max(1, Number(rawObj.intervalMinutes) || 1);
+  const maxRuns = isDaily
+    ? (rawObj.maxRuns !== undefined && Number(rawObj.maxRuns) >= 0 ? Number(rawObj.maxRuns) : 0)
+    : Math.max(1, Number(rawObj.maxRuns) || 1);
+  const wakeUpMode = Boolean(rawObj.wakeUpMode);
+
+  return {
+    title,
+    content,
+    actionType,
+    targetDate,
+    windowStart,
+    windowEnd,
+    intervalMinutes,
+    maxRuns,
+    wakeUpMode,
+    isDaily
+  };
+}
+
 /**
- * Extracts and parses <<<CREATE_REMINDER { ... } >>> payload from AI generated reply
+ * Safely extracts individual complete JSON objects from a potentially truncated or malformed JSON text.
+ */
+export function extractCompleteJsonObjects(text: string): any[] {
+  const results: any[] = [];
+  let depth = 0;
+  let inString = false;
+  let escape = false;
+  let startIndex = -1;
+
+  for (let i = 0; i < text.length; i++) {
+    const char = text[i];
+    if (escape) {
+      escape = false;
+      continue;
+    }
+    if (char === '\\') {
+      escape = true;
+      continue;
+    }
+    if (char === '"') {
+      inString = !inString;
+      continue;
+    }
+    if (inString) continue;
+
+    if (char === '{') {
+      if (depth === 0) startIndex = i;
+      depth++;
+    } else if (char === '}') {
+      depth--;
+      if (depth === 0 && startIndex !== -1) {
+        const candidate = text.slice(startIndex, i + 1);
+        try {
+          const parsed = JSON.parse(candidate);
+          if (parsed && typeof parsed === 'object') {
+            results.push(parsed);
+          }
+        } catch {
+          // ignore malformed snippet
+        }
+        startIndex = -1;
+      } else if (depth < 0) {
+        depth = 0;
+        startIndex = -1;
+      }
+    }
+  }
+  return results;
+}
+
+/**
+ * Extracts and parses <<<CREATE_REMINDER ... >>> and <<<CANCEL_REMINDER ... >>> payloads from AI generated reply.
+ * Resilient against token truncation, unclosed tags, and multiline formatting.
  */
 export function extractReminderPayload(rawReplyText: string): ParseAiReplyResult {
   if (!rawReplyText) {
-    return { cleanReplyText: '', reminderPayload: null };
+    return { cleanReplyText: '', reminderPayloads: [], cancelPayloads: [], reminderPayload: null };
   }
 
-  const reminderRegex = /<<<CREATE_REMINDER\s*([\s\S]*?)\s*>>>/i;
-  const match = rawReplyText.match(reminderRegex);
+  const nowParts = getLocalTimeParts(new Date());
+  const defaultDate = `${nowParts.year}-${String(nowParts.month).padStart(2, '0')}-${String(nowParts.day).padStart(2, '0')}`;
 
-  if (!match) {
-    return { cleanReplyText: rawReplyText.trim(), reminderPayload: null };
+  const reminderPayloads: AiCreatedReminderPayload[] = [];
+  const cancelPayloads: CancelReminderPayload[] = [];
+
+  // 1. Extract all <<<CREATE_REMINDER ... >>> blocks (handles closed >>> as well as truncated/unclosed at EOF)
+  const createRegex = /<<<\s*CREATE_REMINDER\s*([\s\S]*?)(?:>>>|$)/gi;
+  let createMatch: RegExpExecArray | null;
+  while ((createMatch = createRegex.exec(rawReplyText)) !== null) {
+    const rawJson = createMatch[1]
+      .replace(/^```(?:json)?\s*/i, '')
+      .replace(/\s*```$/i, '')
+      .trim();
+
+    if (!rawJson) continue;
+
+    try {
+      const parsed = JSON.parse(rawJson);
+      if (Array.isArray(parsed)) {
+        for (const item of parsed) {
+          const itemPayload = parseSingleReminderObject(item, defaultDate);
+          if (itemPayload) reminderPayloads.push(itemPayload);
+        }
+      } else if (parsed && typeof parsed === 'object') {
+        const itemPayload = parseSingleReminderObject(parsed, defaultDate);
+        if (itemPayload) reminderPayloads.push(itemPayload);
+      }
+    } catch (err: any) {
+      // Fallback: recover complete JSON objects if array was truncated or malformed
+      const recoveredObjects = extractCompleteJsonObjects(rawJson);
+      if (recoveredObjects.length > 0) {
+        for (const item of recoveredObjects) {
+          const itemPayload = parseSingleReminderObject(item, defaultDate);
+          if (itemPayload) reminderPayloads.push(itemPayload);
+        }
+        console.warn(`[GeminiService] Recovered ${recoveredObjects.length} reminder(s) from truncated/malformed CREATE_REMINDER payload.`);
+      } else {
+        console.warn('[GeminiService] Failed to parse CREATE_REMINDER JSON payload:', err.message, rawJson);
+      }
+    }
   }
 
-  const rawJson = match[1]
-    .replace(/^```(?:json)?\s*/i, '')
-    .replace(/\s*```$/i, '')
+  // 2. Extract all <<<CANCEL_REMINDER ... >>> blocks (handles closed >>> as well as truncated/unclosed at EOF)
+  const cancelRegex = /<<<\s*CANCEL_REMINDER\s*([\s\S]*?)(?:>>>|$)/gi;
+  let cancelMatch: RegExpExecArray | null;
+  while ((cancelMatch = cancelRegex.exec(rawReplyText)) !== null) {
+    const rawJson = cancelMatch[1]
+      .replace(/^```(?:json)?\s*/i, '')
+      .replace(/\s*```$/i, '')
+      .trim();
+
+    if (!rawJson) continue;
+
+    const processCancelItem = (item: any) => {
+      if (!item || typeof item !== 'object') return;
+      const reminderId = item.reminderId ? String(item.reminderId).trim() : undefined;
+      const title = item.title ? String(item.title).trim() : undefined;
+      const cancelAll = Boolean(item.cancelAll);
+      const reason = item.reason ? String(item.reason).trim() : undefined;
+      if (reminderId || title || cancelAll) {
+        cancelPayloads.push({ reminderId, title, cancelAll, reason });
+      }
+    };
+
+    try {
+      const parsed = JSON.parse(rawJson);
+      if (Array.isArray(parsed)) {
+        for (const item of parsed) processCancelItem(item);
+      } else if (parsed && typeof parsed === 'object') {
+        processCancelItem(parsed);
+      }
+    } catch (err: any) {
+      const recoveredObjects = extractCompleteJsonObjects(rawJson);
+      if (recoveredObjects.length > 0) {
+        for (const item of recoveredObjects) processCancelItem(item);
+        console.warn(`[GeminiService] Recovered ${recoveredObjects.length} cancel item(s) from truncated/malformed CANCEL_REMINDER payload.`);
+      } else {
+        console.warn('[GeminiService] Failed to parse CANCEL_REMINDER JSON payload:', err.message, rawJson);
+      }
+    }
+  }
+
+  // 3. Clean reply text by completely stripping all command blocks even if unclosed or truncated at EOF
+  const cleanReplyText = rawReplyText
+    .replace(/<<<\s*CREATE_REMINDER[\s\S]*?(?:>>>|$)/gi, '')
+    .replace(/<<<\s*CANCEL_REMINDER[\s\S]*?(?:>>>|$)/gi, '')
     .trim();
 
-  let reminderPayload: AiCreatedReminderPayload | null = null;
-  try {
-    const parsed = JSON.parse(rawJson);
-    if (parsed && typeof parsed === 'object') {
-      const nowParts = getLocalTimeParts(new Date());
-      const defaultDate = `${nowParts.year}-${String(nowParts.month).padStart(2, '0')}-${String(nowParts.day).padStart(2, '0')}`;
-
-      const title = String(parsed.title || 'Nhắc nhở').trim();
-      const content = String(parsed.content || title).trim();
-      const actionType: 'MESSAGE' | 'MESSAGE_AND_CALL' =
-        parsed.actionType === 'MESSAGE_AND_CALL' ? 'MESSAGE_AND_CALL' : 'MESSAGE';
-
-      // Validate or fallback targetDate (YYYY-MM-DD)
-      let targetDate = defaultDate;
-      if (typeof parsed.targetDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(parsed.targetDate.trim())) {
-        targetDate = parsed.targetDate.trim();
-      }
-
-      // Format HH:mm
-      const normalizeTime = (t?: string): string => {
-        if (!t || typeof t !== 'string') return '08:00';
-        const parts = t.trim().split(':');
-        if (parts.length >= 2) {
-          const h = String(parseInt(parts[0], 10) || 0).padStart(2, '0');
-          const m = String(parseInt(parts[1], 10) || 0).padStart(2, '0');
-          return `${h}:${m}`;
-        }
-        return '08:00';
-      };
-
-      const windowStart = normalizeTime(parsed.windowStart);
-      const windowEnd = normalizeTime(parsed.windowEnd || parsed.windowStart);
-      const intervalMinutes = Math.max(1, Number(parsed.intervalMinutes) || 1);
-      const maxRuns = Math.max(1, Number(parsed.maxRuns) || 1);
-      const wakeUpMode = Boolean(parsed.wakeUpMode);
-
-      reminderPayload = {
-        title,
-        content,
-        actionType,
-        targetDate,
-        windowStart,
-        windowEnd,
-        intervalMinutes,
-        maxRuns,
-        wakeUpMode
-      };
-    }
-  } catch (err: any) {
-    console.warn('[GeminiService] Failed to parse CREATE_REMINDER JSON payload:', err.message, rawJson);
-  }
-
-  const cleanReplyText = rawReplyText.replace(reminderRegex, '').trim();
-  return { cleanReplyText, reminderPayload };
+  return {
+    cleanReplyText,
+    reminderPayloads,
+    cancelPayloads,
+    reminderPayload: reminderPayloads[0] || null
+  };
 }
 
 export interface GeminiServiceOptions {
@@ -202,7 +349,7 @@ export class GeminiService {
             contents: [{ parts: contentParts }],
             generationConfig: {
               temperature: 0.7,
-              maxOutputTokens: 600
+              maxOutputTokens: 2500
             }
           })
         });
@@ -616,7 +763,10 @@ Thời gian hiện tại tại Việt Nam: ${currentTimeDesc}. Ngày hôm nay: $
 • Quy tắc xưng hô: ${learnedPersona.pronouns}
 • Từ cửa miệng, thói quen câu chữ hay dùng: ${learnedPersona.catchphrases.length > 0 ? learnedPersona.catchphrases.join(', ') : 'Tự nhiên'}
 ${learnedPersona.sampleMessages && learnedPersona.sampleMessages.length > 0 ? `• Một số câu chat mẫu điển hình của Tôi:\n${learnedPersona.sampleMessages.map((m) => `  - "${m}"`).join('\n')}\n` : ''}• CHỈ DẪN ĐẶC BIỆT: ${learnedPersona.rawPromptInstruction}
-YÊU CẦU BẮT BUỘC: Bạn PHẢI trò chuyện bằng đúng phong cách, cá tính, cách xưng hô và sử dụng các từ ngữ thân quen như trên để đối phương cảm giác như đang trò chuyện với chính Tôi!
+YÊU CẦU BẮT BUỘC: Bạn trò chuyện bằng đúng phong cách, cá tính, cách xưng hô và sử dụng các từ ngữ thân quen như trên để đối phương cảm giác như đang trò chuyện với chính Tôi!
+LƯU Ý ĐẶC BIỆT VỀ ĐỘ DÀI VÀ THÁI ĐỘ:
+- Mọi quy định hạn chế số từ của persona (như "chỉ nhắn 5-10 từ") CHỈ ÁP DỤNG cho câu chuyện phiếm thông thường.
+- ĐỐI VỚI CÁC TÁC VỤ HỖ TRỢ / LÊN LỊCH / HẸN GIỜ: Bạn ĐƯỢC PHÉP và BẮT BUỘC phải viết câu dài đầy đủ, hỏi đàng hoàng và thông báo kết quả tạo lịch rõ ràng, minh bạch theo đúng các quy tắc bên dưới!
 --- HẾT HỒ SƠ PHONG CÁCH ---
 \n`;
     } else {
@@ -630,46 +780,98 @@ YÊU CẦU BẮT BUỘC: Bạn PHẢI trò chuyện bằng đúng phong cách, c
 ${existingRemindersInfo && existingRemindersInfo.trim() ? existingRemindersInfo.trim() : '(HIỆN TẠI CHƯA CÓ LỊCH NHẮC NÀO ĐƯỢC TẠO HOẶC CHỜ CHẠY CHO KHÁCH NÀY!)'}
 --- HẾT TRẠNG THÁI LỊCH NHẮC ---
 
-QUY TẮC BẮT BUỘC: TỰ ĐỘNG HỖ TRỢ LÊN LỊCH & NHẮC NHỞ (CHỐNG HỨA LÈO / MÕM)
-Khi khách có ý định muốn được nhắc nhở, hẹn giờ, lên lịch làm một việc gì đó (ví dụ chứa các từ như "nhắc", "nhắc nhở", "hẹn giờ", "lên lịch", "nhớ nhắc", "mai nhắc tao", "mai nhớ gọi", "gọi dậy", "đánh thức", "báo thức",...):
-1. Các thông tin BẮT BUỘC cần có để tạo lịch nhắc:
-   - Nội dung việc cần nhắc (Ví dụ: Uống thuốc, đi đón con, gọi dậy, họp công ty,...).
-   - Thời gian cần nhắc: Ngày nào (quy đổi ra ngày cụ thể theo định dạng YYYY-MM-DD dựa vào ngày hiện tại ${todayFormatted}) và Giờ nào (định dạng 24h HH:mm, ví dụ 6h sáng là 06:00, 8h tối là 20:00).
+QUY TẮC BẮT BUỘC: QUẢN LÝ LÊN LỊCH & NHẮC NHỞ (CHỐNG HỨA LÈO / MÕM & ĐÀNG HOÀNG, CHỐNG TẠO TRÙNG)
+Khi khách có ý định muốn được nhắc nhở, hẹn giờ, lên lịch làm việc gì đó (ví dụ: "nhắc", "nhắc nhở", "hẹn giờ", "lên lịch", "nhớ nhắc", "tí nhắc tao", "lát nhắc", "mai nhắc tao", "gọi dậy", "đánh thức", "báo thức",...):
+
+1. THẾ NÀO LÀ ĐẦY ĐỦ THÔNG TIN ĐỂ ĐƯỢC PHÉP TẠO TASK?
+   - Cần đủ 2 thông tin cốt lõi:
+     a) Nội dung việc cần nhắc: Làm gì (Ví dụ: Ăn cơm, Học bài, Uống thuốc, Đi đón con, Gọi dậy,...).
+     b) Mốc giờ cụ thể xác định: BẮT BUỘC phải có mốc giờ rõ ràng (Ví dụ: "15:00", "3h chiều", "6h sáng", "8h tối", "11h30 trưa",...).
+   - ⚠️ CẢNH BÁO TỐI QUAN TRỌNG VỀ TỪ NGỮ THỜI GIAN MƠ HỒ (VAGUE TIME TERMS):
+     • Các từ ước lượng / chung chung như: "tí", "tí nữa", "lát", "lát nữa", "chút nữa", "xíu nữa", "hồi nữa", "sáng", "trưa", "chiều", "tối", "mai", "khi nào rảnh"... TUYỆT ĐỐI KHÔNG ĐƯỢC COI LÀ GIỜ CỤ THỂ!
+     • 🚫 NGHIÊM CẤM TỰ Ý ĐOÁN GIỜ HOẶC TỰ CỘNG THỜI GIAN (cấm tự cộng 5-10 phút khi khách nói "tí", cấm tự gán 20:00 khi khách nói "tối")!
+     • 🚫 KHI KHÁCH CHƯA CHO MỐC GIỜ CHÍNH XÁC, TUYỆT ĐỐI KHÔNG ĐƯỢC XUẤT BLOCK <<<CREATE_REMINDER>>>!
+   - 🔄 PHÂN BIỆT RÕ: LẶP LẠI HÀNG NGÀY (DAILY RECURRING) vs NHẮC 1 LẦN (ONE-OFF):
+     • NẾU KHÁCH YÊU CẦU LẶP LẠI HÀNG NGÀY ("hàng ngày", "mỗi ngày", "ngày nào cũng", "mỗi sáng", "mỗi tối", "hàng đêm",...):
+       Ví dụ: "hàng ngày 11h tối nhắc tao skin care", "ngày nào 6h sáng cũng gọi tao dậy", "mỗi ngày 8h sáng nhắc uống thuốc":
+       * BẮT BUỘC đặt "isDaily": true (và "targetDate": null).
+       * BẮT BUỘC đặt "maxRuns": 0 (0 nghĩa là lặp vô hạn mỗi ngày, không bị tự tắt sau 1 lần).
+       * Khi thông báo cho khách: BẮT BUỘC nêu rõ từ "HÀNG NGÀY" (Ví dụ: "Ok Thủy, tao đã ghim lịch nhắc HÀNG NGÀY lúc 23:00 việc 'Skin care' rồi nhé!").
+     • NẾU KHÁCH CHỈ NHẮC 1 LẦN (HÔM NAY / NGÀY MAI / NGÀY CỤ THỂ):
+       Ví dụ: "hôm nay 3h chiều nhắc tao ăn cơm", "mai 8h gọi tao dậy", "tối nay 6h nhắc học bài":
+       * Đặt "targetDate": "YYYY-MM-DD" (ngày cụ thể theo định dạng YYYY-MM-DD dựa vào ngày hiện tại ${todayFormatted}).
+       * Đặt "maxRuns": 1 (nếu là gọi dậy thì maxRuns = 3).
+       * Đặt "isDaily": false.
    - Hình thức nhắc (actionType):
-     • Nếu khách có nói các từ như "gọi", "call", "gọi điện", "nhá máy", "alo cho tôi" HOẶC yêu cầu gọi dậy/đánh thức/báo thức ➔ actionType là "MESSAGE_AND_CALL" (Cả gọi điện và nhắn tin).
+     • Nếu khách có nói các từ như "gọi", "call", "gọi điện", "nhá máy", "alo cho tôi" HOẶC yêu cầu gọi dậy/đánh thức/báo thức ➔ actionType là "MESSAGE_AND_CALL".
      • Nếu khách KHÔNG yêu cầu gọi ➔ actionType là "MESSAGE" (Chỉ nhắn tin).
    - CHẾ ĐỘ GỌI DẬY (wakeUpMode):
      • Nếu khách yêu cầu "gọi dậy", "đánh thức", "báo thức", "gọi tao dậy", "kêu tao dậy":
-       * BẮT BUỘC đặt "wakeUpMode": true.
-       * BẮT BUỘC đặt "actionType": "MESSAGE_AND_CALL".
-       * Để đảm bảo khách thức dậy, hãy đặt lịch gọi lặp lại: ví dụ "intervalMinutes": 5 (hoặc 10), "maxRuns": 3 (hoặc 5), và "windowEnd" cách "windowStart" tương ứng (ví dụ: windowStart "06:00", maxRuns 3 mỗi 5 phút thì windowEnd "06:15").
-       * Lưu ý: Khi "wakeUpMode": true, hệ thống sẽ tự động dừng gọi ngay khi khách nghe máy, từ chối cuộc gọi, hoặc nhắn tin trả lời.
-     • Nếu là nhắc nhở việc thông thường (không phải gọi dậy/đánh thức): Đặt "wakeUpMode": false.
-   - Số lần lặp (maxRuns):
-     • Nếu là việc thông thường và khách không yêu cầu lặp: maxRuns = 1, intervalMinutes = 1, windowEnd = windowStart.
-     • Nếu là gọi dậy: Đặt maxRuns = 3 (mỗi 5 phút) để gọi lại nếu chưa dậy.
-     • Nếu khách có yêu cầu lặp cụ thể: Đặt maxRuns và intervalMinutes tương ứng.
-2. NẾU THÔNG TIN CHƯA ĐẦY ĐỦ:
-   - Bạn PHẢI tiếp tục hỏi khách ngắn gọn về thông tin còn thiếu (ví dụ: hỏi mấy giờ, hoặc ngày nào).
-   - TUYỆT ĐỐI KHÔNG xuất block <<<CREATE_REMINDER>>> khi thông tin thời gian chưa rõ ràng!
-3. KHI ĐÃ CÓ ĐẦY ĐỦ THÔNG TIN HOẶC KHÁCH BỔ SUNG GIỜ / HỎI XÁC NHẬN LỊCH:
-   - Khi khách vừa cung cấp giờ (ví dụ khách nói ngắn gọn "6h", "7h sáng mai") sau khi bạn đã hỏi giờ, HOẶC khách hỏi kiểm tra lại ("mai nhớ gì chưa?", "lên lịch chưa?", "sao chưa thấy lịch?",...):
-   - CẢNH BÁO TỐI HẬU: Hệ thống CHỈ LƯU VÀO DATABASE KHI VÀ CHỈ KHI bạn xuất block lệnh <<<CREATE_REMINDER ... >>> ở cuối tin nhắn.
-   - NẾU BẠN NÓI "tôi đã lên lịch rồi", "tôi nhớ rồi", "tôi ghim lịch rồi mai 6h tôi gọi" MÀ KHÔNG KÈM THEO block lệnh <<<CREATE_REMINDER ... >>>, THÌ HỆ THỐNG HOÀN TOÀN KHÔNG CÓ LỊCH và bạn sẽ bị khách phát hiện là "HỨA LÈO / MÕM"!
-   - VÌ VẬY: Bất cứ khi nào bạn xác nhận đã/sẽ lên lịch nhắc/gọi cho khách mà lịch đó CHƯA CÓ trong phần "TRẠNG THÁI LỊCH NHẮC THỰC TẾ" ở trên, BẠN BẮT BUỘC PHẢI XUẤT BLOCK LỆNH Ở CUỐI TIN NHẮN THEO ĐÚNG ĐỊNH DẠNG:
+       * BẮT BUỘC đặt "wakeUpMode": true, "actionType": "MESSAGE_AND_CALL", "maxRuns": 3, "intervalMinutes": 5.
+     • Nếu là việc thông thường: Đặt "wakeUpMode": false, intervalMinutes = 1.
+
+2. KHI THÔNG TIN CHƯA ĐẦY ĐỦ (Ví dụ khách nói "ê tí nhắc tao ăn cơm", "tối nhắc tao học bài", "mai gọi tao dậy", "nhắc tao uống thuốc"):
+   - BẮT BUỘC PHẢI HỎI LẠI ĐÀNG HOÀNG, RÕ RÀNG:
+     • Không được trả lời cợt nhả, bông đùa, lấp liếm (như: "Ăn đi cưng tao nhắc liền đây", "Mấy giờ thì tuỳ mày thích thì tao nhắc").
+     • Phải hỏi trực tiếp vào mốc giờ để khách hiểu ngay là bạn đang cần giờ để lên lịch:
+       *(Ví dụ: "Mày muốn tao nhắc lúc mấy giờ cụ thể? Nói rõ giờ (ví dụ 1h trưa hay 3h chiều) để tao ghim lịch!", hoặc: "Bạn muốn mình nhắc việc ăn cơm lúc mấy giờ ạ? Cho mình xin giờ cụ thể nhé!").*
+     • TUYỆT ĐỐI KHÔNG xuất block <<<CREATE_REMINDER>>> ở lượt này!
+
+3. KHI ĐÃ CÓ ĐẦY ĐỦ GIỜ CỤ THỂ HOẶC KHÁCH BỔ SUNG GIỜ (Ví dụ: "3h", "6h tối", "8h sáng mai", "hàng ngày 11h tối"):
+   - A. QUY TẮC CẬP NHẬT / THAY THẾ CHO CÙNG CÔNG VIỆC TRONG NGÀY (DEDUPLICATION):
+     • BẮT BUỘC nhìn vào phần "TRẠNG THÁI LỊCH NHẮC THỰC TẾ TRONG HỆ THỐNG MÁY CHỦ CỦA KHÁCH NÀY" ở trên:
+     • Nếu lịch cho đúng mốc giờ này ĐÃ TỒN TẠI VÀ ĐANG CHỜ CHẠY (Status: WAITING TO RUN):
+       TUYỆT ĐỐI KHÔNG xuất lại block <<<CREATE_REMINDER>>> nữa!
+       Khi khách chỉ xác nhận lại câu hỏi trước đó ("đúng rồi", "ừ", "ok", "chuẩn rồi", "nhớ đấy"): Chỉ cần đáp lời xác nhận đàng hoàng rằng lịch đã được ghim sẵn sàng.
+   - B. BẮT BUỘC PHẢI BÁO LẠI ĐÀNG HOÀNG, MINH BẠCH KHI ĐÃ LÊN LỊCH:
+     • Khi tạo task, câu trả lời gửi khách BẮT BUỘC PHẢI THÔNG BÁO RÕ RÀNG để đối phương yên tâm và biết chắc chắn là lịch đã được tạo:
+       1) Nêu rõ tên việc: "Ăn cơm", "Học bài", "Skin care",...
+       2) Nêu rõ giờ & tần suất: lúc mấy giờ, Hàng ngày hay Ngày cụ thể (ví dụ "HÀNG NGÀY lúc 23:00 (11h đêm)", "15:00 hôm nay").
+       3) Khẳng định đã lưu lịch & cam kết nhắc đúng giờ.
+     • 🚫 NGHIÊM CẤM NÓI BÔNG ĐÙA MẬP MỜ (như "3h chiều ăn cơm nhé Thủy ơi", "Ăn đi cưng =))") làm khách không biết là đã tạo lịch hay chưa!
+     • Ví dụ câu trả lời chuẩn mực:
+       - *"Ok Thủy, tao đã ghim lịch nhắc HÀNG NGÀY lúc 23:00 việc 'Skin care' rồi nhé! Cứ yên tâm, đến giờ tao nhắn!"*
+       - *"Ok Thủy, tao đã ghim lịch nhắc mày 'Ăn cơm' lúc 15:00 (3h chiều) hôm nay rồi nhé! Cứ yên tâm, đúng giờ tao réo!"*
+       - *"Được rồi nhé! Mình đã lên lịch nhắc bạn 'Học bài' lúc 18:00 tối nay rồi nhé!"*
+   - C. ĐỊNH DẠNG BLOCK LỆNH Ở CUỐI TIN NHẮN:
 <<<CREATE_REMINDER
 {
   "title": "Tên việc cần nhắc",
   "content": "Nội dung tin nhắn sẽ gửi cho khách khi đến giờ hẹn",
   "actionType": "MESSAGE" hoặc "MESSAGE_AND_CALL",
-  "targetDate": "YYYY-MM-DD",
+  "targetDate": "YYYY-MM-DD" hoặc null (nếu là lặp hàng ngày thì bắt buộc để null),
+  "isDaily": true hoặc false,
   "windowStart": "HH:mm",
   "windowEnd": "HH:mm",
   "intervalMinutes": 1,
-  "maxRuns": 1,
+  "maxRuns": 1 (hoặc 0 nếu là lặp hàng ngày),
   "wakeUpMode": false
 }
 >>>
+
+4. KHI KHÁCH YÊU CẦU NHIỀU VIỆC NHẮC/HẸN GIỜ TRONG CÙNG 1 TIN NHẮN (Ví dụ: "11h tối nhắc tao học bài, 6h sáng mai gọi tao dậy"):
+   - Hãy xuất nhiều block <<<CREATE_REMINDER ... >>> nối tiếp nhau ở cuối tin nhắn (mỗi block cho một việc cần nhắc) HOẶC xuất 1 block chứa mảng JSON [ { ... }, { ... } ].
+   - Hệ thống sẽ tự động tạo đủ tất cả các lịch nhắc này vào cơ sở dữ liệu!
+
+5. KHI KHÁCH MUỐN HỦY / DỪNG / KHÔNG CẦN NHẮC NỮA:
+   (Ví dụ khách nói: "tao học xong rồi 11h ko cần nhắc nữa", "hủy lịch 11h tối", "thôi sáng mai không cần gọi dậy nữa", "hủy hết nhắc nhở", "xoá lịch nhắc",...):
+   - Hãy đối chiếu danh sách lịch ở phần "TRẠNG THÁI LỊCH NHẮC THỰC TẾ TRONG HỆ THỐNG MÁY CHỦ CỦA KHÁCH NÀY" ở trên.
+   - Nếu tìm thấy lịch tương ứng còn đang chờ chạy (Status: WAITING TO RUN), bạn BẮT BUỘC PHẢI XUẤT block lệnh ở cuối tin nhắn:
+<<<CANCEL_REMINDER
+{
+  "reminderId": "id_chính_xác_lấy_từ_[ID: ...]",
+  "reason": "Khách đã hoàn thành việc hoặc yêu cầu hủy lịch"
+}
+>>>
+   - Nếu khách muốn hủy toàn bộ tất cả các lịch nhắc của mình:
+<<<CANCEL_REMINDER
+{
+  "cancelAll": true,
+  "reason": "Khách yêu cầu hủy toàn bộ lịch"
+}
+>>>
+   - Hệ thống sẽ tự động tắt lịch nhắc đó ngay lập tức (active = 0). Sau đó bạn hãy phản hồi tự nhiên, thân thiện xác nhận cho khách rằng bạn đã hủy lịch thành công.
+
 
 \n\n`;
 

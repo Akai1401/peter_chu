@@ -211,9 +211,8 @@ export function isSchedulePastDue(
     return false;
   }
 
-  // If no target date, but it's a single run (maxRuns === 1 or windowStart === windowEnd)
-  const isSingleRun = maxRuns === 1 || windowStart === windowEnd;
-  if (isSingleRun && endMinutes < currentMinutes) {
+  // If no target date: it is a recurring daily schedule unless explicitly restricted to a single run (maxRuns === 1)
+  if (maxRuns === 1 && endMinutes < currentMinutes) {
     return true;
   }
 
@@ -306,4 +305,18 @@ export function diagnoseReminder(
     reason: 'Ready in upcoming queue'
   };
 }
+
+/**
+ * Format minutes into a compact, human-friendly duration string
+ * e.g. 5 => "5m", 30 => "30m", 60 => "1h", 90 => "1h 30m", 120 => "2h"
+ */
+export function formatDurationMinutes(minutes: number): string {
+  if (!minutes || minutes <= 0) return '0m';
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  const remainingMins = minutes % 60;
+  if (remainingMins === 0) return `${hours}h`;
+  return `${hours}h ${remainingMins}m`;
+}
+
 

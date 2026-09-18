@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { GeminiService, extractReminderPayload } from './gemini-service.js';
+import { GeminiService, extractReminderPayload, extractCompleteJsonObjects } from './gemini-service.js';
 
 test('GeminiService - configuration check', () => {
   const unconfigured = new GeminiService({ apiKey: '' });
@@ -200,6 +200,107 @@ test('extractReminderPayload - correctly parses wakeUpMode when enabled', () => 
   assert.strictEqual(res.reminderPayload?.intervalMinutes, 5);
   assert.strictEqual(res.reminderPayload?.maxRuns, 3);
   assert.strictEqual(res.reminderPayload?.wakeUpMode, true);
+});
+
+test('extractReminderPayload - extracts multiple CREATE_REMINDER blocks in a single message', () => {
+  const text = `Dạ mình đã lên lịch 23:00 nhắc bạn học bài và 06:00 sáng mai gọi bạn dậy rồi nhé!
+<<<CREATE_REMINDER
+{
+  "title": "Nhắc học bài",
+  "content": "23h rồi, vào bàn học bài thôi nào!",
+  "actionType": "MESSAGE",
+  "targetDate": "2026-09-18",
+  "windowStart": "23:00",
+  "windowEnd": "23:00",
+  "intervalMinutes": 1,
+  "maxRuns": 1,
+  "wakeUpMode": false
+}
+>>>
+<<<CREATE_REMINDER
+{
+  "title": "Gọi dậy sáng mai",
+  "content": "Dậy đi học thôi, 6h sáng rồi!",
+  "actionType": "MESSAGE_AND_CALL",
+  "targetDate": "2026-09-19",
+  "windowStart": "06:00",
+  "windowEnd": "06:15",
+  "intervalMinutes": 5,
+  "maxRuns": 3,
+  "wakeUpMode": true
+}
+>>>`;
+
+  const res = extractReminderPayload(text);
+  assert.strictEqual(res.reminderPayloads.length, 2);
+  assert.strictEqual(res.reminderPayloads[0].title, 'Nhắc học bài');
+  assert.strictEqual(res.reminderPayloads[0].windowStart, '23:00');
+  assert.strictEqual(res.reminderPayloads[1].title, 'Gọi dậy sáng mai');
+  assert.strictEqual(res.reminderPayloads[1].windowStart, '06:00');
+  assert.strictEqual(res.reminderPayloads[1].wakeUpMode, true);
+  assert.strictEqual(res.cleanReplyText, 'Dạ mình đã lên lịch 23:00 nhắc bạn học bài và 06:00 sáng mai gọi bạn dậy rồi nhé!');
+});
+
+test('extractReminderPayload - extracts JSON array inside single CREATE_REMINDER block', () => {
+  const text = `Dạ đã lên lịch cho cả 2 việc rồi nhé!
+<<<CREATE_REMINDER
+[
+  {
+    "title": "Nhắc học bài",
+    "content": "Đến giờ học bài rồi",
+    "actionType": "MESSAGE",
+    "targetDate": "2026-09-18",
+    "windowStart": "23:00",
+    "windowEnd": "23:00"
+  },
+  {
+    "title": "Gọi dậy",
+    "content": "Dậy thôi nào!",
+    "actionType": "MESSAGE_AND_CALL",
+    "targetDate": "2026-09-19",
+    "windowStart": "06:00",
+    "windowEnd": "06:15",
+    "wakeUpMode": true
+  }
+]
+>>>`;
+
+  const res = extractReminderPayload(text);
+  assert.strictEqual(res.reminderPayloads.length, 2);
+  assert.strictEqual(res.reminderPayloads[0].title, 'Nhắc học bài');
+  assert.strictEqual(res.reminderPayloads[1].title, 'Gọi dậy');
+  assert.strictEqual(res.cleanReplyText, 'Dạ đã lên lịch cho cả 2 việc rồi nhé!');
+});
+
+test('extractReminderPayload - extracts CANCEL_REMINDER payload and cleans reply text', () => {
+  const text = `Ok bạn nhé, mình đã hủy lịch nhắc học bài lúc 23h cho bạn rồi!
+<<<CANCEL_REMINDER
+{
+  "reminderId": "rem_12345",
+  "reason": "Khách báo đã học xong"
+}
+>>>`;
+
+  const res = extractReminderPayload(text);
+  assert.strictEqual(res.cancelPayloads.length, 1);
+  assert.strictEqual(res.cancelPayloads[0].reminderId, 'rem_12345');
+  assert.strictEqual(res.cancelPayloads[0].reason, 'Khách báo đã học xong');
+  assert.strictEqual(res.cleanReplyText, 'Ok bạn nhé, mình đã hủy lịch nhắc học bài lúc 23h cho bạn rồi!');
+});
+
+test('extractReminderPayload - extracts cancelAll request', () => {
+  const text = `Đã hủy toàn bộ lịch nhắc cho bạn rồi nhé!
+<<<CANCEL_REMINDER
+{
+  "cancelAll": true,
+  "reason": "Khách yêu cầu hủy hết"
+}
+>>>`;
+
+  const res = extractReminderPayload(text);
+  assert.strictEqual(res.cancelPayloads.length, 1);
+  assert.strictEqual(res.cancelPayloads[0].cancelAll, true);
+  assert.strictEqual(res.cleanReplyText, 'Đã hủy toàn bộ lịch nhắc cho bạn rồi nhé!');
 });
 
 test('GeminiService - existing reminders status included in prompt context', async () => {
@@ -424,3 +525,67 @@ test('GeminiService - generateDynamicReminderMessage creates contextual message 
     globalThis.fetch = originalFetch;
   }
 });
+
+test('extractCompleteJsonObjects - extracts valid JSON objects from truncated or concatenated text', () => {
+  const malformed = `[
+    { "title": "First", "score": 1 },
+    { "title": "Second", "score": 2 },
+    { "title": "Incomplete", "sc`;
+
+  const extracted = extractCompleteJsonObjects(malformed);
+  assert.strictEqual(extracted.length, 2);
+  assert.strictEqual(extracted[0].title, 'First');
+  assert.strictEqual(extracted[1].title, 'Second');
+});
+
+test('extractReminderPayload - cleanly strips unclosed/truncated CREATE_REMINDER block without leaking to cleanReplyText', () => {
+  // Simulates Gemini hitting token limit mid-output without outputting >>>
+  const truncatedAiReply = `Được thôi Thủy ơi, để Peter lo hết! Nhớ giữ sức nhé.
+<<<CREATE_REMINDER
+[
+  {
+    "title": "Làm kinh tế lượng và test",
+    "content": "Thủy ơi dậy làm kinh tế lượng với 1 bài test đi kìa!",
+    "actionType": "MESSAGE",
+    "targetDate": "2026-09-18",
+    "windowStart": "06:00",
+    "windowEnd": "08:00",
+    "intervalMinutes": 120,
+    "maxRuns": 1,
+    "wakeUpMode": false
+  },
+  {
+    "title": "Test và check kinh tế lượng",
+    "content": "Đến giờ làm bài test và check kinh tế lượng rồi Thủy ơi!",
+    "actionType": "MESSAGE",
+    "targetDate": "2026-09-18",
+    "windowStart": "08:00",
+    "windowEnd": "23:`;
+
+  const res = extractReminderPayload(truncatedAiReply);
+
+  // 1. Must never leak raw tag or JSON to the user
+  assert.strictEqual(res.cleanReplyText, 'Được thôi Thủy ơi, để Peter lo hết! Nhớ giữ sức nhé.');
+  assert.ok(!res.cleanReplyText.includes('<<<CREATE_REMINDER'));
+  assert.ok(!res.cleanReplyText.includes('windowStart'));
+
+  // 2. Must successfully recover the valid reminder objects before the cut-off
+  assert.strictEqual(res.reminderPayloads.length, 1);
+  assert.strictEqual(res.reminderPayloads[0].title, 'Làm kinh tế lượng và test');
+  assert.strictEqual(res.reminderPayloads[0].windowStart, '06:00');
+  assert.strictEqual(res.reminderPayloads[0].windowEnd, '08:00');
+});
+
+test('extractReminderPayload - cleanly strips unclosed CANCEL_REMINDER block without leaking', () => {
+  const truncatedCancelReply = `Dạ mình đã ghi nhận và xử lý hủy cho bạn!
+<<<CANCEL_REMINDER
+{
+  "reminderId": "rem_test_123",
+  "reason": "Khách yê`;
+
+  const res = extractReminderPayload(truncatedCancelReply);
+  assert.strictEqual(res.cleanReplyText, 'Dạ mình đã ghi nhận và xử lý hủy cho bạn!');
+  assert.ok(!res.cleanReplyText.includes('<<<CANCEL_REMINDER'));
+  assert.ok(!res.cleanReplyText.includes('rem_test_123'));
+});
+

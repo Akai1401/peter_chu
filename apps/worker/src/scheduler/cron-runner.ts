@@ -1007,12 +1007,13 @@ export class CronRunner {
 
       // 5. Gather existing active / upcoming reminders for this conversation thread
       const existingRemindersRows = this.db.prepare(`
-        SELECT title, action_type, target_date, window_start, active, run_count, max_runs, wake_up_mode
+        SELECT id, title, action_type, target_date, window_start, active, run_count, max_runs, wake_up_mode
         FROM reminders
         WHERE target_thread_id = ? OR target_thread_id LIKE ?
         ORDER BY created_at DESC
-        LIMIT 5
+        LIMIT 8
       `).all(threadId, `%${threadId}%`) as Array<{
+        id: string;
         title: string;
         action_type: string;
         target_date?: string;
@@ -1028,7 +1029,7 @@ export class CronRunner {
         existingRemindersInfo = existingRemindersRows.map((r, i) => {
           const status = r.active === 1 ? 'WAITING TO RUN' : `COMPLETED (${r.run_count}/${r.max_runs} runs)`;
           const modeTag = r.wake_up_mode === 1 ? ' [Wake-up Alarm: ON]' : '';
-          return `${i + 1}. "${r.title}" (${r.action_type}${modeTag}) - Date: ${r.target_date || 'Daily'}, Time: ${r.window_start} - Status: ${status}`;
+          return `${i + 1}. [ID: ${r.id}] "${r.title}" (${r.action_type}${modeTag}) - Date: ${r.target_date || 'Daily'}, Time: ${r.window_start} - Status: ${status}`;
         }).join('\n');
       }
 
@@ -1100,50 +1101,220 @@ export class CronRunner {
         }
       }
 
-      // 5b. Check if AI detected scheduling intent and generated a reminder payload
-      const { cleanReplyText, reminderPayload } = extractReminderPayload(replyText);
+      // 5b. Check if AI detected scheduling intent or cancellation
+      const { cleanReplyText, reminderPayloads, cancelPayloads } = extractReminderPayload(replyText);
       replyText = cleanReplyText;
 
-      let createdReminderId: string | null = null;
-      if (reminderPayload) {
-        try {
-          createdReminderId = randomUUID();
-          const nowIso = new Date().toISOString();
-          const wakeUpModeInt = reminderPayload.wakeUpMode ? 1 : 0;
-          this.db.prepare(`
-            INSERT INTO reminders (
-              id, title, content, target_thread_id, action_type, call_duration_seconds,
-              max_runs, run_count, active, window_start, window_end, interval_minutes, target_date,
-              wake_up_mode, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, 0, 1, ?, ?, ?, ?, ?, ?, ?)
-          `).run(
-            createdReminderId,
-            reminderPayload.title,
-            reminderPayload.content,
-            threadId,
-            reminderPayload.actionType,
-            25,
-            reminderPayload.maxRuns,
-            reminderPayload.windowStart,
-            reminderPayload.windowEnd,
-            reminderPayload.intervalMinutes,
-            reminderPayload.targetDate,
-            wakeUpModeInt,
-            nowIso,
-            nowIso
-          );
+      const createdReminderIds: string[] = [];
 
-          const modeNotice = reminderPayload.wakeUpMode ? ' [Wake-up Alarm: ON]' : '';
-          console.log(`[AI-AutoReply] Auto-created reminder "${reminderPayload.title}" (${reminderPayload.actionType}${modeNotice}) at ${reminderPayload.windowStart} ${reminderPayload.targetDate} for ${threadId}`);
+      // Execute reminder creations
+      if (reminderPayloads.length > 0) {
+        for (const payload of reminderPayloads) {
+          try {
+            // Deduplication check: Do not insert if an identical active reminder already exists for this thread
+            const existingActive = this.db.prepare(`
+              SELECT id, title, target_date, window_start, active
+              FROM reminders
+              WHERE (target_thread_id = ? OR target_thread_id LIKE ?)
+                AND active = 1
+                AND COALESCE(target_date, '') = COALESCE(?, '')
+                AND window_start = ?
+            `).all(threadId, `%${threadId}%`, payload.targetDate || '', payload.windowStart) as Array<{
+              id: string;
+              title: string;
+              target_date?: string;
+              window_start: string;
+              active: number;
+            }>;
 
-          this.recordAuditLog(
-            'AI_REMINDER_CREATED',
-            'gemini_bot',
-            `Auto-created reminder "${reminderPayload.title}"${modeNotice} for recipient ${senderDisplay} at ${reminderPayload.windowStart} on ${reminderPayload.targetDate} (Type: ${reminderPayload.actionType})`,
-            'INFO'
-          );
-        } catch (dbErr: any) {
-          console.error('[AI-AutoReply] Failed to insert auto-created reminder:', dbErr.message);
+            const duplicateMatch = existingActive.find((existing) => {
+              const normExisting = existing.title.toLowerCase().trim();
+              const normNew = payload.title.toLowerCase().trim();
+              return (
+                normExisting === normNew ||
+                normExisting.includes(normNew) ||
+                normNew.includes(normExisting)
+              );
+            });
+
+            if (duplicateMatch) {
+              console.log(
+                `[AI-AutoReply] Skipped duplicate reminder "${payload.title}" at ${payload.windowStart} ${payload.targetDate} for ${threadId} (Already active with ID: ${duplicateMatch.id})`
+              );
+              createdReminderIds.push(duplicateMatch.id);
+              continue;
+            }
+
+            // Reschedule/Update check: If an active unrun reminder for the SAME task on the SAME day exists with a different time,
+            // update its time window rather than creating a second conflicting task for the same activity!
+            const sameTaskPending = this.db.prepare(`
+              SELECT id, title, target_date, window_start
+              FROM reminders
+              WHERE (target_thread_id = ? OR target_thread_id LIKE ?)
+                AND active = 1
+                AND run_count = 0
+                AND COALESCE(target_date, '') = COALESCE(?, '')
+            `).all(threadId, `%${threadId}%`, payload.targetDate || '') as Array<{
+              id: string;
+              title: string;
+              target_date?: string;
+              window_start: string;
+            }>;
+
+            const existingTaskToReschedule = sameTaskPending.find((existing) => {
+              const normExisting = existing.title.toLowerCase().trim();
+              const normNew = payload.title.toLowerCase().trim();
+              return (
+                normExisting === normNew ||
+                normExisting.includes(normNew) ||
+                normNew.includes(normExisting)
+              );
+            });
+
+            if (existingTaskToReschedule) {
+              const nowIso = new Date().toISOString();
+              const wakeUpModeInt = payload.wakeUpMode ? 1 : 0;
+              this.db.prepare(`
+                UPDATE reminders
+                SET window_start = ?, window_end = ?, content = ?, action_type = ?,
+                    interval_minutes = ?, max_runs = ?, wake_up_mode = ?, updated_at = ?
+                WHERE id = ?
+              `).run(
+                payload.windowStart,
+                payload.windowEnd,
+                payload.content,
+                payload.actionType,
+                payload.intervalMinutes,
+                payload.maxRuns,
+                wakeUpModeInt,
+                nowIso,
+                existingTaskToReschedule.id
+              );
+
+              console.log(
+                `[AI-AutoReply] Rescheduled existing reminder "${payload.title}" (ID: ${existingTaskToReschedule.id}) from ${existingTaskToReschedule.window_start} to ${payload.windowStart} ${payload.targetDate} for ${threadId}`
+              );
+
+              this.recordAuditLog(
+                'AI_REMINDER_UPDATED',
+                'gemini_bot',
+                `Auto-rescheduled reminder "${payload.title}" from ${existingTaskToReschedule.window_start} to ${payload.windowStart} on ${payload.targetDate} for recipient ${senderDisplay}`,
+                'INFO'
+              );
+
+              createdReminderIds.push(existingTaskToReschedule.id);
+              continue;
+            }
+
+            const createdReminderId = randomUUID();
+            createdReminderIds.push(createdReminderId);
+            const nowIso = new Date().toISOString();
+            const wakeUpModeInt = payload.wakeUpMode ? 1 : 0;
+            this.db.prepare(`
+              INSERT INTO reminders (
+                id, title, content, target_thread_id, action_type, call_duration_seconds,
+                max_runs, run_count, active, window_start, window_end, interval_minutes, target_date,
+                wake_up_mode, created_at, updated_at
+              ) VALUES (?, ?, ?, ?, ?, ?, ?, 0, 1, ?, ?, ?, ?, ?, ?, ?)
+            `).run(
+              createdReminderId,
+              payload.title,
+              payload.content,
+              threadId,
+              payload.actionType,
+              25,
+              payload.maxRuns,
+              payload.windowStart,
+              payload.windowEnd,
+              payload.intervalMinutes,
+              payload.targetDate,
+              wakeUpModeInt,
+              nowIso,
+              nowIso
+            );
+
+            const modeNotice = payload.wakeUpMode ? ' [Wake-up Alarm: ON]' : '';
+            console.log(`[AI-AutoReply] Auto-created reminder "${payload.title}" (${payload.actionType}${modeNotice}) at ${payload.windowStart} ${payload.targetDate} for ${threadId}`);
+
+            this.recordAuditLog(
+              'AI_REMINDER_CREATED',
+              'gemini_bot',
+              `Auto-created reminder "${payload.title}"${modeNotice} for recipient ${senderDisplay} at ${payload.windowStart} on ${payload.targetDate} (Type: ${payload.actionType})`,
+              'INFO'
+            );
+          } catch (dbErr: any) {
+            console.error('[AI-AutoReply] Failed to insert auto-created reminder:', dbErr.message);
+          }
+        }
+      }
+
+      // Execute reminder cancellations
+      if (cancelPayloads.length > 0) {
+        for (const cancel of cancelPayloads) {
+          try {
+            let canceledCount = 0;
+            let canceledTitles: string[] = [];
+
+            if (cancel.cancelAll) {
+              const rows = this.db.prepare(`
+                SELECT id, title FROM reminders
+                WHERE (target_thread_id = ? OR target_thread_id LIKE ?) AND active = 1
+              `).all(threadId, `%${threadId}%`) as Array<{ id: string; title: string }>;
+
+              if (rows.length > 0) {
+                const res = this.db.prepare(`
+                  UPDATE reminders SET active = 0, updated_at = CURRENT_TIMESTAMP
+                  WHERE (target_thread_id = ? OR target_thread_id LIKE ?) AND active = 1
+                `).run(threadId, `%${threadId}%`);
+                canceledCount = Number(res.changes);
+                canceledTitles = rows.map((r) => r.title);
+              }
+            } else if (cancel.reminderId) {
+              const row = this.db.prepare(`
+                SELECT id, title FROM reminders
+                WHERE id = ? AND (target_thread_id = ? OR target_thread_id LIKE ?) AND active = 1
+              `).get(cancel.reminderId, threadId, `%${threadId}%`) as { id: string; title: string } | undefined;
+
+              if (row) {
+                this.db.prepare(`
+                  UPDATE reminders SET active = 0, updated_at = CURRENT_TIMESTAMP WHERE id = ?
+                `).run(row.id);
+                canceledCount = 1;
+                canceledTitles = [row.title];
+              }
+            } else if (cancel.title) {
+              const rows = this.db.prepare(`
+                SELECT id, title FROM reminders
+                WHERE (target_thread_id = ? OR target_thread_id LIKE ?) AND active = 1
+                  AND (title LIKE ? OR content LIKE ?)
+              `).all(threadId, `%${threadId}%`, `%${cancel.title}%`, `%${cancel.title}%`) as Array<{ id: string; title: string }>;
+
+              if (rows.length > 0) {
+                for (const r of rows) {
+                  this.db.prepare(`
+                    UPDATE reminders SET active = 0, updated_at = CURRENT_TIMESTAMP WHERE id = ?
+                  `).run(r.id);
+                }
+                canceledCount = rows.length;
+                canceledTitles = rows.map((r) => r.title);
+              }
+            }
+
+            if (canceledCount > 0) {
+              const reasonDesc = cancel.reason ? ` (Reason: ${cancel.reason})` : '';
+              console.log(`[AI-AutoReply] Cancelled ${canceledCount} reminder(s) [${canceledTitles.join(', ')}] for ${threadId}${reasonDesc}`);
+              this.recordAuditLog(
+                'AI_REMINDER_CANCELLED',
+                'gemini_bot',
+                `Auto-cancelled ${canceledCount} reminder(s) [${canceledTitles.join(', ')}] for recipient ${senderDisplay}${reasonDesc}`,
+                'INFO'
+              );
+            } else {
+              console.log(`[AI-AutoReply] Cancel request evaluated but no matching active reminders found for ${threadId} (Target: ${cancel.reminderId || cancel.title || 'all'})`);
+            }
+          } catch (cancelErr: any) {
+            console.error('[AI-AutoReply] Failed to cancel reminder:', cancelErr.message);
+          }
         }
       }
 
@@ -1151,6 +1322,18 @@ export class CronRunner {
       if (!isManualTrigger && this.hasPendingSchedule && this.hasDueReminders()) {
         console.log('[AI-AutoReply] Yielding priority: Urgent scheduled reminder is due. Aborting AI send turn.');
         return false;
+      }
+
+      // Ensure replyText is not empty; if AI only generated command tags, supply a polite confirmation
+      if (!replyText || replyText.trim() === '') {
+        if (createdReminderIds.length > 0) {
+          replyText = 'Đã lên lịch nhắc cho bạn rồi nhé!';
+        } else if (cancelPayloads.length > 0) {
+          replyText = 'Đã cập nhật lịch nhắc theo yêu cầu của bạn!';
+        } else {
+          console.log('[AI-AutoReply] Clean reply text is empty after stripping command tags. Skipping message dispatch.');
+          return true;
+        }
       }
 
       // 6. Send the reply via Messenger
@@ -1196,10 +1379,18 @@ export class CronRunner {
       let previewText: string;
       let actionType: string;
 
-      if (reminderPayload && createdReminderId) {
+      if (createdReminderIds.length > 0) {
         actionType = 'AI_REMINDER_CREATED';
-        const modeTag = reminderPayload.wakeUpMode ? ' [Wake-up Alarm]' : '';
-        previewText = `📅 [Auto-Created Reminder${modeTag}] "${reminderPayload.title}" (${reminderPayload.windowStart} ${reminderPayload.targetDate} - ${reminderPayload.actionType}) ➔ Recipient: "${createMessagePreview(replyText)}"`;
+        if (createdReminderIds.length === 1 && reminderPayloads[0]) {
+          const firstRem = reminderPayloads[0];
+          const modeTag = firstRem.wakeUpMode ? ' [Wake-up Alarm]' : '';
+          previewText = `📅 [Auto-Created Reminder${modeTag}] "${firstRem.title}" (${firstRem.windowStart} ${firstRem.targetDate} - ${firstRem.actionType}) ➔ Recipient: "${createMessagePreview(replyText)}"`;
+        } else {
+          previewText = `📅 [Auto-Created ${createdReminderIds.length} Reminders] ➔ Recipient: "${createMessagePreview(replyText)}"`;
+        }
+      } else if (cancelPayloads.length > 0) {
+        actionType = 'AI_REMINDER_CANCELLED';
+        previewText = `🚫 [Auto-Cancelled Reminder(s)] ➔ Recipient: "${createMessagePreview(replyText)}"`;
       } else if (isQuotaFallback) {
         actionType = 'AI_QUOTA_REPLY';
         previewText = `⚠️ [AI Quota Exceeded] Recipient: "${createMessagePreview(messageText)}" ➔ Reply: "${createMessagePreview(replyText)}"`;
@@ -1209,7 +1400,7 @@ export class CronRunner {
       }
 
       this.recordExecutionLog({
-        reminderId: createdReminderId || 'ai_auto_reply',
+        reminderId: createdReminderIds[0] || 'ai_auto_reply',
         threadId,
         status: 'SUCCESS',
         idempotencyKey,
@@ -1222,8 +1413,11 @@ export class CronRunner {
           replyContent: replyText,
           model: this.geminiService.getModel(),
           isQuotaFallback,
-          createdReminderId: createdReminderId || undefined,
-          createdReminder: reminderPayload || undefined,
+          createdReminderId: createdReminderIds[0] || undefined,
+          createdReminderIds: createdReminderIds.length > 0 ? createdReminderIds : undefined,
+          createdReminder: reminderPayloads[0] || undefined,
+          createdReminders: reminderPayloads.length > 0 ? reminderPayloads : undefined,
+          cancelledReminders: cancelPayloads.length > 0 ? cancelPayloads : undefined,
           contextMessagesCount: conversationHistory?.length || 0,
           targetThread: botState.aiTargetThread || undefined,
           timestamp: new Date().toISOString()

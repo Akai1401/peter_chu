@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { MessageCircle, PhoneCall, Video, Settings2, AlarmClock, Sparkles } from 'lucide-react';
+import { MessageCircle, PhoneCall, Video, Settings2, AlarmClock, Sparkles, Calendar, Repeat } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -16,6 +16,7 @@ import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
 import { DatePicker } from '@/components/ui/date-picker';
 import { TimePicker } from '@/components/ui/time-picker';
+import { cn } from '@/lib/utils';
 import type { Reminder, CreateReminderInput } from '@messenger/shared';
 import { getLocalTimeParts } from '@messenger/shared';
 
@@ -36,6 +37,7 @@ export const ReminderModal: React.FC<Props> = ({
   onSubmit,
   loading
 }) => {
+  const [scheduleRecurrence, setScheduleRecurrence] = useState<'daily' | 'date'>('daily');
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
   const [targetThreadId, setTargetThreadId] = useState('');
@@ -64,7 +66,7 @@ export const ReminderModal: React.FC<Props> = ({
   const nextMinParts = getLocalTimeParts(nextMinDate);
   const minTimeForToday = `${pad(nextMinParts.hour)}:${pad(nextMinParts.minute)}`;
 
-  const isSelectedDateToday = !targetDate.trim() || targetDate.trim() === todayStr;
+  const isSelectedDateToday = scheduleRecurrence === 'date' && (!targetDate.trim() || targetDate.trim() === todayStr);
   const effectiveMinTime = (!isRepeat && isSelectedDateToday) ? minTimeForToday : undefined;
 
   useEffect(() => {
@@ -75,12 +77,15 @@ export const ReminderModal: React.FC<Props> = ({
       setActionType(initialData.actionType || 'MESSAGE');
       setCallDurationSeconds(initialData.callDurationSeconds || 25);
       
-      const isSingle = initialData.maxRuns === 1 || initialData.windowStart === initialData.windowEnd;
-      setIsRepeat(!isSingle);
+      const isDailyMode = !initialData.targetDate;
+      setScheduleRecurrence(isDailyMode ? 'daily' : 'date');
+
+      const isExact = initialData.windowStart === initialData.windowEnd;
+      setIsRepeat(!isExact);
       setWakeUpMode(Boolean(initialData.wakeUpMode));
       setAiGenerateMessage(Boolean(initialData.aiGenerateMessage));
-      setTargetDate(initialData.targetDate || '');
-      setRunTime(initialData.windowStart || minTimeForToday);
+      setTargetDate(initialData.targetDate || todayStr);
+      setRunTime(initialData.windowStart || '09:00');
       setMaxRuns(initialData.maxRuns || 0);
       setWindowStart(initialData.windowStart || '08:00');
       setWindowEnd(initialData.windowEnd || '22:00');
@@ -92,6 +97,7 @@ export const ReminderModal: React.FC<Props> = ({
       setTargetThreadId(defaultTargetThread || '');
       setActionType('MESSAGE');
       setCallDurationSeconds(25);
+      setScheduleRecurrence('daily');
       setIsRepeat(false);
       setWakeUpMode(false);
       setAiGenerateMessage(false);
@@ -143,14 +149,28 @@ export const ReminderModal: React.FC<Props> = ({
       return;
     }
 
-    const finalMaxRuns = isRepeat ? (Number(maxRuns) || 0) : 1;
-    const finalWindowStart = isRepeat ? windowStart.trim() : runTime.trim();
-    const finalWindowEnd = isRepeat ? windowEnd.trim() : runTime.trim();
-    const finalInterval = isRepeat ? (Number(intervalMinutes) || 10) : 1;
-    const finalTargetDate = targetDate.trim() ? targetDate.trim() : null;
+    const isDaily = scheduleRecurrence === 'daily';
+    const finalTargetDate = isDaily ? null : (targetDate.trim() || todayStr);
 
-    // Validate that single-run time today is NOT in the past
-    if (!isRepeat && isSelectedDateToday && finalWindowStart < minTimeForToday) {
+    let finalMaxRuns: number;
+    let finalWindowStart: string;
+    let finalWindowEnd: string;
+    let finalInterval: number;
+
+    if (!isRepeat) {
+      finalWindowStart = runTime.trim();
+      finalWindowEnd = runTime.trim();
+      finalInterval = 1;
+      finalMaxRuns = isDaily ? 0 : 1;
+    } else {
+      finalWindowStart = windowStart.trim();
+      finalWindowEnd = windowEnd.trim();
+      finalInterval = Number(intervalMinutes) || 10;
+      finalMaxRuns = Number(maxRuns) || 0;
+    }
+
+    // Validate that single-run time today is NOT in the past (only for specific date on today)
+    if (!isDaily && !isRepeat && isSelectedDateToday && finalWindowStart < minTimeForToday) {
       setError(`Scheduled time (${finalWindowStart}) is earlier than current time (${currentTimeStr}). Please choose a future time!`);
       return;
     }
@@ -334,50 +354,89 @@ export const ReminderModal: React.FC<Props> = ({
               </div>
             )}
 
-            <div className="flex justify-between items-center pt-0.5">
-              {aiGenerateMessage ? (
-                <p className="text-[11px] text-muted-foreground leading-tight flex items-center gap-1">
-                  <span>Each run, AI generates a fresh message based on this prompt and the active persona.</span>
-                </p>
-              ) : (
-                <span />
-              )}
+            <div className="flex justify-end items-center pt-0.5">
               <span className="text-[10px] text-muted-foreground shrink-0 font-mono">{content.length}/2000</span>
             </div>
           </div>
         )}
 
         {/* ── Repeat & Schedule Section ── */}
-        <div className="p-3.5 sm:p-4 bg-muted/30 rounded-xl border space-y-3.5">
-          {/* Header toggle */}
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Label htmlFor="repeat-toggle" className="text-xs font-semibold cursor-pointer">
-                Repeat
-              </Label>
-              <Badge variant={isRepeat ? "info" : "secondary"} className="text-[10px] px-1.5 py-0 h-4 font-medium">
-                {isRepeat ? 'Enabled' : 'Disabled (Once)'}
+        <div className="p-3.5 sm:p-4 bg-muted/30 rounded-xl border space-y-4">
+          {/* Frequency Selector */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <Label className="text-xs font-semibold">Frequency</Label>
+              <Badge variant={scheduleRecurrence === 'daily' ? "success" : "secondary"} className="text-[10px] px-2 py-0.5 font-medium gap-1">
+                {scheduleRecurrence === 'daily' ? <Repeat className="w-2.5 h-2.5" /> : <Calendar className="w-2.5 h-2.5" />}
+                {scheduleRecurrence === 'daily' ? 'Daily' : 'Specific Date'}
               </Badge>
             </div>
-            <Switch
-              id="repeat-toggle"
-              checked={isRepeat}
-              onCheckedChange={setIsRepeat}
-            />
+            <div className="grid grid-cols-2 gap-2.5">
+              <Button
+                type="button"
+                variant={scheduleRecurrence === 'daily' ? "default" : "outline"}
+                onClick={() => setScheduleRecurrence('daily')}
+                className={cn(
+                  "h-10 px-3 flex items-center justify-center gap-2 rounded-lg border transition-all font-medium text-xs",
+                  scheduleRecurrence === 'daily'
+                    ? "bg-primary text-primary-foreground shadow-sm hover:bg-primary/95"
+                    : "hover:bg-muted/80 bg-background"
+                )}
+              >
+                <Repeat className="h-4 w-4" />
+                <span>Daily</span>
+              </Button>
+
+              <Button
+                type="button"
+                variant={scheduleRecurrence === 'date' ? "default" : "outline"}
+                onClick={() => setScheduleRecurrence('date')}
+                className={cn(
+                  "h-10 px-3 flex items-center justify-center gap-2 rounded-lg border transition-all font-medium text-xs",
+                  scheduleRecurrence === 'date'
+                    ? "bg-primary text-primary-foreground shadow-sm hover:bg-primary/95"
+                    : "hover:bg-muted/80 bg-background"
+                )}
+              >
+                <Calendar className="h-4 w-4" />
+                <span>Specific Date</span>
+              </Button>
+            </div>
           </div>
 
-          {!isRepeat ? (
-            /* Single run: Date & Time */
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1 border-t">
-              <div className="space-y-1.5">
-                <Label className="text-xs font-medium">Scheduled Date</Label>
-                <DatePicker
-                  value={targetDate}
-                  onChange={setTargetDate}
-                  className="w-full"
-                />
+          {/* Target Date */}
+          {scheduleRecurrence === 'date' && (
+            <div className="space-y-1.5 pt-2 border-t">
+              <Label className="text-xs font-medium">Scheduled Date</Label>
+              <DatePicker
+                value={targetDate}
+                onChange={setTargetDate}
+                className="w-full"
+              />
+            </div>
+          )}
+
+          {/* Timing Mode */}
+          <div className="space-y-3 pt-2 border-t">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Label htmlFor="repeat-toggle" className="text-xs font-semibold cursor-pointer">
+                  Multi-run Window
+                </Label>
+                <Badge variant={isRepeat ? "info" : "secondary"} className="text-[10px] px-1.5 py-0.5 font-medium">
+                  {isRepeat ? 'Interval Window' : 'Exact Time'}
+                </Badge>
               </div>
-              <div className="space-y-1.5">
+              <Switch
+                id="repeat-toggle"
+                checked={isRepeat}
+                onCheckedChange={setIsRepeat}
+              />
+            </div>
+
+            {!isRepeat ? (
+              /* Exact Time */
+              <div className="space-y-1.5 pt-1">
                 <Label className="text-xs font-medium">Scheduled Time</Label>
                 <TimePicker
                   value={runTime}
@@ -386,87 +445,85 @@ export const ReminderModal: React.FC<Props> = ({
                   className="w-full"
                 />
               </div>
-            </div>
-          ) : (
-            /* Repeat: Time window + Interval + Max runs */
-            <div className="space-y-3 pt-1 border-t">
-              {/* Time window */}
-              <div className="space-y-1.5">
-                <div className="flex items-center justify-between">
-                  <Label className="text-xs font-medium">Active Time Window</Label>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="h-5 text-[11px] px-1.5 font-medium text-primary hover:text-primary hover:bg-primary/10"
-                    onClick={() => { setWindowStart('00:00'); setWindowEnd('23:59'); }}
-                  >
-                    All Day (00:00 - 23:59)
-                  </Button>
+            ) : (
+              /* Multi-run Interval Window */
+              <div className="space-y-3 pt-1">
+                {/* Time window */}
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-xs font-medium">Active Time Window</Label>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-5 text-[11px] px-1.5 font-medium text-primary hover:text-primary hover:bg-primary/10"
+                      onClick={() => { setWindowStart('00:00'); setWindowEnd('23:59'); }}
+                    >
+                      All Day (00:00 - 23:59)
+                    </Button>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2.5">
+                    <div className="space-y-1">
+                      <span className="text-[11px] text-muted-foreground font-medium">Start</span>
+                      <TimePicker
+                        value={windowStart}
+                        onChange={setWindowStart}
+                        className="w-full"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <span className="text-[11px] text-muted-foreground font-medium">End</span>
+                      <TimePicker
+                        value={windowEnd}
+                        onChange={setWindowEnd}
+                        className="w-full"
+                      />
+                    </div>
+                  </div>
                 </div>
+
+                {/* Repeat Interval & Max Runs */}
                 <div className="grid grid-cols-2 gap-2.5">
                   <div className="space-y-1">
-                    <span className="text-[11px] text-muted-foreground font-medium">Start</span>
-                    <TimePicker
-                      value={windowStart}
-                      onChange={setWindowStart}
-                      className="w-full"
-                    />
+                    <Label htmlFor="interval" className="text-xs font-medium">
+                      Interval
+                    </Label>
+                    <div className="flex items-center gap-1.5">
+                      <Input
+                        id="interval"
+                        type="number"
+                        min={1}
+                        max={1440}
+                        value={intervalMinutes}
+                        onChange={(e) => setIntervalMinutes(Math.max(1, Number(e.target.value) || 1))}
+                        className="font-mono text-xs text-center bg-background h-9"
+                      />
+                      <span className="text-xs text-muted-foreground shrink-0 font-medium">mins</span>
+                    </div>
                   </div>
+
                   <div className="space-y-1">
-                    <span className="text-[11px] text-muted-foreground font-medium">End</span>
-                    <TimePicker
-                      value={windowEnd}
-                      onChange={setWindowEnd}
-                      className="w-full"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* Repeat Interval & Max Runs */}
-              <div className="grid grid-cols-2 gap-2.5">
-                <div className="space-y-1">
-                  <Label htmlFor="interval" className="text-xs font-medium">
-                    Repeat Interval
-                  </Label>
-                  <div className="flex items-center gap-1.5">
-                    <Input
-                      id="interval"
-                      type="number"
-                      min={1}
-                      max={1440}
-                      value={intervalMinutes}
-                      onChange={(e) => setIntervalMinutes(Math.max(1, Number(e.target.value) || 1))}
-                      className="font-mono text-xs text-center bg-background h-9"
-                    />
-                    <span className="text-xs text-muted-foreground shrink-0 font-medium">mins</span>
+                    <Label htmlFor="maxRuns" className="text-xs font-medium">
+                      Max Runs
+                    </Label>
+                    <div className="flex items-center gap-1.5">
+                      <Input
+                        id="maxRuns"
+                        type="number"
+                        min={0}
+                        max={9999}
+                        value={maxRuns}
+                        onChange={(e) => setMaxRuns(Math.max(0, parseInt(e.target.value, 10) || 0))}
+                        placeholder="0 = unlimited"
+                        className="font-mono text-xs text-center bg-background h-9"
+                      />
+                      <span className="text-xs text-muted-foreground shrink-0 font-medium">runs</span>
+                    </div>
                   </div>
                 </div>
 
-                <div className="space-y-1">
-                  <Label htmlFor="maxRuns" className="text-xs font-medium">
-                    Max Runs
-                  </Label>
-                  <div className="flex items-center gap-1.5">
-                    <Input
-                      id="maxRuns"
-                      type="number"
-                      min={0}
-                      max={9999}
-                      value={maxRuns}
-                      onChange={(e) => setMaxRuns(Math.max(0, parseInt(e.target.value, 10) || 0))}
-                      placeholder="0 = unlimited"
-                      className="font-mono text-xs text-center bg-background h-9"
-                    />
-                    <span className="text-xs text-muted-foreground shrink-0 font-medium">runs</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Wake-up mode */}
-              <div className="pt-2.5 border-t flex items-start justify-between gap-3">
-                <div className="space-y-0.5">
+                {/* Wake-up mode */}
+                <div className="pt-2.5 border-t flex items-center justify-between gap-3">
                   <div className="flex items-center gap-1.5">
                     <AlarmClock className="w-3.5 h-3.5 text-amber-500" />
                     <Label htmlFor="wake-up-mode" className="text-xs font-semibold cursor-pointer">
@@ -476,18 +533,15 @@ export const ReminderModal: React.FC<Props> = ({
                       {wakeUpMode ? 'On' : 'Off'}
                     </Badge>
                   </div>
-                  <p className="text-[11px] text-muted-foreground leading-tight">
-                    Auto-stops repeating when recipient answers, hangs up, or replies with a message.
-                  </p>
+                  <Switch
+                    id="wake-up-mode"
+                    checked={wakeUpMode}
+                    onCheckedChange={setWakeUpMode}
+                  />
                 </div>
-                <Switch
-                  id="wake-up-mode"
-                  checked={wakeUpMode}
-                  onCheckedChange={setWakeUpMode}
-                />
               </div>
-            </div>
-          )}
+            )}
+          </div>
         </div>
 
         <div className="flex items-center gap-2.5 pt-1">
@@ -507,7 +561,7 @@ export const ReminderModal: React.FC<Props> = ({
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
       <DialogContent
-        className="w-[95vw] sm:max-w-lg max-h-[90vh] flex flex-col p-0 gap-0 overflow-hidden rounded-xl"
+        className="w-[95vw] sm:max-w-2xl max-h-[90vh] flex flex-col p-0 gap-0 overflow-hidden rounded-xl"
         onOpenAutoFocus={(e) => e.preventDefault()}
       >
         <DialogHeader className="px-5 py-3.5 sm:px-6 sm:py-4 border-b shrink-0 text-left space-y-1">

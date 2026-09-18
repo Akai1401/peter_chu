@@ -2,7 +2,7 @@ import React from 'react';
 import { CalendarClock, Hash } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import type { UpcomingSlot, Reminder, BotState } from '@messenger/shared';
+import { formatDurationMinutes, type UpcomingSlot, type Reminder, type BotState } from '@messenger/shared';
 
 interface Props {
   slots: UpcomingSlot[];
@@ -15,13 +15,7 @@ interface Props {
 
 const formatTimeRemaining = (minutes: number) => {
   if (minutes === 0) return 'Due Now';
-  if (minutes < 60) return `In ~${minutes}m`;
-  const hours = Math.floor(minutes / 60);
-  const remainingMins = minutes % 60;
-  if (remainingMins === 0) {
-    return `In ~${hours}H`;
-  }
-  return `In ~${hours}h ${remainingMins}m`;
+  return `In ~${formatDurationMinutes(minutes)}`;
 };
 
 export const UpcomingScheduleCard: React.FC<Props> = ({

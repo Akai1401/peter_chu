@@ -115,7 +115,7 @@ export const LogViewer: React.FC<Props> = ({
     });
   }, [executionLogs]);
 
-  // 3. Bộ lọc tìm kiếm
+  // 3. Search filter
   const filteredMessagesLogs = useMemo(() => {
     if (!filterText) return messagesLogs;
     const q = filterText.toLowerCase();

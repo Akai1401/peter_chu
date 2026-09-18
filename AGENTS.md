@@ -57,3 +57,9 @@ Sau khi thực hiện xong bất kỳ thay đổi mã nguồn, tính năng hoặ
   - Tính năng mới hoặc sửa đổi tính năng hiện có.
   - Thay đổi kiến trúc, quy trình làm việc, API hoặc biến môi trường (`.env`).
   - Hướng dẫn cài đặt, cấu hình hoặc lệnh chạy mới.
+
+---
+
+## 5. Ngôn ngữ Hệ thống & Giao diện (English Only & Concise UI Copy)
+- **100% Tiếng Anh (English Only)**: Toàn bộ giao diện người dùng (Admin Dashboard, Modals, Forms, Buttons, Badges, Tables, Labels, Tooltips, Logs, Placeholders, Error messages) **BẮT BUỘC sử dụng 100% tiếng Anh**. Tuyệt đối không tự ý chèn tiếng Việt, không dùng chú thích song ngữ (ví dụ: không viết `Daily (Hàng ngày)`, `Specific Date (Ngày cụ thể)`, `Khung giờ lặp lại`, v.v.).
+- **Giao diện Tinh gọn (Concise & Clean)**: Loại bỏ triệt để các chú thích rườm rà, giải thích thừa thãi, text phụ không cần thiết. Giữ UI gọn gàng, hiện đại và tập trung vào chức năng.
