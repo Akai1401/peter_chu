@@ -161,8 +161,8 @@ export class CronRunner {
         this.db.prepare('UPDATE reminders SET active = 0, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(reminder.id);
         this.recordAuditLog(
           'REMINDER_EXPIRED',
-          'cron_runner',
-          `Reminder "${reminder.title}" đã quá giờ chạy (${reminder.window_start}${reminder.target_date ? ` ngày ${reminder.target_date}` : ''}). Hệ thống tự động tắt (stop).`,
+          this.workerId,
+          `Reminder "${reminder.title}" is past due (${reminder.window_start}${reminder.target_date ? ` on ${reminder.target_date}` : ''}). System auto-stopped it.`,
           'INFO'
         );
         stats.skipped += 1;
@@ -200,7 +200,7 @@ export class CronRunner {
         continue;
       }
 
-      // Check Wake-up Mode (Chế độ gọi dậy): If customer has already replied, stop repeating immediately
+      // Check Wake-up Mode: If customer has already replied, stop repeating immediately
       if (reminder.wake_up_mode === 1) {
         const recentReply = this.db.prepare(`
           SELECT id, message_text FROM ai_processed_messages
@@ -228,7 +228,7 @@ export class CronRunner {
           this.recordAuditLog(
             'WAKE_UP_CALL_STOPPED',
             'cron_runner',
-            `Lịch gọi dậy "${reminder.title}" tự động dừng do nhận được tin nhắn từ khách: "${(replySnippet || '').slice(0, 50)}"`,
+            `Wake-up alarm "${reminder.title}" auto-stopped due to reply from recipient: "${(replySnippet || '').slice(0, 50)}"`,
             'INFO'
           );
           stats.skipped += 1;
@@ -272,11 +272,11 @@ export class CronRunner {
       const actionType = reminder.action_type || 'MESSAGE';
       const callDuration = reminder.call_duration_seconds || 25;
       const initialPreview = actionType === 'AUDIO_CALL'
-        ? `[Cuộc gọi thoại Messenger (${callDuration}s)]`
+        ? `[Messenger Audio Call (${callDuration}s)]`
         : actionType === 'VIDEO_CALL'
-        ? `[Cuộc gọi video Messenger (${callDuration}s)]`
+        ? `[Messenger Video Call (${callDuration}s)]`
         : actionType === 'MESSAGE_AND_CALL'
-        ? `${createMessagePreview(reminder.content)} + [Gọi thoại Messenger]`
+        ? `${createMessagePreview(reminder.content)} + [Messenger Audio Call]`
         : createMessagePreview(reminder.content);
 
       if (!rateCheck.allowed) {
@@ -358,25 +358,25 @@ export class CronRunner {
         }
       }
 
-      // Check Wake-up Mode (Chế độ gọi dậy): If call was answered or declined/hung up, stop repeating
+      // Check Wake-up Mode: If call was answered or declined/hung up, stop repeating
       if (reminder.wake_up_mode === 1 && (callOutcome === 'ANSWERED' || callOutcome === 'DECLINED')) {
         this.db.prepare('UPDATE reminders SET active = 0, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(reminder.id);
-        const reason = callOutcome === 'ANSWERED' ? 'nghe máy' : 'tắt máy / từ chối cuộc gọi';
+        const reason = callOutcome === 'ANSWERED' ? 'answered the call' : 'hung up / declined the call';
         this.recordAuditLog(
           'WAKE_UP_CALL_COMPLETED',
           'cron_runner',
-          `Lịch gọi dậy "${reminder.title}" đã tự động dừng lặp do khách đã ${reason}.`,
+          `Wake-up alarm "${reminder.title}" auto-stopped because recipient ${reason}.`,
           'INFO'
         );
       }
 
       const execStatus = isSuccess ? 'SUCCESS' : 'FAILED';
       const preview = actionType === 'AUDIO_CALL'
-        ? `[Cuộc gọi thoại Messenger (${callDuration}s)]`
+        ? `[Messenger Audio Call (${callDuration}s)]`
         : actionType === 'VIDEO_CALL'
-        ? `[Cuộc gọi video Messenger (${callDuration}s)]`
+        ? `[Messenger Video Call (${callDuration}s)]`
         : actionType === 'MESSAGE_AND_CALL'
-        ? `${createMessagePreview(effectiveMessageText)} + [Gọi thoại Messenger]`
+        ? `${createMessagePreview(effectiveMessageText)} + [Messenger Audio Call]`
         : createMessagePreview(effectiveMessageText);
 
       this.recordExecutionLog({
@@ -551,7 +551,7 @@ export class CronRunner {
         );
         this.db.prepare(`UPDATE test_dispatch_queue SET status = ?, error = ?, finished_at = ? WHERE id = ?`).run(
           isSuccess ? 'COMPLETED' : 'FAILED',
-          isSuccess ? null : 'Hết thời gian chờ đăng nhập',
+          isSuccess ? null : 'Login timeout',
           new Date().toISOString(),
           pending.id
         );
@@ -589,13 +589,13 @@ export class CronRunner {
             await this.messengerClient.extractOutgoingMessagesForLearning(targetThread, 4);
 
           if (!outgoingMessages || outgoingMessages.length < 2) {
-            const errStr = 'Không tìm thấy đủ tin nhắn của bạn (tối thiểu 2 tin nhắn) trong cuộc hội thoại này để học văn phong.';
+            const errStr = 'Not enough user messages found (minimum 2 messages required) in this conversation to learn persona style.';
             this.db.prepare(`UPDATE test_dispatch_queue SET status = 'FAILED', error = ?, finished_at = ? WHERE id = ?`).run(
               errStr,
               new Date().toISOString(),
               pending.id
             );
-            this.recordAuditLog('PERSONA_LEARN_FAILED', 'gemini_bot', `Thất bại khi học văn phong: ${errStr}`, 'WARN');
+            this.recordAuditLog('PERSONA_LEARN_FAILED', 'gemini_bot', `Failed to learn persona: ${errStr}`, 'WARN');
             return;
           }
 
@@ -619,7 +619,7 @@ export class CronRunner {
           this.recordAuditLog(
             'PERSONA_LEARNED',
             'gemini_bot',
-            `Đã học thành công văn phong từ hội thoại "${targetThread}": ${persona.styleSummary} (Xưng hô: ${persona.pronouns})`,
+            `Successfully learned persona from conversation "${targetThread}": ${persona.styleSummary} (Pronouns: ${persona.pronouns})`,
             'INFO'
           );
           console.log(`[PersonaLearning] Successfully learned and saved persona from ${targetThread}`);
@@ -630,7 +630,7 @@ export class CronRunner {
             new Date().toISOString(),
             pending.id
           );
-          this.recordAuditLog('PERSONA_LEARN_FAILED', 'gemini_bot', `Lỗi khi học văn phong: ${learnErr.message}`, 'ERROR');
+          this.recordAuditLog('PERSONA_LEARN_FAILED', 'gemini_bot', `Error learning persona style: ${learnErr.message}`, 'ERROR');
         }
         return;
       }
@@ -653,7 +653,7 @@ export class CronRunner {
             } catch {}
           }
 
-          let guidance = pending.content || 'Hỏi thăm xem đang làm gì hoặc trêu đùa lầy lội';
+          let guidance = pending.content || 'Ask how they are doing or playful check-in';
           if (botRow?.proactiveConfig) {
             try {
               const parsedConfig = JSON.parse(botRow.proactiveConfig);
@@ -684,7 +684,7 @@ export class CronRunner {
             threadId: targetThread,
             status: 'SUCCESS',
             idempotencyKey: `proactive-test-${Date.now()}`,
-            messagePreview: `[Chủ động nhắn tin]: ${proactiveMsg}`,
+            messagePreview: `[Proactive Chat]: ${proactiveMsg}`,
             details: {
               proactive: true,
               test: true,
@@ -695,7 +695,7 @@ export class CronRunner {
           this.recordAuditLog(
             'PROACTIVE_MESSAGE_SENT',
             'gemini_bot',
-            `Đã gửi tin nhắn chủ động tới "${targetThread}": "${proactiveMsg}"`,
+            `Sent proactive message to "${targetThread}": "${proactiveMsg}"`,
             'INFO'
           );
         } catch (proactiveErr: any) {
@@ -782,11 +782,11 @@ export class CronRunner {
 
       // Record in execution logs
       const preview = actionType === 'AUDIO_CALL'
-        ? `[Cuộc gọi thoại Messenger (${callDuration}s)]`
+        ? `[Messenger Audio Call (${callDuration}s)]`
         : actionType === 'VIDEO_CALL'
-        ? `[Cuộc gọi video Messenger (${callDuration}s)]`
+        ? `[Messenger Video Call (${callDuration}s)]`
         : actionType === 'MESSAGE_AND_CALL'
-        ? `${createMessagePreview(effectiveContent)} + [Gọi thoại Messenger]`
+        ? `${createMessagePreview(effectiveContent)} + [Messenger Audio Call]`
         : createMessagePreview(effectiveContent);
 
       const slotKey = `test-${Date.now()}`;
@@ -828,7 +828,7 @@ export class CronRunner {
         this.recordAuditLog(
           'INCOMING_MESSAGE_CHECK',
           'admin_dashboard',
-          'Tạm hoãn quét tin nhắn: Hệ thống đang ưu tiên thực thi lịch nhắc nhở (Schedule Execution).',
+          'Inbox scan deferred: System prioritizing reminder execution.',
           'INFO'
         );
       }
@@ -870,7 +870,7 @@ export class CronRunner {
         this.recordAuditLog(
           'INCOMING_MESSAGE_CHECK',
           'admin_dashboard',
-          `Không thể kiểm tra tin nhắn: Bot chưa ở trạng thái RUNNING hoặc Messenger chưa LOGGED_IN (Trạng thái hiện tại: ${botState?.status || 'UNKNOWN'}, Session: ${botState?.sessionStatus || 'UNKNOWN'})`,
+          `Cannot check messages: Bot not in RUNNING state or Messenger not LOGGED_IN (Current status: ${botState?.status || 'UNKNOWN'}, Session: ${botState?.sessionStatus || 'UNKNOWN'})`,
           'WARN'
         );
       }
@@ -896,8 +896,8 @@ export class CronRunner {
             'INCOMING_MESSAGE_CHECK',
             'admin_dashboard',
             botState.aiTargetThread
-              ? `Đã quét hội thoại "${botState.aiTargetThread}": Không có tin nhắn mới từ khách.`
-              : 'Đã quét tin nhắn trên Messenger Web: Không có tin nhắn mới nào chưa đọc.',
+              ? `Scanned thread "${botState.aiTargetThread}": No new incoming messages.`
+              : 'Scanned messages on Messenger Web: No new unread messages.',
             'INFO'
           );
         }
@@ -922,7 +922,7 @@ export class CronRunner {
           this.recordAuditLog(
             'INCOMING_MESSAGE_CHECK',
             'admin_dashboard',
-            `Tin nhắn gần nhất ("${createMessagePreview(messageText)}") đã được xử lý, bỏ qua.`,
+            `Latest message ("${createMessagePreview(messageText)}") already processed, skipping.`,
             'INFO'
           );
         }
@@ -955,11 +955,11 @@ export class CronRunner {
       this.recordAuditLog(
         'INCOMING_MESSAGE_RECEIVED',
         senderName || 'messenger_user',
-        `Tin nhắn đến từ ${senderDisplay}: "${createMessagePreview(messageText)}"`,
+        `Incoming message from ${senderDisplay}: "${createMessagePreview(messageText)}"`,
         'INFO'
       );
 
-      console.log(`[Incoming-Message] Received message from ${senderDisplay}: "${messageText.slice(0, 50)}"... (AI Reply: ${isAiEnabled ? 'BẬT' : 'TẮT'})`);
+      console.log(`[Incoming-Message] Received message from ${senderDisplay}: "${messageText.slice(0, 50)}"... (AI Reply: ${isAiEnabled ? 'ON' : 'OFF'})`);
 
       // 4. If AI Auto-Reply is disabled, record incoming log and finish
       if (!isAiEnabled) {
@@ -968,10 +968,10 @@ export class CronRunner {
           threadId,
           status: 'SUCCESS',
           idempotencyKey: `incoming-${incomingRecordId}`,
-          messagePreview: `📩 [Tin nhắn đến] ${senderName || 'Khách'}: "${createMessagePreview(messageText)}" (AI Auto-Reply đang Tắt)`,
+          messagePreview: `📩 [Incoming Message] ${senderName || 'Contact'}: "${createMessagePreview(messageText)}" (AI Auto-Reply Disabled)`,
           details: {
             actionType: 'INCOMING_MESSAGE',
-            senderName: senderName || 'Khách Messenger',
+            senderName: senderName || 'Messenger Contact',
             threadId,
             incomingMessage: messageText,
             aiAutoReply: false,
@@ -993,7 +993,7 @@ export class CronRunner {
         this.recordAuditLog(
           'AI_REPLY_SKIPPED',
           'gemini_bot',
-          `Bỏ qua phản hồi vì chưa cấu hình Google Gemini API Key.`,
+          `Skipping reply: Google Gemini API Key not configured.`,
           'WARN'
         );
         return false;
@@ -1026,9 +1026,9 @@ export class CronRunner {
       let existingRemindersInfo = '';
       if (existingRemindersRows.length > 0) {
         existingRemindersInfo = existingRemindersRows.map((r, i) => {
-          const status = r.active === 1 ? 'ĐANG CHỜ CHẠY' : `ĐÃ HOÀN TẤT (${r.run_count}/${r.max_runs} lần)`;
-          const modeTag = r.wake_up_mode === 1 ? ' [Chế độ gọi dậy: BẬT]' : '';
-          return `${i + 1}. "${r.title}" (${r.action_type}${modeTag}) - Ngày: ${r.target_date || 'Hàng ngày'}, Giờ: ${r.window_start} - Trạng thái: ${status}`;
+          const status = r.active === 1 ? 'WAITING TO RUN' : `COMPLETED (${r.run_count}/${r.max_runs} runs)`;
+          const modeTag = r.wake_up_mode === 1 ? ' [Wake-up Alarm: ON]' : '';
+          return `${i + 1}. "${r.title}" (${r.action_type}${modeTag}) - Date: ${r.target_date || 'Daily'}, Time: ${r.window_start} - Status: ${status}`;
         }).join('\n');
       }
 
@@ -1041,7 +1041,7 @@ export class CronRunner {
       }
 
       const imgCount = incoming.imageAttachments?.length || 0;
-      console.log(`[AI-AutoReply] Generating Gemini reply for message from ${senderDisplay} with ${conversationHistory?.length || 0} context messages, ${imgCount} images, Persona: ${parsedPersona?.tone || 'Mặc định'}...`);
+      console.log(`[AI-AutoReply] Generating Gemini reply for message from ${senderDisplay} with ${conversationHistory?.length || 0} context messages, ${imgCount} images, Persona: ${parsedPersona?.tone || 'Default'}...`);
       let replyText = '';
       let isQuotaFallback = false;
       try {
@@ -1065,12 +1065,12 @@ export class CronRunner {
           isQuotaFallback = true;
           replyText =
             process.env.AI_QUOTA_REPLY_TEXT ||
-            'Hiện tại AI đang tạm hết hạn mức (quota) xử lý hôm nay rồi ạ, lát nữa hoặc mai mình phản hồi lại nha! 😅';
+            'AI has temporarily exceeded today’s processing quota. I will get back to you shortly! 😅';
           console.warn(`[AI-AutoReply] Gemini quota exhausted across models. Using fallback quota reply: "${replyText}"`);
           this.recordAuditLog(
             'AI_QUOTA_EXCEEDED',
             'gemini_bot',
-            `Hết quota AI từ các model. Phản hồi thông báo hết hạn mức tới ${senderDisplay}.`,
+            `AI quota exceeded across models. Sent quota notification to ${senderDisplay}.`,
             'WARN'
           );
         } else {
@@ -1078,7 +1078,7 @@ export class CronRunner {
           this.recordAuditLog(
             'AI_REPLY_FAILED',
             'gemini_bot',
-            `Lỗi khi Gemini tạo câu trả lời cho ${senderDisplay}: ${geminiErr.message}`,
+            `Error generating Gemini reply for ${senderDisplay}: ${geminiErr.message}`,
             'ERROR'
           );
           this.recordExecutionLog({
@@ -1086,10 +1086,10 @@ export class CronRunner {
             threadId,
             status: 'FAILED',
             idempotencyKey: `ai-error-${randomUUID()}`,
-            messagePreview: `❌ [AI Lỗi] Không thể tạo câu trả lời: ${geminiErr.message}`,
+            messagePreview: `❌ [AI Error] Could not generate reply: ${geminiErr.message}`,
             details: {
               actionType: 'AI_REPLY_ERROR',
-              senderName: senderName || 'Khách Messenger',
+              senderName: senderName || 'Messenger Contact',
               threadId,
               incomingMessage: messageText,
               error: geminiErr.message
@@ -1133,13 +1133,13 @@ export class CronRunner {
             nowIso
           );
 
-          const modeNotice = reminderPayload.wakeUpMode ? ' [Chế độ gọi dậy: BẬT]' : '';
+          const modeNotice = reminderPayload.wakeUpMode ? ' [Wake-up Alarm: ON]' : '';
           console.log(`[AI-AutoReply] Auto-created reminder "${reminderPayload.title}" (${reminderPayload.actionType}${modeNotice}) at ${reminderPayload.windowStart} ${reminderPayload.targetDate} for ${threadId}`);
 
           this.recordAuditLog(
             'AI_REMINDER_CREATED',
             'gemini_bot',
-            `Tự động tạo lịch nhắc "${reminderPayload.title}"${modeNotice} cho khách ${senderDisplay} lúc ${reminderPayload.windowStart} ngày ${reminderPayload.targetDate} (Hình thức: ${reminderPayload.actionType})`,
+            `Auto-created reminder "${reminderPayload.title}"${modeNotice} for recipient ${senderDisplay} at ${reminderPayload.windowStart} on ${reminderPayload.targetDate} (Type: ${reminderPayload.actionType})`,
             'INFO'
           );
         } catch (dbErr: any) {
@@ -1162,7 +1162,7 @@ export class CronRunner {
         this.recordAuditLog(
           'AI_REPLY_FAILED',
           'messenger_client',
-          `Lỗi khi gửi tin nhắn trả lời tới ${senderDisplay}: ${sendResult.error}`,
+          `Error sending reply message to ${senderDisplay}: ${sendResult.error}`,
           'ERROR'
         );
         this.recordExecutionLog({
@@ -1170,10 +1170,10 @@ export class CronRunner {
           threadId,
           status: 'FAILED',
           idempotencyKey: `ai-error-${randomUUID()}`,
-          messagePreview: `❌ [Gửi tin nhắn thất bại]: ${sendResult.error || 'Unknown error'}`,
+          messagePreview: `❌ [Message send failed]: ${sendResult.error || 'Unknown error'}`,
           details: {
             actionType: 'AI_REPLY_SEND_ERROR',
-            senderName: senderName || 'Khách Messenger',
+            senderName: senderName || 'Messenger Contact',
             threadId,
             incomingMessage: messageText,
             replyContent: replyText,
@@ -1198,14 +1198,14 @@ export class CronRunner {
 
       if (reminderPayload && createdReminderId) {
         actionType = 'AI_REMINDER_CREATED';
-        const modeTag = reminderPayload.wakeUpMode ? ' [Gọi dậy]' : '';
-        previewText = `📅 [Tự Tạo Lịch Nhắc${modeTag}] "${reminderPayload.title}" (${reminderPayload.windowStart} ${reminderPayload.targetDate} - ${reminderPayload.actionType}) ➔ Khách: "${createMessagePreview(replyText)}"`;
+        const modeTag = reminderPayload.wakeUpMode ? ' [Wake-up Alarm]' : '';
+        previewText = `📅 [Auto-Created Reminder${modeTag}] "${reminderPayload.title}" (${reminderPayload.windowStart} ${reminderPayload.targetDate} - ${reminderPayload.actionType}) ➔ Recipient: "${createMessagePreview(replyText)}"`;
       } else if (isQuotaFallback) {
         actionType = 'AI_QUOTA_REPLY';
-        previewText = `⚠️ [AI Hết Quota] Khách: "${createMessagePreview(messageText)}" ➔ Phản hồi: "${createMessagePreview(replyText)}"`;
+        previewText = `⚠️ [AI Quota Exceeded] Recipient: "${createMessagePreview(messageText)}" ➔ Reply: "${createMessagePreview(replyText)}"`;
       } else {
         actionType = 'AI_REPLY';
-        previewText = `🤖 [AI Reply] Khách: "${createMessagePreview(messageText)}" ➔ AI: "${createMessagePreview(replyText)}"`;
+        previewText = `🤖 [AI Reply] Recipient: "${createMessagePreview(messageText)}" ➔ AI: "${createMessagePreview(replyText)}"`;
       }
 
       this.recordExecutionLog({
@@ -1216,7 +1216,7 @@ export class CronRunner {
         messagePreview: previewText,
         details: {
           actionType,
-          senderName: senderName || 'Khách Messenger',
+          senderName: senderName || 'Messenger Contact',
           threadId,
           incomingMessage: messageText,
           replyContent: replyText,
@@ -1233,7 +1233,7 @@ export class CronRunner {
       this.recordAuditLog(
         'AI_REPLY_SENT',
         'gemini_bot',
-        `Đã gửi trả lời AI tới ${senderDisplay}: "${createMessagePreview(replyText)}"`,
+        `Sent AI reply to ${senderDisplay}: "${createMessagePreview(replyText)}"`,
         'INFO'
       );
 
@@ -1244,7 +1244,7 @@ export class CronRunner {
       this.recordAuditLog(
         'AI_REPLY_FAILED',
         'system',
-        `Lỗi hệ thống khi tự động trả lời tin nhắn: ${err.message}`,
+        `System error during automatic message reply: ${err.message}`,
         'ERROR'
       );
       return false;
@@ -1426,7 +1426,7 @@ export class CronRunner {
 
       const proactiveMsg = await this.geminiService.generateProactiveMessage({
         persona,
-        guidance: config.promptGuidance || 'Hỏi thăm bạn bè/khách hàng xem đang làm gì hoặc trêu đùa lầy lội'
+        guidance: config.promptGuidance || 'Ask how they are doing or playful check-in'
       });
 
       console.log(`[ProactiveChat] Generated proactive message: "${proactiveMsg}"`);
@@ -1446,7 +1446,7 @@ export class CronRunner {
           threadId: targetThread,
           status: 'SUCCESS',
           idempotencyKey: `proactive-${Date.now()}`,
-          messagePreview: `[Chủ động nhắn tin]: ${proactiveMsg}`,
+          messagePreview: `[Proactive Chat]: ${proactiveMsg}`,
           details: {
             proactive: true,
             message: proactiveMsg,
@@ -1457,7 +1457,7 @@ export class CronRunner {
         this.recordAuditLog(
           'PROACTIVE_MESSAGE_SENT',
           'gemini_bot',
-          `Đã chủ động nhắn tin tới "${targetThread}": "${proactiveMsg}". Lần tiếp theo: ${nextScheduledAt}`,
+          `Sent proactive message to "${targetThread}": "${proactiveMsg}". Next scheduled: ${nextScheduledAt}`,
           'INFO'
         );
       } else {

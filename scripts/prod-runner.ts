@@ -15,13 +15,13 @@ const requiredDistFiles = [
 const missingFiles = requiredDistFiles.filter((item) => !fs.existsSync(item.path));
 if (missingFiles.length > 0) {
   console.error('\n' + '='.repeat(68));
-  console.error('❌ [LỖI] CHƯA BUILD DỰ ÁN TRƯỚC KHI START PRODUCTION!');
+  console.error('❌ [ERROR] PROJECT HAS NOT BEEN BUILT BEFORE PRODUCTION START!');
   console.error('-'.repeat(68));
   for (const item of missingFiles) {
-    console.error(`  • Thiếu bản build: ${item.label}`);
+    console.error(`  • Missing build artifact: ${item.label}`);
   }
   console.error('-'.repeat(68));
-  console.error('👉 Vui lòng chạy lệnh sau trước khi start:');
+  console.error('👉 Please run the following command before starting:');
   console.error('   bun run build');
   console.error('='.repeat(68) + '\n');
   process.exit(1);
@@ -29,7 +29,7 @@ if (missingFiles.length > 0) {
 
 // 2. Pre-check all lockfiles to see if any sub-service is already running
 const existingLocks = [
-  { file: 'system.lock', title: 'Hệ thống Messenger AI Bot Control Center' },
+  { file: 'system.lock', title: 'Messenger AI Bot Control Center' },
   { file: 'worker.lock', title: 'Worker Scheduler Bot' },
   { file: 'api.lock', title: 'API Server' }
 ];
@@ -42,14 +42,14 @@ for (const item of existingLocks) {
       if (info.pid && isProcessAlive(info.pid) && info.pid !== process.pid) {
         const border = '='.repeat(68);
         console.error(`\n${border}`);
-        console.error(`❌ [LỖI] ${item.title.toUpperCase()} ĐÃ ĐANG CHẠY Ở NƠI KHÁC!`);
+        console.error(`❌ [ERROR] ${item.title.toUpperCase()} IS ALREADY RUNNING ELSEWHERE!`);
         console.error('-'.repeat(68));
-        console.error(`  • Tiến trình đang chạy : PID ${info.pid}`);
-        console.error(`  • Thành phần           : ${item.title}`);
-        console.error(`  • Thời gian khởi chạy  : ${info.startedAt}`);
-        console.error(`  • File khóa (Lockfile) : ${p}`);
+        console.error(`  • Running Process     : PID ${info.pid}`);
+        console.error(`  • Component           : ${item.title}`);
+        console.error(`  • Started At          : ${info.startedAt}`);
+        console.error(`  • Lockfile            : ${p}`);
         console.error('-'.repeat(68));
-        console.error(`👉 Vui lòng tắt tiến trình đó hoặc gõ: kill ${info.pid} trước khi khởi động mới.`);
+        console.error(`👉 Please terminate that process or run: kill ${info.pid} before restarting.`);
         console.error(`${border}\n`);
         process.exit(1);
       }
@@ -60,12 +60,12 @@ for (const item of existingLocks) {
 // 3. Acquire exclusive single-instance system lock
 const { release, lockPath } = acquireProcessLock({
   lockName: 'system.lock',
-  serviceTitle: 'Hệ thống Production Messenger AI Bot'
+  serviceTitle: 'Production Messenger AI Bot'
 });
 
 console.log('============================================================');
-console.log('🚀 Đang khởi động PRODUCTION: Messenger AI Bot Control Center');
-console.log('📦 Chế độ: PRODUCTION (Compiled JS + Optimized Assets)');
+console.log('🚀 Starting PRODUCTION: Messenger AI Bot Control Center');
+console.log('📦 Mode: PRODUCTION (Compiled JS + Optimized Assets)');
 console.log(`🔒 Single-instance lock: ${lockPath}`);
 console.log('============================================================');
 
@@ -108,7 +108,7 @@ let isShuttingDown = false;
 function shutdown() {
   if (isShuttingDown) return;
   isShuttingDown = true;
-  console.log('\n🛑 Đang dừng toàn bộ hệ thống production...');
+  console.log('\n🛑 Stopping entire production system...');
 
   for (const child of children) {
     if (child && !child.killed) {
@@ -164,7 +164,7 @@ for (const svc of services) {
   child.on('exit', (code, signal) => {
     if (!isShuttingDown) {
       console.warn(
-        `⚠️ [${svc.name}] Dịch vụ production đã thoát với code ${code || signal}. Đang dừng các dịch vụ liên quan...`
+        `⚠️ [${svc.name}] Production service exited with code ${code || signal}. Stopping related services...`
       );
       shutdown();
     }

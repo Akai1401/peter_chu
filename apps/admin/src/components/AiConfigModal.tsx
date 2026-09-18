@@ -68,10 +68,10 @@ export const AiConfigModal: React.FC<Props> = ({
             </div>
             <div className="space-y-0.5">
               <DialogTitle className="text-sm sm:text-base font-semibold text-foreground">
-                Cấu hình Target Thread ID / Link
+                Configure Target Thread ID / Link
               </DialogTitle>
               <DialogDescription className="text-xs text-muted-foreground leading-relaxed">
-                Cuộc trò chuyện mục tiêu dùng chung cho toàn bộ Bot (Lịch nhắc, Chế độ gọi dậy, AI tự động trả lời & Chủ động nhắn tin).
+                Target conversation shared across all Bot features (Reminders, Wake-up Alarms, AI Auto-Reply & Proactive Messaging).
               </DialogDescription>
             </div>
           </div>
@@ -81,13 +81,13 @@ export const AiConfigModal: React.FC<Props> = ({
           <div className="space-y-2">
             <Label htmlFor="aiTargetThread" className="text-xs font-semibold text-foreground flex items-center gap-1.5">
               <Link2 className="w-3.5 h-3.5 text-muted-foreground" />
-              Link hoặc ID cuộc hội thoại Messenger:
+              Messenger conversation link or numeric ID:
             </Label>
             <Input
               id="aiTargetThread"
               value={targetThread}
               onChange={(e) => setTargetThread(e.target.value)}
-              placeholder="VD: https://www.facebook.com/messages/t/100040388333156 hoặc ID số"
+              placeholder="e.g. https://www.facebook.com/messages/t/100040388333156 or numeric ID"
               className="font-mono text-sm sm:text-xs h-10 sm:h-9 bg-background focus-visible:ring-purple-500/30"
               disabled={loading || isSaving}
               autoFocus
@@ -95,7 +95,7 @@ export const AiConfigModal: React.FC<Props> = ({
             <p className="text-[11px] text-muted-foreground leading-relaxed flex items-start gap-1.5 pt-0.5">
               <Info className="w-3.5 h-3.5 text-muted-foreground shrink-0 mt-0.5" />
               <span>
-                Cấu hình này tự động đồng bộ sang mọi tính năng khác: Lên lịch hẹn, Gọi dậy, AI Tự động trả lời và AI Chủ động nhắn tin mà không cần nhập lại.
+                This configuration automatically syncs across all features: Reminders, Wake-up alarms, AI Auto-reply, and AI Proactive Chat without re-entering.
               </span>
             </p>
           </div>
@@ -103,16 +103,16 @@ export const AiConfigModal: React.FC<Props> = ({
           <div className="p-3 bg-muted/40 dark:bg-muted/20 rounded-xl border border-border/80 space-y-1.5 text-xs">
             <div className="flex items-center gap-1.5 text-foreground font-medium text-xs">
               <MessageSquare className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400" />
-              <span>Trạng thái áp dụng:</span>
+              <span>Applied status:</span>
             </div>
             <div className="text-[11px] leading-relaxed pl-5 text-muted-foreground">
               {targetThread.trim() ? (
                 <div>
-                  Đang chỉ định: <code className="font-mono text-foreground font-medium bg-background px-1.5 py-0.5 rounded border border-border break-all inline-block mt-0.5">{targetThread.trim()}</code>
+                  Currently targeting: <code className="font-mono text-foreground font-medium bg-background px-1.5 py-0.5 rounded border border-border break-all inline-block mt-0.5">{targetThread.trim()}</code>
                 </div>
               ) : (
                 <div>
-                  <strong className="text-foreground">Quét tự do:</strong> Chưa chỉ định Target Thread chung. AI sẽ quét tự do trong toàn bộ hộp thư Messenger.
+                  <strong className="text-foreground">Open scan:</strong> No shared Target Thread specified. AI will scan across all Messenger inbox threads.
                 </div>
               )}
             </div>
@@ -128,7 +128,7 @@ export const AiConfigModal: React.FC<Props> = ({
                 disabled={loading || isSaving}
                 className="text-xs text-muted-foreground hover:text-destructive h-10 sm:h-8.5 px-3 w-full sm:w-auto active:scale-[0.98] transition-all"
               >
-                Xóa chỉ định (Quét tự do)
+                Clear target (Open scan)
               </Button>
             ) : <div className="hidden sm:block" />}
 
@@ -141,7 +141,7 @@ export const AiConfigModal: React.FC<Props> = ({
                 disabled={loading || isSaving}
                 className="text-xs h-10 sm:h-8.5 px-4 flex-1 sm:flex-none active:scale-[0.98] transition-all"
               >
-                Hủy
+                Cancel
               </Button>
               <Button
                 type="submit"
@@ -150,7 +150,7 @@ export const AiConfigModal: React.FC<Props> = ({
                 className="text-xs h-10 sm:h-8.5 px-4 gap-1.5 shadow-xs flex-1 sm:flex-none font-medium active:scale-[0.98] transition-all"
               >
                 <Check className="w-3.5 h-3.5" />
-                <span>{isSaving ? 'Đang lưu...' : 'Lưu cấu hình'}</span>
+                <span>{isSaving ? 'Saving...' : 'Save Configuration'}</span>
               </Button>
             </div>
           </DialogFooter>

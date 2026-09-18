@@ -7,7 +7,7 @@ const rootDir = findWorkspaceRoot();
 
 // 1. Pre-check all lockfiles to see if any sub-service is already running standalone
 const existingLocks = [
-  { file: 'system.lock', title: 'Hệ thống Messenger AI Bot Control Center' },
+  { file: 'system.lock', title: 'Messenger AI Bot Control Center' },
   { file: 'worker.lock', title: 'Worker Scheduler Bot' },
   { file: 'api.lock', title: 'API Server' }
 ];
@@ -20,15 +20,15 @@ for (const item of existingLocks) {
       if (info.pid && isProcessAlive(info.pid) && info.pid !== process.pid) {
         const border = '='.repeat(68);
         console.error(`\n${border}`);
-        console.error(`❌ [LỖI] ${item.title.toUpperCase()} ĐÃ ĐANG CHẠY Ở NƠI KHÁC TRÊN MÁY!`);
+        console.error(`❌ [ERROR] ${item.title.toUpperCase()} IS ALREADY RUNNING ELSEWHERE ON THIS MACHINE!`);
         console.error('-'.repeat(68));
-        console.error(`  • Tiến trình đang chạy : PID ${info.pid}`);
-        console.error(`  • Thành phần           : ${item.title}`);
-        console.error(`  • Thời gian khởi chạy  : ${info.startedAt}`);
-        console.error(`  • File khóa (Lockfile) : ${p}`);
+        console.error(`  • Running Process     : PID ${info.pid}`);
+        console.error(`  • Component           : ${item.title}`);
+        console.error(`  • Started At          : ${info.startedAt}`);
+        console.error(`  • Lockfile            : ${p}`);
         console.error('-'.repeat(68));
-        console.error(`👉 Hệ thống đã đang chạy ở một terminal khác.`);
-        console.error(`👉 Vui lòng tắt terminal đó hoặc gõ: kill ${info.pid} trước khi khởi động mới.`);
+        console.error(`👉 The system is already running in another terminal.`);
+        console.error(`👉 Please terminate that terminal or run: kill ${info.pid} before restarting.`);
         console.error(`${border}\n`);
         process.exit(1);
       }
@@ -39,20 +39,20 @@ for (const item of existingLocks) {
 // 2. Acquire exclusive single-instance system lock
 const { release, lockPath } = acquireProcessLock({
   lockName: 'system.lock',
-  serviceTitle: 'Hệ thống Messenger AI Bot Control Center'
+  serviceTitle: 'Messenger AI Bot Control Center'
 });
 
 console.log('============================================================');
-console.log('🚀 Đang khởi động hệ thống Messenger AI Bot Control Center...');
+console.log('🚀 Starting Messenger AI Bot Control Center...');
 console.log(`🔒 Single-instance lock: ${lockPath}`);
 console.log('============================================================');
 
 // 3. Ensure @messenger/shared is built for apps (tsx/vite)
 try {
-  console.log('📦 Đang đồng bộ @messenger/shared...');
+  console.log('📦 Synchronizing @messenger/shared...');
   execSync('bun --filter=@messenger/shared run build', { cwd: rootDir, stdio: 'inherit' });
 } catch (err) {
-  console.error('❌ Lỗi khi build @messenger/shared:', err);
+  console.error('❌ Error building @messenger/shared:', err);
   release();
   process.exit(1);
 }
@@ -96,7 +96,7 @@ let isShuttingDown = false;
 function shutdown() {
   if (isShuttingDown) return;
   isShuttingDown = true;
-  console.log('\n🛑 Đang dừng toàn bộ hệ thống...');
+  console.log('\n🛑 Stopping entire system...');
 
   for (const child of children) {
     if (child && !child.killed) {
@@ -153,7 +153,7 @@ for (const svc of services) {
   child.on('exit', (code, signal) => {
     if (!isShuttingDown) {
       console.warn(
-        `⚠️ [${svc.name}] Dịch vụ đã thoát với code ${code || signal}. Đang dừng các dịch vụ liên quan...`
+        `⚠️ [${svc.name}] Service exited with code ${code || signal}. Stopping related services...`
       );
       shutdown();
     }

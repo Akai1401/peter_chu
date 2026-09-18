@@ -33,7 +33,7 @@ export function createBotRouter(botService: BotControlService = new BotControlSe
         if (currentState.sessionStatus !== 'LOGGED_IN') {
           res.status(400).json({
             success: false,
-            error: 'Messenger chưa được kết nối. Vui lòng kết nối Messenger trước khi kích hoạt hệ thống!'
+            error: 'Messenger is not connected. Please connect Messenger before starting the system!'
           });
           return;
         }
@@ -183,8 +183,8 @@ export function createBotRouter(botService: BotControlService = new BotControlSe
           result,
           found: hasFound,
           message: hasFound
-            ? 'Đã phát hiện và xử lý tin nhắn mới thành công!'
-            : 'Đã quét xong: Chưa có tin nhắn mới nào chưa đọc trên Messenger Web.'
+            ? 'New messages detected and handled successfully!'
+            : 'Scan complete: No unread messages on Messenger Web.'
         }
       });
     } catch (err: any) {
@@ -205,7 +205,7 @@ export function createBotRouter(botService: BotControlService = new BotControlSe
 
       res.json({
         success: true,
-        message: 'Đang mở trình duyệt Chrome để đăng nhập Facebook Messenger. Vui lòng đăng nhập trên cửa sổ Chrome vừa mở!'
+        message: 'Opening browser for Facebook Messenger login. Please complete login in the opened window!'
       });
     } catch (err: any) {
       res.status(500).json({ success: false, error: err.message });
@@ -227,7 +227,7 @@ export function createBotRouter(botService: BotControlService = new BotControlSe
 
       res.json({
         success: true,
-        message: 'Đã ngắt kết nối phiên đăng nhập Messenger.'
+        message: 'Messenger session disconnected.'
       });
     } catch (err: any) {
       res.status(500).json({ success: false, error: err.message });
@@ -256,7 +256,7 @@ export function createBotRouter(botService: BotControlService = new BotControlSe
     try {
       const { threadUrl } = req.body || {};
       if (!threadUrl || typeof threadUrl !== 'string' || !threadUrl.trim()) {
-        res.status(400).json({ success: false, error: 'Vui lòng cung cấp link cuộc hội thoại Messenger cần học' });
+        res.status(400).json({ success: false, error: 'Please provide Messenger thread link to learn from' });
         return;
       }
 
@@ -283,7 +283,7 @@ export function createBotRouter(botService: BotControlService = new BotControlSe
       }
 
       if (!finishedJob || finishedJob.status === 'FAILED') {
-        const errorMsg = finishedJob?.error || 'Quá thời gian chờ Worker học văn phong. Vui lòng thử lại!';
+        const errorMsg = finishedJob?.error || 'Worker timed out while learning persona. Please try again!';
         res.status(400).json({ success: false, error: errorMsg });
         return;
       }
@@ -300,7 +300,7 @@ export function createBotRouter(botService: BotControlService = new BotControlSe
         data: {
           persona: parsedPersona,
           sourceThread: threadUrl.trim(),
-          message: 'Đã học thành công phong cách nói chuyện của bạn từ cuộc hội thoại!'
+          message: 'Successfully learned your conversational style from thread!'
         }
       });
     } catch (err: any) {
@@ -313,13 +313,13 @@ export function createBotRouter(botService: BotControlService = new BotControlSe
     try {
       const { persona, sourceThread } = req.body || {};
       if (!persona) {
-        res.status(400).json({ success: false, error: 'Dữ liệu persona không hợp lệ' });
+        res.status(400).json({ success: false, error: 'Invalid persona data' });
         return;
       }
       botService.updatePersona(persona, sourceThread);
       res.json({
         success: true,
-        message: 'Đã cập nhật hồ sơ văn phong AI thành công!'
+        message: 'Updated AI persona profile successfully!'
       });
     } catch (err: any) {
       res.status(500).json({ success: false, error: err.message });
@@ -332,7 +332,7 @@ export function createBotRouter(botService: BotControlService = new BotControlSe
       botService.updatePersona(null);
       res.json({
         success: true,
-        message: 'Đã xóa và đặt lại văn phong AI về mặc định.'
+        message: 'Reset AI persona to default.'
       });
     } catch (err: any) {
       res.status(500).json({ success: false, error: err.message });
@@ -357,11 +357,11 @@ export function createBotRouter(botService: BotControlService = new BotControlSe
     try {
       const { name, persona, sourceThread, makeActive } = req.body || {};
       if (!persona) {
-        res.status(400).json({ success: false, error: 'Dữ liệu văn phong không hợp lệ' });
+        res.status(400).json({ success: false, error: 'Invalid persona data' });
         return;
       }
       const created = botService.createPersonaProfile({
-        name: name || 'Văn phong mới',
+        name: name || 'New Persona',
         persona,
         sourceThread,
         makeActive: makeActive !== undefined ? Boolean(makeActive) : true
@@ -369,7 +369,7 @@ export function createBotRouter(botService: BotControlService = new BotControlSe
       res.json({
         success: true,
         data: created,
-        message: `Đã lưu bộ cấu hình "${created.name}" thành công!`
+        message: `Successfully saved persona "${created.name}"!`
       });
     } catch (err: any) {
       res.status(500).json({ success: false, error: err.message });
@@ -385,7 +385,7 @@ export function createBotRouter(botService: BotControlService = new BotControlSe
       res.json({
         success: true,
         data: updated,
-        message: `Đã cập nhật bộ cấu hình "${updated.name}" thành công!`
+        message: `Successfully updated persona "${updated.name}"!`
       });
     } catch (err: any) {
       res.status(500).json({ success: false, error: err.message });
@@ -400,7 +400,7 @@ export function createBotRouter(botService: BotControlService = new BotControlSe
       res.json({
         success: true,
         data: activated,
-        message: `Đã kích hoạt áp dụng bộ cấu hình "${activated.name}"!`
+        message: `Activated persona "${activated.name}"!`
       });
     } catch (err: any) {
       res.status(500).json({ success: false, error: err.message });
@@ -414,7 +414,7 @@ export function createBotRouter(botService: BotControlService = new BotControlSe
       botService.deletePersonaProfile(id);
       res.json({
         success: true,
-        message: 'Đã xóa bộ cấu hình văn phong thành công!'
+        message: 'Deleted persona profile successfully!'
       });
     } catch (err: any) {
       res.status(500).json({ success: false, error: err.message });
@@ -442,7 +442,7 @@ export function createBotRouter(botService: BotControlService = new BotControlSe
       res.json({
         success: true,
         data: updated,
-        message: 'Đã lưu cấu hình chủ động nhắn tin thành công!'
+        message: 'Saved proactive chat configuration successfully!'
       });
     } catch (err: any) {
       res.status(500).json({ success: false, error: err.message });
@@ -457,7 +457,7 @@ export function createBotRouter(botService: BotControlService = new BotControlSe
       res.json({
         success: true,
         data: result,
-        message: 'Đã gửi yêu cầu thử nghiệm chủ động nhắn tin đến worker!'
+        message: 'Proactive chat test request sent to worker!'
       });
     } catch (err: any) {
       res.status(500).json({ success: false, error: err.message });

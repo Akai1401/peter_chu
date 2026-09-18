@@ -35,11 +35,11 @@ interface Props {
 }
 
 const TOPIC_SUGGESTIONS = [
-  'Hỏi thăm đang làm gì đó',
-  'Trêu đùa lầy lội, vui vẻ',
-  'Rủ đi cafe / ăn uống',
-  'Hỏi dạo này công việc thế nào',
-  'Thả thính nhẹ nhàng'
+  'Ask how things are going',
+  'Playful, humorous & banter',
+  'Invite out for coffee / meal',
+  'Ask about work / day',
+  'Gentle & warm check-in'
 ];
 
 export const ProactiveChatModal: React.FC<Props> = ({
@@ -79,7 +79,7 @@ export const ProactiveChatModal: React.FC<Props> = ({
             setActiveHoursEnd(config.activeHoursEnd || '22:30');
             setPromptGuidance(
               config.promptGuidance ||
-                'Hỏi thăm bạn bè/khách hàng xem đang làm gì đó, trêu đùa lầy lội hoặc rủ đi ăn/cafe'
+                'Ask friends or contacts how their day is going, playful check-in or inviting for meal/coffee'
             );
             setLastSentAt(config.lastSentAt || null);
             setNextScheduledAt(config.nextScheduledAt || null);
@@ -97,7 +97,7 @@ export const ProactiveChatModal: React.FC<Props> = ({
   const handleSave = async () => {
     const finalTarget = targetThread.trim() || defaultThreadUrl.trim();
     if (enabled && !finalTarget) {
-      onNotify?.('Vui lòng cấu hình Target Thread chung trước khi kích hoạt chủ động nhắn tin!', 'error');
+      onNotify?.('Please configure the shared Target Thread first before enabling proactive chat!', 'error');
       return;
     }
 
@@ -105,12 +105,12 @@ export const ProactiveChatModal: React.FC<Props> = ({
     const maxVal = Number(maxIntervalMinutes) || 10;
 
     if (minVal < 5) {
-      onNotify?.('Khoảng cách tối thiểu phải từ 5 phút trở lên', 'error');
+      onNotify?.('Minimum interval must be at least 5 minutes', 'error');
       return;
     }
 
     if (maxVal < minVal) {
-      onNotify?.('Khoảng cách tối đa phải lớn hơn khoảng cách tối thiểu', 'error');
+      onNotify?.('Maximum interval must be greater than minimum interval', 'error');
       return;
     }
 
@@ -125,11 +125,11 @@ export const ProactiveChatModal: React.FC<Props> = ({
         activeHoursEnd,
         promptGuidance: promptGuidance.trim()
       });
-      onNotify?.('Đã lưu cấu hình chủ động nhắn tin thành công!', 'success');
+      onNotify?.('Saved proactive chat configuration successfully!', 'success');
       onSuccess?.();
       onClose();
     } catch (err: any) {
-      onNotify?.(err.message || 'Lỗi khi lưu cấu hình chủ động nhắn tin', 'error');
+      onNotify?.(err.message || 'Error saving proactive chat configuration', 'error');
     } finally {
       setIsSaving(false);
     }
@@ -138,14 +138,14 @@ export const ProactiveChatModal: React.FC<Props> = ({
   const handleTestNow = async () => {
     const target = targetThread.trim() || defaultThreadUrl.trim();
     if (!target) {
-      onNotify?.('Chưa có link hội thoại để gửi thử. Vui lòng cấu hình Target Thread chung trên Dashboard trước.', 'error');
+      onNotify?.('No thread link available for testing. Please configure shared Target Thread on Dashboard first.', 'error');
       return;
     }
 
     setIsTesting(true);
     try {
       await api.testProactiveMessage(target);
-      onNotify?.('Đã gửi lệnh thử nghiệm! Bot đang chuẩn bị câu mở lời...', 'info');
+      onNotify?.('Test command sent! Bot is preparing an opening message...', 'info');
       setTimeout(async () => {
         try {
           const cfg = await api.getProactiveConfig();
@@ -154,17 +154,17 @@ export const ProactiveChatModal: React.FC<Props> = ({
         } catch {}
       }, 4000);
     } catch (err: any) {
-      onNotify?.(err.message || 'Lỗi khi thử gửi tin nhắn chủ động', 'error');
+      onNotify?.(err.message || 'Error testing proactive message', 'error');
     } finally {
       setIsTesting(false);
     }
   };
 
   const formatTimestamp = (isoString?: string | null) => {
-    if (!isoString) return 'Chưa có';
+    if (!isoString) return 'None';
     try {
       const date = new Date(isoString);
-      return date.toLocaleString('vi-VN', {
+      return date.toLocaleString('en-US', {
         timeZone: 'Asia/Ho_Chi_Minh',
         hour: '2-digit',
         minute: '2-digit',
@@ -188,13 +188,13 @@ export const ProactiveChatModal: React.FC<Props> = ({
             </div>
             <div className="space-y-0.5 min-w-0 flex-1 pr-6">
               <DialogTitle className="text-sm sm:text-base font-semibold flex items-center gap-2 text-foreground truncate">
-                Chủ động Nói chuyện (Proactive Chat)
+                Proactive Chat (Auto-Initiate)
                 <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4.5 font-medium text-pink-600 dark:text-pink-400 border-pink-500/30 bg-pink-500/10 shrink-0">
                   Auto-Initiate
                 </Badge>
               </DialogTitle>
               <DialogDescription className="text-xs text-muted-foreground leading-relaxed line-clamp-2 sm:line-clamp-1">
-                Tự động chọn thời điểm ngẫu nhiên để nhắn tin hỏi thăm hoặc trêu đùa theo văn phong cá nhân.
+                Automatically picks random times to send greetings, banter, or check-ins using the active persona.
               </DialogDescription>
             </div>
           </div>
@@ -206,21 +206,21 @@ export const ProactiveChatModal: React.FC<Props> = ({
             <div className="space-y-0.5 pr-3">
               <div className="flex items-center gap-2">
                 <Label htmlFor="proactive-switch" className="text-xs sm:text-sm font-semibold text-foreground cursor-pointer">
-                  Kích hoạt chủ động nhắn tin
+                  Enable proactive messaging
                 </Label>
                 {enabled ? (
                   <span className="inline-flex items-center gap-1 text-[10px] font-medium text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20">
                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                    Đang bật
+                    Enabled
                   </span>
                 ) : (
                   <span className="text-[10px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded border border-border/50">
-                    Đang tắt
+                    Disabled
                   </span>
                 )}
               </div>
               <p className="text-xs sm:text-[11px] text-muted-foreground leading-relaxed">
-                Bot sẽ tự động chọn thời điểm ngẫu nhiên trong ngày để nhắn mà không cần đợi khách nhắn trước.
+                Bot will automatically choose random times throughout the day to initiate conversation without waiting for the recipient.
               </p>
             </div>
             <Switch
@@ -236,19 +236,19 @@ export const ProactiveChatModal: React.FC<Props> = ({
             <div className="flex items-center justify-between flex-wrap gap-1">
               <Label className="text-xs font-semibold text-foreground flex items-center gap-1.5">
                 <Link2 className="w-3.5 h-3.5 text-muted-foreground" />
-                Hội thoại Messenger mục tiêu:
+                Target Messenger conversation:
               </Label>
               <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-border text-muted-foreground bg-background">
-                Theo cấu hình chung
+                From shared config
               </Badge>
             </div>
             <div className="p-2.5 bg-background rounded-lg border border-border/70">
               <span className="font-mono text-xs truncate text-foreground font-medium block" title={targetThread || defaultThreadUrl}>
-                {targetThread.trim() || defaultThreadUrl || 'Chưa thiết lập (Vui lòng cấu hình trên Dashboard)'}
+                {targetThread.trim() || defaultThreadUrl || 'Not configured (Please set up on Dashboard)'}
               </span>
             </div>
             <p className="text-[10px] text-muted-foreground leading-relaxed">
-              ✓ Tự động đồng bộ theo Target Thread chung của bot. Để đổi hội thoại, hãy chỉnh sửa ở thanh Target Thread trên Dashboard.
+              ✓ Automatically synchronizes with shared bot Target Thread. To change, edit Target Thread on Dashboard.
             </p>
           </div>
 
@@ -256,12 +256,12 @@ export const ProactiveChatModal: React.FC<Props> = ({
           <div className="p-3 bg-muted/30 dark:bg-muted/15 rounded-xl border border-border/80 space-y-2.5">
             <Label className="text-xs font-semibold text-foreground flex items-center gap-1.5">
               <Clock className="w-3.5 h-3.5 text-muted-foreground" />
-              Khoảng cách thời gian ngẫu nhiên giữa 2 lần nhắn:
+              Random wait interval between messages:
             </Label>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1">
                 <div className="flex items-center justify-between text-xs text-muted-foreground">
-                  <span>Tối thiểu (phút):</span>
+                  <span>Minimum (minutes):</span>
                   <span className="font-mono text-foreground font-semibold text-[11px]">
                     {(minIntervalMinutes / 60).toFixed(1)}h
                   </span>
@@ -279,7 +279,7 @@ export const ProactiveChatModal: React.FC<Props> = ({
 
               <div className="space-y-1">
                 <div className="flex items-center justify-between text-xs text-muted-foreground">
-                  <span>Tối đa (phút):</span>
+                  <span>Maximum (minutes):</span>
                   <span className="font-mono text-foreground font-semibold text-[11px]">
                     {(maxIntervalMinutes / 60).toFixed(1)}h
                   </span>
@@ -297,7 +297,7 @@ export const ProactiveChatModal: React.FC<Props> = ({
             </div>
             <p className="text-[10px] text-muted-foreground flex items-start gap-1 pt-0.5 leading-relaxed">
               <HelpCircle className="w-3.5 h-3.5 text-muted-foreground shrink-0 mt-0.5" />
-              <span>Bot sẽ bốc ngẫu nhiên từ {minIntervalMinutes} đến {maxIntervalMinutes} phút sau mỗi lần nhắn để lên lịch lần kế tiếp.</span>
+              <span>Bot will randomly pick between {minIntervalMinutes} and {maxIntervalMinutes} minutes after each message to schedule the next one.</span>
             </p>
           </div>
 
@@ -305,11 +305,11 @@ export const ProactiveChatModal: React.FC<Props> = ({
           <div className="p-3 bg-muted/30 dark:bg-muted/15 rounded-xl border border-border/80 space-y-2">
             <Label className="text-xs font-semibold text-foreground flex items-center gap-1.5">
               <Calendar className="w-3.5 h-3.5 text-muted-foreground" />
-              Khung giờ cho phép nhắn trong ngày (Giờ Việt Nam):
+              Active hours window in day (Vietnam Time):
             </Label>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
-                <span className="text-[11px] text-muted-foreground font-medium">Bắt đầu từ:</span>
+                <span className="text-[11px] text-muted-foreground font-medium">Starts at:</span>
                 <Input
                   type="time"
                   value={activeHoursStart}
@@ -319,7 +319,7 @@ export const ProactiveChatModal: React.FC<Props> = ({
               </div>
 
               <div className="space-y-1">
-                <span className="text-[11px] text-muted-foreground font-medium">Kết thúc lúc:</span>
+                <span className="text-[11px] text-muted-foreground font-medium">Ends at:</span>
                 <Input
                   type="time"
                   value={activeHoursEnd}
@@ -329,7 +329,7 @@ export const ProactiveChatModal: React.FC<Props> = ({
               </div>
             </div>
             <p className="text-[10px] text-muted-foreground">
-              Ngoài khung giờ này (ví dụ đêm khuya), bot sẽ giữ im lặng tuyệt đối.
+              Outside this time window (e.g. late night), the bot remains completely silent.
             </p>
           </div>
 
@@ -338,22 +338,22 @@ export const ProactiveChatModal: React.FC<Props> = ({
             <div className="flex items-center justify-between flex-wrap gap-1">
               <Label className="text-xs font-semibold text-foreground flex items-center gap-1.5">
                 <Sparkles className="w-3.5 h-3.5 text-purple-500" />
-                Định hướng chủ đề mở lời:
+                Conversation starter prompt guidance:
               </Label>
-              <span className="text-[10px] text-muted-foreground">Kết hợp với Văn phong đã học</span>
+              <span className="text-[10px] text-muted-foreground">Combines with active Persona</span>
             </div>
 
             <Textarea
               rows={2}
               value={promptGuidance}
               onChange={(e) => setPromptGuidance(e.target.value)}
-              placeholder="VD: Hỏi thăm đang làm gì đó, trêu đùa lầy lội hoặc rủ đi ăn/cafe..."
+              placeholder="e.g. Ask how their day is going, playful teasing, or inviting for coffee..."
               className="text-xs bg-muted/20 resize-none min-h-[60px]"
             />
 
             {/* Quick suggestions */}
             <div className="space-y-1.5 pt-1">
-              <span className="text-[10px] text-muted-foreground block font-medium">Gợi ý nhanh:</span>
+              <span className="text-[10px] text-muted-foreground block font-medium">Quick suggestions:</span>
               <div className="flex flex-wrap gap-1.5">
                 {TOPIC_SUGGESTIONS.map((topic, i) => (
                   <button
@@ -372,13 +372,13 @@ export const ProactiveChatModal: React.FC<Props> = ({
           {/* Schedule Status & Preview */}
           <div className="p-3 bg-muted/40 dark:bg-muted/20 rounded-xl border border-border/70 space-y-1.5 text-xs">
             <div className="flex items-center justify-between text-muted-foreground">
-              <span>Lần gửi gần nhất:</span>
+              <span>Last message sent:</span>
               <span className="text-foreground font-mono text-xs font-medium">{formatTimestamp(lastSentAt)}</span>
             </div>
             <div className="flex items-center justify-between text-muted-foreground">
-              <span>Dự kiến gửi lần tiếp theo:</span>
+              <span>Next scheduled dispatch:</span>
               <span className="text-foreground font-mono text-xs font-semibold text-purple-600 dark:text-purple-400">
-                {enabled ? formatTimestamp(nextScheduledAt) : 'Đang tắt'}
+                {enabled ? formatTimestamp(nextScheduledAt) : 'Disabled'}
               </span>
             </div>
           </div>
@@ -393,14 +393,14 @@ export const ProactiveChatModal: React.FC<Props> = ({
             onClick={handleTestNow}
             disabled={isTesting || (!targetThread.trim() && !defaultThreadUrl.trim())}
             className="text-xs h-9 sm:h-8.5 px-3.5 gap-1.5 font-medium shrink-0 active:scale-[0.98]"
-            title="Thử nghiệm tạo câu mở đầu và gửi tin nhắn ngay lập tức"
+            title="Test generating an opening message and send immediately"
           >
             {isTesting ? (
               <RefreshCw className="w-3.5 h-3.5 animate-spin text-muted-foreground" />
             ) : (
               <Send className="w-3.5 h-3.5 text-muted-foreground" />
             )}
-            <span>{isTesting ? 'Đang gửi thử...' : 'Gửi thử nghiệm ngay'}</span>
+            <span>{isTesting ? 'Sending test...' : 'Send Test Now'}</span>
           </Button>
 
           <div className="flex items-center gap-2 shrink-0 justify-end">
@@ -411,7 +411,7 @@ export const ProactiveChatModal: React.FC<Props> = ({
               onClick={onClose}
               className="text-xs h-9 sm:h-8.5 px-4 flex-1 sm:flex-initial active:scale-[0.98]"
             >
-              Đóng
+              Close
             </Button>
 
             <Button
@@ -422,7 +422,7 @@ export const ProactiveChatModal: React.FC<Props> = ({
               className="text-xs h-9 sm:h-8.5 px-4 gap-1.5 shadow-xs flex-1 sm:flex-initial font-medium active:scale-[0.98]"
             >
               <Check className="w-3.5 h-3.5" />
-              <span>{isSaving ? 'Đang lưu...' : 'Lưu cấu hình'}</span>
+              <span>{isSaving ? 'Saving...' : 'Save Configuration'}</span>
             </Button>
           </div>
         </DialogFooter>

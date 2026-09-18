@@ -31,16 +31,16 @@ const dbPath = path.resolve(rootDir, process.env.DATABASE_PATH || './data/messen
 
 async function runLogin() {
   console.log('========================================================');
-  console.log('   MESSENGER AI BOT - ĐĂNG NHẬP FACEBOOK MESSENGER');
+  console.log('   MESSENGER AI BOT - FACEBOOK MESSENGER LOGIN');
   console.log('========================================================');
-  console.log(`📁 Thư mục lưu session: ${userDataDir}`);
+  console.log(`📁 Session storage directory: ${userDataDir}`);
   console.log(`🗄️ Database: ${dbPath}\n`);
 
   if (!fs.existsSync(userDataDir)) {
     fs.mkdirSync(userDataDir, { recursive: true });
   }
 
-  console.log('🚀 Đang khởi động trình duyệt Chrome (Headless: False)...');
+  console.log('🚀 Launching Chrome browser (Headless: False)...');
   const context = await chromium.launchPersistentContext(userDataDir, {
     headless: false,
     viewport: { width: 1280, height: 900 },
@@ -51,12 +51,12 @@ async function runLogin() {
 
   const page = context.pages().length > 0 ? context.pages()[0] : await context.newPage();
 
-  console.log('🌐 Đang mở Messenger (https://www.messenger.com/login)...');
+  console.log('🌐 Opening Messenger (https://www.messenger.com/login)...');
   await page.goto('https://www.messenger.com/login', { waitUntil: 'domcontentloaded' });
 
-  console.log('\n👉 VUI LÒNG ĐĂNG NHẬP TÀI KHOẢN TRÊN CỬA SỔ MESSENGER VỪA MỞ.');
-  console.log('💡 Lưu ý: Nếu có popup yêu cầu mã PIN mã hoá đầu cuối (E2EE), hãy nhập mã PIN để mở khoá đoạn chat.');
-  console.log('⏳ Script đang chờ bạn đăng nhập thành công vào giao diện tin nhắn...');
+  console.log('\n👉 PLEASE LOG IN TO YOUR ACCOUNT IN THE OPENED MESSENGER WINDOW.');
+  console.log('💡 Note: If prompted for an End-to-End Encryption (E2EE) PIN, enter it to unlock your chats.');
+  console.log('⏳ Waiting for successful login into the chat inbox...');
 
   // Poll for login success
   let loggedIn = false;
@@ -69,7 +69,7 @@ async function runLogin() {
       if (!currentUrl.includes('/login') && !currentUrl.includes('/checkpoint')) {
         // Check if chat list or message input or main role is present
         const chatElement = await page.$(
-          'div[role="navigation"], div[role="main"], div[role="textbox"], [aria-label*="Chats"]'
+          'div[role="navigation"], div[role="main"], div[role="textbox"], [aria-label*="Chats"], [aria-label*="Đoạn chat"]'
         );
         if (chatElement) {
           loggedIn = true;
@@ -81,8 +81,8 @@ async function runLogin() {
   }
 
   if (loggedIn) {
-    console.log('\n🎉 ĐĂNG NHẬP THÀNH CÔNG!');
-    console.log('✅ Phiên đăng nhập đã được lưu an toàn vào thư mục .messenger-session/');
+    console.log('\n🎉 LOGIN SUCCESSFUL!');
+    console.log('✅ Messenger session securely stored in .messenger-session/');
 
     // Update SQLite database
     try {
@@ -96,21 +96,21 @@ async function runLogin() {
         JSON.stringify({ userDataDir, timestamp: new Date().toISOString() })
       );
       db.close();
-      console.log('✅ Đã cập nhật trạng thái session_status = "LOGGED_IN" vào Database.');
+      console.log('✅ Updated session_status = "LOGGED_IN" in Database.');
     } catch (e: any) {
-      console.warn('Cập nhật database thất bại:', e.message);
+      console.warn('Database update failed:', e.message);
     }
   } else {
-    console.log('\n⚠️ Hết thời gian chờ (5 phút) hoặc chưa hoàn tất đăng nhập.');
+    console.log('\n⚠️ Login timed out (5 minutes) or was not completed.');
   }
 
-  console.log('Đang đóng trình duyệt...');
+  console.log('Closing browser...');
   await context.close();
-  console.log('Xong!\n');
+  console.log('Done!\n');
   process.exit(loggedIn ? 0 : 1);
 }
 
 runLogin().catch((err) => {
-  console.error('Lỗi khi chạy đăng nhập:', err);
+  console.error('Error during login script:', err);
   process.exit(1);
 });

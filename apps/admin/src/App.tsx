@@ -126,10 +126,10 @@ export function App() {
       setLoading(true);
       const updated = await api.toggleAiAutoReply(enabled);
       setBotState(updated);
-      showToast(`Tự động trả lời Gemini AI đã ${enabled ? 'BẬT' : 'TẮT'}`, 'success');
+      showToast(`Gemini AI auto-reply is now ${enabled ? 'ENABLED' : 'DISABLED'}`, 'success');
       await loadData(true);
     } catch (err: any) {
-      showToast(err.message || 'Lỗi khi bật/tắt Gemini AI', 'error');
+      showToast(err.message || 'Failed to toggle Gemini AI', 'error');
     } finally {
       setLoading(false);
     }
@@ -143,14 +143,14 @@ export function App() {
       if (config.targetThread !== undefined) {
         showToast(
           config.targetThread.trim()
-            ? 'Đã cập nhật cuộc hội thoại theo dõi cho AI'
-            : 'Đã chuyển sang chế độ quét tự do cho AI',
+            ? 'Target conversation for AI updated'
+            : 'Switched AI to free scan mode across mailbox',
           'success'
         );
       }
       await loadData(true);
     } catch (err: any) {
-      showToast(err.message || 'Lỗi khi cập nhật cấu hình AI', 'error');
+      showToast(err.message || 'Failed to update AI configuration', 'error');
     } finally {
       setLoading(false);
     }
@@ -161,13 +161,13 @@ export function App() {
     try {
       const res = await api.checkIncomingMessages();
       if (res.found) {
-        showToast(res.message || 'Đã phát hiện và phản hồi tin nhắn mới từ khách!', 'success');
+        showToast(res.message || 'New contact messages detected and processed!', 'success');
       } else {
-        showToast(res.message || 'Đã quét xong: Chưa có tin nhắn mới nào chưa đọc.', 'info');
+        showToast(res.message || 'Scan completed: No new unread messages.', 'info');
       }
       await loadData(true);
     } catch (err: any) {
-      showToast(err.message || 'Kiểm tra tin nhắn thất bại', 'error');
+      showToast(err.message || 'Failed to scan messages', 'error');
     } finally {
       setIsCheckingIncoming(false);
     }
@@ -178,15 +178,15 @@ export function App() {
     try {
       const res = await api.checkSession();
       if (res.sessionStatus === 'LOGGED_IN') {
-        showToast('Phiên Messenger đang kết nối thành công!', 'success');
+        showToast('Messenger session is connected and active!', 'success');
       } else if (res.sessionStatus === 'SESSION_EXPIRED') {
-        showToast('Phiên đăng nhập đã hết hạn. Vui lòng kết nối lại!', 'warning');
+        showToast('Messenger session has expired. Please reconnect!', 'warning');
       } else {
-        showToast('Chưa phát hiện phiên đăng nhập Messenger hợp lệ!', 'error');
+        showToast('No valid Messenger session detected!', 'error');
       }
       await loadData(true);
     } catch (err: any) {
-      showToast(err.message || 'Kiểm tra phiên thất bại', 'error');
+      showToast(err.message || 'Failed to verify session', 'error');
     } finally {
       setIsCheckingSession(false);
     }
@@ -207,7 +207,7 @@ export function App() {
           if (freshState.sessionStatus === 'LOGGED_IN') {
             clearInterval(interval);
             setIsConnecting(false);
-            showToast('Đã kết nối Messenger thành công! Toàn bộ tính năng đã được kích hoạt.', 'success');
+            showToast('Connected to Messenger successfully! All features are now active.', 'success');
             await loadData(true);
           } else if (Date.now() - startTime > 180000) {
             clearInterval(interval);
@@ -220,12 +220,12 @@ export function App() {
       }, 2500);
     } catch (err: any) {
       setIsConnecting(false);
-      showToast(err.message || 'Không thể mở đăng nhập Messenger', 'error');
+      showToast(err.message || 'Failed to open Messenger login', 'error');
     }
   };
 
   const handleDisconnectMessenger = async () => {
-    if (!window.confirm('Bạn có chắc chắn muốn ngắt kết nối phiên đăng nhập Messenger?')) {
+    if (!window.confirm('Are you sure you want to disconnect your Messenger session?')) {
       return;
     }
     try {
@@ -233,7 +233,7 @@ export function App() {
       showToast(res.message, 'success');
       await loadData(true);
     } catch (err: any) {
-      showToast(err.message || 'Không thể ngắt kết nối', 'error');
+      showToast(err.message || 'Failed to disconnect session', 'error');
     }
   };
 
@@ -306,7 +306,7 @@ export function App() {
           <BrandLogo size="xl" />
           <div className="space-y-1">
             <h2 className="font-semibold text-sm tracking-tight text-foreground lowercase">Messenger Schedule Bot</h2>
-            <p className="text-xs text-muted-foreground">Đang khởi tạo hệ thống điều khiển...</p>
+            <p className="text-xs text-muted-foreground">Initializing control system...</p>
           </div>
           <div className="w-20 h-1 bg-muted rounded-full overflow-hidden">
             <div className="h-full bg-foreground/60 rounded-full animate-pulse" />
@@ -353,7 +353,7 @@ export function App() {
                       onClick={handleCheckSession}
                       disabled={isCheckingSession}
                       className="h-7 px-2.5 text-xs gap-1.5 font-medium text-muted-foreground hover:text-foreground shadow-none"
-                      title="Kiểm tra lại trạng thái phiên thật trên Messenger"
+                      title="Verify live Messenger connection status"
                     >
                       <RefreshCw className={`w-3 h-3 ${isCheckingSession ? 'animate-spin text-primary' : ''}`} />
                       <span>{isCheckingSession ? 'Checking...' : 'Verify'}</span>
@@ -365,7 +365,7 @@ export function App() {
                       onClick={handleDisconnectMessenger}
                       disabled={loading}
                       className="h-7 px-2.5 text-xs gap-1.5 font-medium shadow-sm transition-all hover:bg-destructive/90"
-                      title="Đăng xuất / Ngắt kết nối"
+                      title="Disconnect Messenger session"
                     >
                       <LogOut className="w-3 h-3" />
                       <span>Disconnect</span>

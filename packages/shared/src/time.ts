@@ -254,7 +254,7 @@ export function diagnoseReminder(
       isPastDue,
       isCompleted: true,
       canQueue: false,
-      reason: `Đã hoàn thành ${reminder.runCount || 0}/${reminder.maxRuns} lần chạy`
+      reason: `Completed ${reminder.runCount || 0}/${reminder.maxRuns} runs`
     };
   }
 
@@ -264,7 +264,7 @@ export function diagnoseReminder(
       isPastDue: true,
       isCompleted: false,
       canQueue: false,
-      reason: `Lịch chạy (${reminder.windowStart}${reminder.targetDate ? ` ngày ${reminder.targetDate}` : ''}) đã quá thời gian hiện tại`
+      reason: `Schedule (${reminder.windowStart}${reminder.targetDate ? ` on ${reminder.targetDate}` : ''}) is past due`
     };
   }
 
@@ -274,7 +274,7 @@ export function diagnoseReminder(
       isPastDue: false,
       isCompleted: false,
       canQueue: false,
-      reason: 'Nhắc nhở đang tạm dừng (Paused)'
+      reason: 'Reminder is paused'
     };
   }
 
@@ -284,7 +284,7 @@ export function diagnoseReminder(
       isPastDue: false,
       isCompleted: false,
       canQueue: false,
-      reason: 'Bot Engine đang tắt (Cần bấm "Start Engine")'
+      reason: 'Bot Engine is stopped (Requires "Start Engine")'
     };
   }
 
@@ -294,7 +294,7 @@ export function diagnoseReminder(
       isPastDue: false,
       isCompleted: false,
       canQueue: false,
-      reason: 'Chưa kết nối tài khoản Messenger hợp lệ'
+      reason: 'Messenger session is not connected'
     };
   }
 
@@ -303,7 +303,7 @@ export function diagnoseReminder(
     isPastDue: false,
     isCompleted: false,
     canQueue: true,
-    reason: 'Đang sẵn sàng trong hàng đợi (Upcoming)'
+    reason: 'Ready in upcoming queue'
   };
 }
 

@@ -153,7 +153,7 @@ export function createReminderRouter(
       if (botState.sessionStatus !== 'LOGGED_IN') {
         res.status(400).json({
           success: false,
-          error: 'Messenger chưa được kết nối. Vui lòng kết nối Messenger trước khi sử dụng tính năng này!'
+          error: 'Messenger is not connected. Please connect Messenger before using this feature!'
         });
         return;
       }
@@ -188,7 +188,7 @@ export function createReminderRouter(
       if (!finishedJob) {
         res.status(504).json({
           success: false,
-          error: 'Quá thời gian chờ Worker xử lý. Hãy chắc chắn rằng bạn đang chạy "npm run dev:worker"!'
+          error: 'Worker processing timed out. Please ensure worker is running!'
         });
         return;
       }
@@ -196,7 +196,7 @@ export function createReminderRouter(
       if (finishedJob.status === 'FAILED') {
         res.status(400).json({
           success: false,
-          error: finishedJob.error || 'Worker gửi tin nhắn thật thất bại.'
+          error: finishedJob.error || 'Worker failed to send message.'
         });
         return;
       }
@@ -206,7 +206,7 @@ export function createReminderRouter(
 
       res.json({
         success: true,
-        message: 'Đã thực thi thành công trên Messenger!',
+        message: 'Executed successfully on Messenger!',
         execution: latestLog
       });
     } catch (err: any) {
@@ -240,7 +240,7 @@ export function createReminderRouter(
       const durationSeconds = Number(req.body.durationSeconds || reminder.callDurationSeconds || 25);
       const slotKey = `call-${Date.now()}`;
       const idempotencyKey = generateIdempotencyKey(reminder.id, reminder.targetThreadId, slotKey);
-      const callLabel = callType === 'VIDEO_CALL' ? 'Video' : 'Thoại';
+      const callLabel = callType === 'VIDEO_CALL' ? 'Video' : 'Voice';
 
       // Record audit
       logService.logAudit('TEST_CALL_TRIGGER', req.body.actor || 'admin_ui', {
@@ -254,7 +254,7 @@ export function createReminderRouter(
       if (botState.sessionStatus !== 'LOGGED_IN') {
         res.status(400).json({
           success: false,
-          error: 'Messenger chưa được kết nối. Vui lòng kết nối Messenger trước khi sử dụng tính năng này!'
+          error: 'Messenger is not connected. Please connect Messenger before using this feature!'
         });
         return;
       }
@@ -287,7 +287,7 @@ export function createReminderRouter(
       if (!finishedJob) {
         res.status(504).json({
           success: false,
-          error: 'Quá thời gian chờ Worker xử lý cuộc gọi. Hãy chắc chắn rằng bạn đang chạy "npm run dev:worker"!'
+          error: 'Worker timed out processing call. Please ensure worker is running!'
         });
         return;
       }
@@ -295,7 +295,7 @@ export function createReminderRouter(
       if (finishedJob.status === 'FAILED') {
         res.status(400).json({
           success: false,
-          error: finishedJob.error || 'Worker thực hiện cuộc gọi Messenger thất bại.'
+          error: finishedJob.error || 'Worker failed to make Messenger call.'
         });
         return;
       }
@@ -304,7 +304,7 @@ export function createReminderRouter(
 
       res.json({
         success: true,
-        message: `Đã thực hiện cuộc gọi ${callLabel} Messenger thành công (${durationSeconds}s)!`,
+        message: `Successfully initiated ${callLabel} call on Messenger (${durationSeconds}s)!`,
         execution: latestLog
       });
     } catch (err: any) {

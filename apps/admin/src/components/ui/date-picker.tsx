@@ -11,14 +11,14 @@ interface DatePickerProps {
   minDate?: string; // YYYY-MM-DD
 }
 
-const WEEKDAYS = ['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'];
+const WEEKDAYS = ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su'];
 const MONTH_NAMES = [
-  'Tháng 1', 'Tháng 2', 'Tháng 3', 'Tháng 4', 'Tháng 5', 'Tháng 6',
-  'Tháng 7', 'Tháng 8', 'Tháng 9', 'Tháng 10', 'Tháng 11', 'Tháng 12'
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December'
 ];
 
 function formatDisplayDate(dateStr?: string): string {
-  if (!dateStr) return 'Chọn ngày';
+  if (!dateStr) return 'Select date';
   const [y, m, d] = dateStr.split('-').map(Number);
   if (!y || !m || !d) return dateStr;
 
@@ -32,10 +32,10 @@ function formatDisplayDate(dateStr?: string): string {
   const dStr = `${pad(d)}/${pad(m)}`;
 
   if (target.getTime() === today.getTime()) {
-    return `Hôm nay (${dStr})`;
+    return `Today (${dStr})`;
   }
   if (target.getTime() === tomorrow.getTime()) {
-    return `Ngày mai (${dStr})`;
+    return `Tomorrow (${dStr})`;
   }
   return `${pad(d)}/${pad(m)}/${y}`;
 }
@@ -143,7 +143,7 @@ export const DatePicker: React.FC<DatePickerProps> = ({
               setOpen(false);
             }}
           >
-            Hôm nay
+            Today
           </Button>
           <Button
             type="button"
@@ -155,7 +155,7 @@ export const DatePicker: React.FC<DatePickerProps> = ({
               setOpen(false);
             }}
           >
-            Ngày mai
+            Tomorrow
           </Button>
         </div>
 

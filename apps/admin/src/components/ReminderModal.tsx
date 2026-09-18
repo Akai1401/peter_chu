@@ -117,29 +117,29 @@ export const ReminderModal: React.FC<Props> = ({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!title.trim()) {
-      setError('Vui lòng điền tiêu đề nhắc nhở');
+      setError('Please enter a reminder title');
       return;
     }
 
     const finalThreadId = (targetThreadId.trim() || defaultTargetThread || '').trim();
     if (!finalThreadId) {
-      setError('Vui lòng nhập Target Thread ID hoặc cấu hình Target Thread chung trước');
+      setError('Please enter a Target Thread ID or configure a default Target Thread first');
       return;
     }
 
     const isMessageRequired = actionType === 'MESSAGE' || actionType === 'MESSAGE_AND_CALL';
     if (isMessageRequired && !content.trim()) {
-      setError(aiGenerateMessage ? 'Vui lòng nhập mô tả/yêu cầu cho AI sinh tin nhắn' : 'Vui lòng nhập nội dung tin nhắn');
+      setError(aiGenerateMessage ? 'Please enter a description/prompt for AI message generation' : 'Please enter message content');
       return;
     }
 
     if (!isRepeat && !runTime.trim()) {
-      setError('Vui lòng chọn giờ chạy');
+      setError('Please select a scheduled time');
       return;
     }
 
     if (isRepeat && (!windowStart.trim() || !windowEnd.trim())) {
-      setError('Vui lòng chọn khung giờ bắt đầu và kết thúc');
+      setError('Please select both window start and end times');
       return;
     }
 
@@ -151,7 +151,7 @@ export const ReminderModal: React.FC<Props> = ({
 
     // Validate that single-run time today is NOT in the past
     if (!isRepeat && isSelectedDateToday && finalWindowStart < minTimeForToday) {
-      setError(`Thời gian chạy (${finalWindowStart}) đã nhỏ hơn thời gian hiện tại (${currentTimeStr}). Vui lòng chọn giờ trong tương lai!`);
+      setError(`Scheduled time (${finalWindowStart}) is earlier than current time (${currentTimeStr}). Please choose a future time!`);
       return;
     }
 
@@ -173,7 +173,7 @@ export const ReminderModal: React.FC<Props> = ({
         resetRunCount: true
       });
     } catch (err: any) {
-      setError(err.message || 'Lỗi khi lưu cấu hình');
+      setError(err.message || 'Error saving reminder configuration');
     }
   };
 
@@ -195,13 +195,13 @@ export const ReminderModal: React.FC<Props> = ({
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
           <div className="space-y-1.5">
-            <Label htmlFor="title" className="text-xs font-medium">Tiêu đề</Label>
+            <Label htmlFor="title" className="text-xs font-medium">Title</Label>
             <Input
               id="title"
               required
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              placeholder="e.g. Nhắc việc hàng ngày"
+              placeholder="e.g. Daily standup reminder"
               className="h-9 text-xs"
             />
           </div>
@@ -214,7 +214,7 @@ export const ReminderModal: React.FC<Props> = ({
                   onClick={() => setTargetThreadId(defaultTargetThread)}
                   className="text-[10px] text-muted-foreground hover:text-foreground underline underline-offset-2"
                 >
-                  Dùng theo cấu hình chung
+                  Use default thread
                 </button>
               )}
             </div>
@@ -222,19 +222,19 @@ export const ReminderModal: React.FC<Props> = ({
               id="target"
               value={targetThreadId}
               onChange={(e) => setTargetThreadId(e.target.value)}
-              placeholder={defaultTargetThread ? `Mặc định: ${defaultTargetThread}` : "e.g. 1000123456789"}
+              placeholder={defaultTargetThread ? `Default: ${defaultTargetThread}` : "e.g. 1000123456789"}
               className="font-mono text-xs h-9"
             />
             {defaultTargetThread && (
               <p className="text-[10px] text-muted-foreground">
-                ✓ Tự động dùng theo Target Thread chung nếu để trống.
+                ✓ Defaults to shared Target Thread if left blank.
               </p>
             )}
           </div>
         </div>
 
         <div className="space-y-1.5">
-          <Label className="text-xs font-medium">Hành động</Label>
+          <Label className="text-xs font-medium">Action Type</Label>
           <div className="grid grid-cols-4 gap-2">
             {actionTypes.map(type => (
               <Button
@@ -253,7 +253,7 @@ export const ReminderModal: React.FC<Props> = ({
 
         {actionType !== 'MESSAGE' && (
           <div className="flex items-center justify-between p-2.5 bg-muted/30 rounded-lg border">
-            <Label htmlFor="duration" className="text-xs font-medium">Thời lượng chuông</Label>
+            <Label htmlFor="duration" className="text-xs font-medium">Ringing Duration</Label>
             <div className="flex items-center gap-1.5">
               <Input
                 id="duration"
@@ -264,7 +264,7 @@ export const ReminderModal: React.FC<Props> = ({
                 onChange={(e) => setCallDurationSeconds(Number(e.target.value))}
                 className="w-16 bg-background text-center font-mono h-8 text-xs"
               />
-              <span className="text-xs text-muted-foreground font-medium">giây</span>
+              <span className="text-xs text-muted-foreground font-medium">seconds</span>
             </div>
           </div>
         )}
@@ -278,7 +278,7 @@ export const ReminderModal: React.FC<Props> = ({
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
               <div className="flex items-center gap-1.5 flex-wrap">
                 <Label htmlFor="content" className="text-xs sm:text-sm font-semibold cursor-pointer text-foreground">
-                  {aiGenerateMessage ? 'Mô tả / Prompt tin nhắn cho AI' : 'Nội dung tin nhắn'}
+                  {aiGenerateMessage ? 'Prompt / Description for AI' : 'Message Content'}
                 </Label>
                 {aiGenerateMessage && (
                   <Badge variant="outline" className="text-[10px] px-2 py-0 h-4.5 gap-1 font-medium border-purple-500/40 text-purple-600 dark:text-purple-400 bg-purple-500/10">
@@ -289,7 +289,7 @@ export const ReminderModal: React.FC<Props> = ({
               <div className="flex items-center gap-2 self-start sm:self-auto pt-0.5 sm:pt-0">
                 <Label htmlFor="ai-gen-toggle" className="text-xs sm:text-[11px] font-medium text-muted-foreground flex items-center gap-1.5 cursor-pointer hover:text-foreground transition-colors">
                   <Sparkles className="w-3.5 h-3.5 text-purple-500" />
-                  <span>Dùng AI sinh</span>
+                  <span>Generate with AI</span>
                 </Label>
                 <Switch
                   id="ai-gen-toggle"
@@ -308,19 +308,19 @@ export const ReminderModal: React.FC<Props> = ({
               onChange={(e) => setContent(e.target.value)}
               placeholder={
                 aiGenerateMessage
-                  ? "Ví dụ: Nhắc bạn ấy đi ngủ bằng giọng điệu trêu đùa, cute, xưng hô anh - em, thêm icon dễ thương..."
-                  : "Nhập nội dung tin nhắn gửi..."
+                  ? "e.g. Remind them to sleep with a warm, cute, playful tone and friendly emojis..."
+                  : "Enter message content to send..."
               }
               className="resize-y min-h-[75px] text-xs sm:text-xs bg-background focus-visible:ring-purple-500/30"
             />
 
             {aiGenerateMessage && (
               <div className="flex flex-wrap gap-1.5 pt-0.5">
-                <span className="text-[10px] text-muted-foreground self-center mr-0.5">Gợi ý prompt:</span>
+                <span className="text-[10px] text-muted-foreground self-center mr-0.5">Prompt suggestions:</span>
                 {[
-                  'Cute, trêu đùa, xưng hô anh - em',
-                  'Nhẹ nhàng, quan tâm tình cảm',
-                  'Hài hước, lầy lội, năng lượng'
+                  'Cute, playful, affectionate',
+                  'Gentle, caring & warm',
+                  'Humorous, funny & energetic'
                 ].map((sug, idx) => (
                   <button
                     key={idx}
@@ -337,7 +337,7 @@ export const ReminderModal: React.FC<Props> = ({
             <div className="flex justify-between items-center pt-0.5">
               {aiGenerateMessage ? (
                 <p className="text-[11px] text-muted-foreground leading-tight flex items-center gap-1">
-                  <span>Mỗi lần chạy, AI sẽ tự sinh tin nhắn mới mẻ dựa trên mô tả này và văn phong hiện tại.</span>
+                  <span>Each run, AI generates a fresh message based on this prompt and the active persona.</span>
                 </p>
               ) : (
                 <span />
@@ -353,10 +353,10 @@ export const ReminderModal: React.FC<Props> = ({
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Label htmlFor="repeat-toggle" className="text-xs font-semibold cursor-pointer">
-                Lặp lại
+                Repeat
               </Label>
               <Badge variant={isRepeat ? "info" : "secondary"} className="text-[10px] px-1.5 py-0 h-4 font-medium">
-                {isRepeat ? 'Bật' : 'Tắt (Chạy 1 lần)'}
+                {isRepeat ? 'Enabled' : 'Disabled (Once)'}
               </Badge>
             </div>
             <Switch
@@ -367,10 +367,10 @@ export const ReminderModal: React.FC<Props> = ({
           </div>
 
           {!isRepeat ? (
-            /* Chạy 1 lần: Chọn Ngày & Giờ chạy */
+            /* Single run: Date & Time */
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1 border-t">
               <div className="space-y-1.5">
-                <Label className="text-xs font-medium">Ngày chạy</Label>
+                <Label className="text-xs font-medium">Scheduled Date</Label>
                 <DatePicker
                   value={targetDate}
                   onChange={setTargetDate}
@@ -378,7 +378,7 @@ export const ReminderModal: React.FC<Props> = ({
                 />
               </div>
               <div className="space-y-1.5">
-                <Label className="text-xs font-medium">Giờ chạy</Label>
+                <Label className="text-xs font-medium">Scheduled Time</Label>
                 <TimePicker
                   value={runTime}
                   onChange={setRunTime}
@@ -388,12 +388,12 @@ export const ReminderModal: React.FC<Props> = ({
               </div>
             </div>
           ) : (
-            /* Lặp lại: Khung giờ + Khoảng cách + Số lần lặp max */
+            /* Repeat: Time window + Interval + Max runs */
             <div className="space-y-3 pt-1 border-t">
-              {/* Khung giờ */}
+              {/* Time window */}
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between">
-                  <Label className="text-xs font-medium">Khung giờ chạy</Label>
+                  <Label className="text-xs font-medium">Active Time Window</Label>
                   <Button
                     type="button"
                     variant="ghost"
@@ -401,12 +401,12 @@ export const ReminderModal: React.FC<Props> = ({
                     className="h-5 text-[11px] px-1.5 font-medium text-primary hover:text-primary hover:bg-primary/10"
                     onClick={() => { setWindowStart('00:00'); setWindowEnd('23:59'); }}
                   >
-                    Cả ngày (00:00 - 23:59)
+                    All Day (00:00 - 23:59)
                   </Button>
                 </div>
                 <div className="grid grid-cols-2 gap-2.5">
                   <div className="space-y-1">
-                    <span className="text-[11px] text-muted-foreground font-medium">Bắt đầu</span>
+                    <span className="text-[11px] text-muted-foreground font-medium">Start</span>
                     <TimePicker
                       value={windowStart}
                       onChange={setWindowStart}
@@ -414,7 +414,7 @@ export const ReminderModal: React.FC<Props> = ({
                     />
                   </div>
                   <div className="space-y-1">
-                    <span className="text-[11px] text-muted-foreground font-medium">Kết thúc</span>
+                    <span className="text-[11px] text-muted-foreground font-medium">End</span>
                     <TimePicker
                       value={windowEnd}
                       onChange={setWindowEnd}
@@ -424,11 +424,11 @@ export const ReminderModal: React.FC<Props> = ({
                 </div>
               </div>
 
-              {/* Tần suất lặp & Số lần tối đa */}
+              {/* Repeat Interval & Max Runs */}
               <div className="grid grid-cols-2 gap-2.5">
                 <div className="space-y-1">
                   <Label htmlFor="interval" className="text-xs font-medium">
-                    Mỗi lần cách nhau
+                    Repeat Interval
                   </Label>
                   <div className="flex items-center gap-1.5">
                     <Input
@@ -440,13 +440,13 @@ export const ReminderModal: React.FC<Props> = ({
                       onChange={(e) => setIntervalMinutes(Math.max(1, Number(e.target.value) || 1))}
                       className="font-mono text-xs text-center bg-background h-9"
                     />
-                    <span className="text-xs text-muted-foreground shrink-0 font-medium">phút</span>
+                    <span className="text-xs text-muted-foreground shrink-0 font-medium">mins</span>
                   </div>
                 </div>
 
                 <div className="space-y-1">
                   <Label htmlFor="maxRuns" className="text-xs font-medium">
-                    Số lần lặp max
+                    Max Runs
                   </Label>
                   <div className="flex items-center gap-1.5">
                     <Input
@@ -456,28 +456,28 @@ export const ReminderModal: React.FC<Props> = ({
                       max={9999}
                       value={maxRuns}
                       onChange={(e) => setMaxRuns(Math.max(0, parseInt(e.target.value, 10) || 0))}
-                      placeholder="0 = vô hạn"
+                      placeholder="0 = unlimited"
                       className="font-mono text-xs text-center bg-background h-9"
                     />
-                    <span className="text-xs text-muted-foreground shrink-0 font-medium">lần</span>
+                    <span className="text-xs text-muted-foreground shrink-0 font-medium">runs</span>
                   </div>
                 </div>
               </div>
 
-              {/* Chế độ gọi dậy (Wake-up Alarm) */}
+              {/* Wake-up mode */}
               <div className="pt-2.5 border-t flex items-start justify-between gap-3">
                 <div className="space-y-0.5">
                   <div className="flex items-center gap-1.5">
                     <AlarmClock className="w-3.5 h-3.5 text-amber-500" />
                     <Label htmlFor="wake-up-mode" className="text-xs font-semibold cursor-pointer">
-                      Chế độ gọi dậy
+                      Wake-up Alarm Mode
                     </Label>
                     <Badge variant={wakeUpMode ? "warning" : "secondary"} className="text-[10px] px-1.5 py-0 h-4 font-medium">
-                      {wakeUpMode ? 'Bật' : 'Tắt'}
+                      {wakeUpMode ? 'On' : 'Off'}
                     </Badge>
                   </div>
                   <p className="text-[11px] text-muted-foreground leading-tight">
-                    Tự động dừng lặp khi khách nghe máy, tắt máy hoặc gửi tin nhắn lại.
+                    Auto-stops repeating when recipient answers, hangs up, or replies with a message.
                   </p>
                 </div>
                 <Switch
@@ -497,7 +497,7 @@ export const ReminderModal: React.FC<Props> = ({
             onCheckedChange={setActive}
           />
           <Label htmlFor="active" className="text-xs font-medium cursor-pointer">
-            Kích hoạt ngay (Active)
+            Active immediately
           </Label>
         </div>
       </div>
@@ -511,9 +511,9 @@ export const ReminderModal: React.FC<Props> = ({
         onOpenAutoFocus={(e) => e.preventDefault()}
       >
         <DialogHeader className="px-5 py-3.5 sm:px-6 sm:py-4 border-b shrink-0 text-left space-y-1">
-          <DialogTitle className="text-base font-semibold">{initialData ? 'Sửa cấu hình' : 'Tạo nhắc nhở mới'}</DialogTitle>
+          <DialogTitle className="text-base font-semibold">{initialData ? 'Edit Reminder' : 'Create New Reminder'}</DialogTitle>
           <DialogDescription className="text-xs text-muted-foreground">
-            Thiết lập tin nhắn, cuộc gọi và lịch trình gửi tự động.
+            Configure messages, calls, and automated dispatch schedules.
           </DialogDescription>
         </DialogHeader>
         <div className="overflow-y-auto flex-1 min-h-0">
@@ -521,10 +521,10 @@ export const ReminderModal: React.FC<Props> = ({
         </div>
         <DialogFooter className="px-5 py-3 sm:px-6 sm:py-3.5 shrink-0 border-t flex-col sm:flex-row gap-2 sm:gap-0">
           <Button type="button" variant="outline" onClick={onClose} disabled={loading} className="w-full sm:w-20 text-xs h-9">
-            Hủy
+            Cancel
           </Button>
           <Button type="submit" form="reminder-form" disabled={loading} className="w-full sm:w-auto text-xs h-9 font-medium">
-            {loading ? 'Đang lưu...' : initialData ? 'Lưu thay đổi' : 'Tạo nhắc nhở'}
+            {loading ? 'Saving...' : initialData ? 'Save Changes' : 'Create Reminder'}
           </Button>
         </DialogFooter>
       </DialogContent>

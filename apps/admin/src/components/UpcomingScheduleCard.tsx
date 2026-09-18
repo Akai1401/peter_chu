@@ -62,11 +62,11 @@ export const UpcomingScheduleCard: React.FC<Props> = ({
             <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center text-muted-foreground">
               <CalendarClock className="w-4 h-4" />
             </div>
-            <span className="font-semibold text-foreground">Không có lịch chạy sắp tới</span>
+            <span className="font-semibold text-foreground">No upcoming schedules</span>
             <p className="text-[11px] text-muted-foreground">
               {activeReminders.length === 0
-                ? 'Tất cả nhắc nhở đang tạm dừng. Bấm Start để kích hoạt lịch chạy.'
-                : 'Đã lên lịch nhưng chưa đến khung giờ chạy tiếp theo.'}
+                ? 'All reminders are paused. Enable reminders or start engine.'
+                : 'Reminders scheduled, but no slots are due in the current window.'}
             </p>
           </div>
         ) : (

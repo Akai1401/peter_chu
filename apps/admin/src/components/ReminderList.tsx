@@ -131,7 +131,7 @@ export const ReminderList: React.FC<Props> = ({
               const handleToggleClick = () => {
                 if (isPastDue && !reminder.active) {
                   onNotify?.(
-                    `Không thể kích hoạt: Lịch chạy (${reminder.windowStart}) đã quá thời gian hiện tại. Vui lòng chọn thời gian mới!`,
+                    `Cannot activate: Schedule (${reminder.windowStart}) is past due. Please select a new time!`,
                     'warning'
                   );
                   onEdit(reminder);
@@ -161,14 +161,14 @@ export const ReminderList: React.FC<Props> = ({
                             variant="outline"
                             className="text-[10px] px-1.5 py-0 shrink-0 border-destructive/40 text-destructive bg-destructive/10 font-semibold"
                           >
-                            Đã quá giờ
+                            Past Due
                           </Badge>
                         ) : isCompleted ? (
                           <Badge
                             variant="outline"
                             className="text-[10px] px-1.5 py-0 shrink-0 border-amber-500/30 text-amber-600 bg-amber-500/10 font-semibold"
                           >
-                            Done ({reminder.runCount || 0}/{reminder.maxRuns})
+                            Done ({reminder.runCount || 0}/${reminder.maxRuns})
                           </Badge>
                         ) : (
                           <Badge
@@ -201,7 +201,7 @@ export const ReminderList: React.FC<Props> = ({
                         {reminder.wakeUpMode && (
                           <Badge variant="warning" className="text-[10px] gap-1 px-1.5 py-0 font-medium">
                             <AlarmClock className="w-3 h-3" />
-                            Gọi dậy
+                            Wake-up
                           </Badge>
                         )}
                         {reminder.aiGenerateMessage && (
@@ -230,7 +230,7 @@ export const ReminderList: React.FC<Props> = ({
                             reminder.active
                               ? 'Pause Schedule'
                               : isPastDue
-                              ? 'Lịch chạy đã quá giờ. Bấm để sửa giờ mới.'
+                              ? 'Schedule is past due. Click to select a new time.'
                               : isCompleted
                               ? 'Restart Schedule (Run count resets to 0)'
                               : 'Start Schedule'
@@ -364,9 +364,9 @@ export const ReminderList: React.FC<Props> = ({
                     )}>
                       <Clock className={cn("h-3 w-3 shrink-0", isPastDue && "text-destructive")} />
                       {reminder.maxRuns === 1 || reminder.windowStart === reminder.windowEnd ? (
-                        <span>{reminder.windowStart} (1 lần){isPastDue ? ' - Đã quá giờ' : ''}</span>
+                        <span>{reminder.windowStart} (Once){isPastDue ? ' - Past Due' : ''}</span>
                       ) : (
-                        <span>{reminder.windowStart}–{reminder.windowEnd} ({reminder.intervalMinutes}m){isPastDue ? ' - Đã quá giờ' : ''}</span>
+                        <span>{reminder.windowStart}–{reminder.windowEnd} ({reminder.intervalMinutes}m){isPastDue ? ' - Past Due' : ''}</span>
                       )}
                     </div>
                     {Boolean(reminder.targetDate) && (
@@ -381,7 +381,7 @@ export const ReminderList: React.FC<Props> = ({
                     {Boolean(reminder.maxRuns && reminder.maxRuns > 0) && (
                       <div className="flex items-center gap-1 border px-2 py-1 rounded-md bg-muted whitespace-nowrap">
                         <Repeat className="h-3 w-3 shrink-0" />
-                        <span>{reminder.runCount || 0}/{reminder.maxRuns} {reminder.maxRuns === 1 ? 'lần' : 'runs'}</span>
+                        <span>{reminder.runCount || 0}/{reminder.maxRuns} {reminder.maxRuns === 1 ? 'run' : 'runs'}</span>
                         {isCompleted && (
                           <span className="text-[10px] text-amber-500 font-semibold ml-1">(Done)</span>
                         )}

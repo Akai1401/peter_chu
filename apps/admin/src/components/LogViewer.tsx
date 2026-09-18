@@ -50,38 +50,40 @@ export const LogViewer: React.FC<Props> = ({
     setExpandedId(expandedId === id ? null : id);
   };
 
-  // 1. Phân loại Tin nhắn & AI: Tự động gom & khử trùng lặp
-  // Nếu 1 tin nhắn đến đã có log phản hồi của AI (AI Reply), ẩn log tin nhắn đến đơn lẻ đi
+  // 1. Message & AI Classification: Auto-group & deduplicate
+  // If an incoming message already has an AI Reply log, avoid redundant duplicate cards
   const messagesLogs = useMemo(() => {
+    // Collect all incoming messages that have been responded to by AI
     const aiRepliedIncomingTexts = new Set<string>();
-
-    executionLogs.forEach((l) => {
-      const details = (l.details || {}) as any;
-      if (l.reminderId === 'ai_auto_reply' || details.actionType === 'AI_REPLY') {
-        const text = details.incomingMessage || '';
-        if (text) aiRepliedIncomingTexts.add(text.trim());
+    for (const log of executionLogs) {
+      const details = (log.details || {}) as any;
+      if (details.actionType === 'AI_REPLY' && details.incomingMessage) {
+        aiRepliedIncomingTexts.add(String(details.incomingMessage).trim());
       }
-    });
+    }
 
     return executionLogs.filter((log) => {
       const details = (log.details || {}) as any;
+
       const isAiReply =
         log.reminderId === 'ai_auto_reply' ||
         details.actionType === 'AI_REPLY' ||
         details.actionType === 'AI_REPLY_ERROR' ||
         details.actionType === 'AI_REPLY_SEND_ERROR' ||
         log.messagePreview.includes('[AI Reply]') ||
+        log.messagePreview.includes('[AI Error]') ||
         log.messagePreview.includes('[AI Lỗi]');
 
       const isIncoming =
         log.reminderId === 'incoming_message' ||
         details.actionType === 'INCOMING_MESSAGE' ||
+        log.messagePreview.includes('[Incoming Message]') ||
         log.messagePreview.includes('[Tin nhắn đến]');
 
       if (isAiReply) return true;
       if (isIncoming) {
         const text = (details.incomingMessage || '').trim();
-        // Nếu tin nhắn này đã có câu trả lời AI ngay phía trên, không hiển thị thẻ trùng
+        // If this message already has an AI reply log, hide duplicate standalone incoming card
         if (text && aiRepliedIncomingTexts.has(text)) {
           return false;
         }
@@ -91,8 +93,8 @@ export const LogViewer: React.FC<Props> = ({
     });
   }, [executionLogs]);
 
-  // 2. Phân loại Lịch nhắc nhở (Execution Logs thuần tuý):
-  // LOẠI BỎ hoàn toàn tin nhắn đến và AI reply để không bị trùng với Tab 1
+  // 2. Scheduled Reminders (Pure Execution Logs):
+  // Exclude incoming messages and AI replies so they don't duplicate with Tab 1
   const scheduledExecutionLogs = useMemo(() => {
     return executionLogs.filter((log) => {
       const details = (log.details || {}) as any;
@@ -104,7 +106,9 @@ export const LogViewer: React.FC<Props> = ({
         details.actionType === 'AI_REPLY_ERROR' ||
         details.actionType === 'AI_REPLY_SEND_ERROR' ||
         log.messagePreview.includes('[Tin nhắn đến]') ||
+        log.messagePreview.includes('[Incoming Message]') ||
         log.messagePreview.includes('[AI Reply]') ||
+        log.messagePreview.includes('[AI Error]') ||
         log.messagePreview.includes('[AI Lỗi]');
 
       return !isAiOrIncoming;
@@ -188,7 +192,7 @@ export const LogViewer: React.FC<Props> = ({
     if (action === 'INCOMING_MESSAGE_RECEIVED') {
       return (
         <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4.5 gap-1 font-medium text-sky-700 border-sky-200 bg-sky-50 dark:text-sky-300 dark:bg-sky-950/40 dark:border-sky-800">
-          <MessageSquare className="w-2.5 h-2.5" /> Tin nhắn đến
+          <MessageSquare className="w-2.5 h-2.5" /> Incoming Msg
         </Badge>
       );
     }
@@ -209,7 +213,7 @@ export const LogViewer: React.FC<Props> = ({
     if (action === 'INCOMING_MESSAGE_CHECK') {
       return (
         <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4.5 gap-1 font-medium text-emerald-700 border-emerald-200 bg-emerald-50 dark:text-emerald-300 dark:bg-emerald-950/40 dark:border-emerald-800">
-          <RefreshCw className="w-2.5 h-2.5" /> Quét tin nhắn
+          <RefreshCw className="w-2.5 h-2.5" /> Inbox Scan
         </Badge>
       );
     }
@@ -241,7 +245,7 @@ export const LogViewer: React.FC<Props> = ({
             </div>
             <div>
               <CardTitle className="text-base font-semibold tracking-tight">System Logs</CardTitle>
-              <p className="text-[11px] text-muted-foreground mt-0.5">Giám sát tin nhắn khách, phản hồi AI & lịch trình nhắc nhở</p>
+              <p className="text-[11px] text-muted-foreground mt-0.5">Monitor customer messages, AI replies & reminder executions</p>
             </div>
           </div>
 
@@ -253,8 +257,8 @@ export const LogViewer: React.FC<Props> = ({
               onClick={() => setTab('messages')}
               className="h-7 text-xs px-3 gap-1.5 font-medium transition-all"
             >
-              <Sparkles className="w-3 h-3 text-purple-400" />
-              <span>Tin nhắn & AI ({messagesLogs.length})</span>
+              <Sparkles className="w-3 h-3" />
+              <span>Messages & AI ({messagesLogs.length})</span>
             </Button>
 
             <Button
@@ -264,7 +268,7 @@ export const LogViewer: React.FC<Props> = ({
               className="h-7 text-xs px-3 gap-1.5 font-medium transition-all"
             >
               <Clock className="w-3 h-3" />
-              <span>Lịch nhắc nhở ({scheduledExecutionLogs.length})</span>
+              <span>Reminders ({scheduledExecutionLogs.length})</span>
             </Button>
 
             <Button
@@ -285,7 +289,7 @@ export const LogViewer: React.FC<Props> = ({
             <Filter className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
             <Input
               type="text"
-              placeholder="Tìm kiếm log..."
+              placeholder="Search logs..."
               value={filterText}
               onChange={(e) => setFilterText(e.target.value)}
               className="pl-8 h-8 text-xs bg-background"
@@ -298,7 +302,7 @@ export const LogViewer: React.FC<Props> = ({
             onClick={handleRefresh}
             disabled={loading || isRefreshing}
             className="shrink-0 h-8 w-8 shadow-none border-border"
-            title="Tải lại nhật ký"
+            title="Refresh logs"
           >
             <RefreshCw className={`h-3.5 w-3.5 ${loading || isRefreshing ? 'animate-spin text-primary' : ''}`} />
           </Button>
@@ -308,16 +312,16 @@ export const LogViewer: React.FC<Props> = ({
       <CardContent className="pt-4">
         <div className="max-h-[520px] overflow-y-auto pr-1 pb-1">
           <div className="space-y-2.5">
-            {/* ── TAB 1: TIN NHẮN & AI ── */}
+            {/* ── TAB 1: MESSAGES & AI ── */}
             {tab === 'messages' && (
               filteredMessagesLogs.length === 0 ? (
                 <div className="py-14 px-4 text-center bg-muted/20 rounded-lg border border-dashed border-border flex flex-col items-center justify-center gap-2">
                   <div className="w-10 h-10 rounded-full bg-muted border border-border flex items-center justify-center text-muted-foreground">
                     <MessageSquare className="w-5 h-5" />
                   </div>
-                  <h4 className="text-sm font-semibold text-foreground">Chưa có tin nhắn khách nào</h4>
+                  <h4 className="text-sm font-semibold text-foreground">No customer messages yet</h4>
                   <p className="text-xs text-muted-foreground max-w-sm leading-relaxed">
-                    Khi khách hàng gửi tin nhắn tới tài khoản Messenger, hệ thống sẽ ghi nhận và Gemini AI sẽ tự động phản hồi tại đây.
+                    When customers message your Messenger account, incoming messages and Gemini AI responses will appear here.
                   </p>
                 </div>
               ) : (
@@ -328,7 +332,7 @@ export const LogViewer: React.FC<Props> = ({
                   const isError = log.status === 'FAILED' || Boolean(details.error);
                   const incomingText = details.incomingMessage || '';
                   const replyText = details.replyContent || '';
-                  const sender = details.senderName || 'Khách Messenger';
+                  const sender = details.senderName || 'Messenger Contact';
                   const threadClean = formatThreadDisplay(log.threadId);
 
                   return (
@@ -352,21 +356,21 @@ export const LogViewer: React.FC<Props> = ({
                               {/* Status badge */}
                               {isError ? (
                                 <Badge variant="destructive" className="text-[10px] px-1.5 py-0 h-4.5 font-semibold">
-                                  Lỗi phản hồi
+                                  Reply Error
                                 </Badge>
                               ) : isAiReply ? (
                                 <Badge
                                   variant="outline"
                                   className="text-[10px] px-2 py-0 h-4.5 gap-1 font-semibold text-purple-700 border-purple-300 bg-purple-50 dark:text-purple-300 dark:bg-purple-950/50 dark:border-purple-700"
                                 >
-                                  <Sparkles className="w-2.5 h-2.5 text-purple-500" /> AI Phản hồi
+                                  <Sparkles className="w-2.5 h-2.5 text-purple-500" /> AI Reply
                                 </Badge>
                               ) : (
                                 <Badge
                                   variant="outline"
                                   className="text-[10px] px-2 py-0 h-4.5 font-medium text-muted-foreground border-border bg-muted/30"
                                 >
-                                  Chỉ ghi nhận
+                                  Logged Only
                                 </Badge>
                               )}
 
@@ -389,7 +393,7 @@ export const LogViewer: React.FC<Props> = ({
 
                               {/* Context History Count Pill */}
                               {details.contextMessagesCount > 0 && (
-                                <span className="text-[10px] font-mono text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/40 px-1.5 py-0.5 rounded border border-emerald-200 dark:border-emerald-800" title={`Đã đọc và hiểu ${details.contextMessagesCount} tin nhắn trước đó`}>
+                                <span className="text-[10px] font-mono text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/40 px-1.5 py-0.5 rounded border border-emerald-200 dark:border-emerald-800" title={`Read and understood ${details.contextMessagesCount} previous messages`}>
                                   {details.contextMessagesCount} ctx
                                 </span>
                               )}
@@ -407,7 +411,7 @@ export const LogViewer: React.FC<Props> = ({
                             <div className="flex flex-col sm:flex-row sm:items-start gap-1 sm:gap-2 text-xs">
                               <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground shrink-0 sm:w-12 pt-0 sm:pt-1 select-none flex items-center gap-1">
                                 <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground/60" />
-                                Khách:
+                                User:
                               </span>
                               <div className="bg-muted/50 dark:bg-muted/30 text-foreground px-3.5 py-2 rounded-2xl rounded-tl-xs sm:rounded-tl-2xl border border-border/60 max-w-full sm:max-w-[90%] leading-relaxed text-xs">
                                 {incomingText || log.messagePreview}
@@ -430,7 +434,7 @@ export const LogViewer: React.FC<Props> = ({
                             {!isAiReply && !isError && (
                               <div className="text-[11px] text-muted-foreground flex items-center gap-1.5 pt-0.5 pl-1 sm:pl-14">
                                 <span className="w-1.5 h-1.5 rounded-full bg-slate-400" />
-                                <span>Chế độ AI Auto-Reply đang Tắt (chỉ ghi nhận tin nhắn)</span>
+                                <span>AI Auto-Reply is Disabled (logged only)</span>
                               </div>
                             )}
 
@@ -458,17 +462,17 @@ export const LogViewer: React.FC<Props> = ({
                                 rel="noreferrer"
                                 className="text-primary hover:underline inline-flex items-center gap-1 ml-1"
                               >
-                                <ExternalLink className="w-3 h-3" /> Mở Messenger
+                                <ExternalLink className="w-3 h-3" /> Open in Messenger
                               </a>
                             </div>
                             <div className="text-muted-foreground font-mono text-[11px]">
-                              Thời gian: {log.executedAt}
+                              Time: {log.executedAt}
                             </div>
                           </div>
 
                           {details && (
                             <div>
-                              <span className="text-[11px] font-semibold text-muted-foreground block mb-1 font-mono">Dữ liệu chi tiết:</span>
+                              <span className="text-[11px] font-semibold text-muted-foreground block mb-1 font-mono">Detailed Payload:</span>
                               <pre className="p-2.5 bg-background border border-border rounded-md overflow-x-auto text-[11px] font-mono text-foreground leading-normal">
                                 {JSON.stringify(details, null, 2)}
                               </pre>
@@ -482,16 +486,16 @@ export const LogViewer: React.FC<Props> = ({
               )
             )}
 
-            {/* ── TAB 2: LỊCH NHẮC NHỞ (EXECUTION LOGS) ── */}
+            {/* ── TAB 2: REMINDERS (EXECUTION LOGS) ── */}
             {tab === 'execution' && (
               filteredExecLogs.length === 0 ? (
                 <div className="py-14 text-center text-sm font-medium text-muted-foreground bg-muted/20 rounded-lg border border-dashed border-border flex flex-col items-center justify-center gap-2">
                   <div className="w-10 h-10 rounded-full bg-muted border border-border flex items-center justify-center text-muted-foreground">
                     <Clock className="w-5 h-5" />
                   </div>
-                  <span>Chưa có lượt gửi nhắc nhở nào được thực thi</span>
+                  <span>No reminder executions recorded yet</span>
                   <p className="text-xs text-muted-foreground max-w-sm">
-                    Khi các lịch nhắc nhở đến giờ chạy hoặc khi bạn bấm "Gửi thử nghiệm", lịch sử thực thi sẽ hiển thị tại đây.
+                    When scheduled reminders trigger or you click "Send Test", execution records will display here.
                   </p>
                 </div>
               ) : (
@@ -537,13 +541,13 @@ export const LogViewer: React.FC<Props> = ({
                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 border-b border-border/60 pb-2">
                             <div><span className="font-semibold text-muted-foreground">Log ID:</span> <span className="font-mono">{log.id}</span></div>
                             <div><span className="font-semibold text-muted-foreground">Thread ID:</span> <span className="font-mono">{log.threadId}</span></div>
-                            <div><span className="font-semibold text-muted-foreground">Thời gian:</span> <span className="font-mono">{log.executedAt}</span></div>
-                            <div><span className="font-semibold text-muted-foreground">Khóa đơn nhiệm:</span> <span className="font-mono truncate block">{log.idempotencyKey}</span></div>
+                            <div><span className="font-semibold text-muted-foreground">Time:</span> <span className="font-mono">{log.executedAt}</span></div>
+                            <div><span className="font-semibold text-muted-foreground">Idempotency Key:</span> <span className="font-mono truncate block">{log.idempotencyKey}</span></div>
                           </div>
 
                           {log.details && (
                             <div>
-                              <span className="text-[11px] font-semibold text-muted-foreground block mb-1 font-mono">Chi tiết:</span>
+                              <span className="text-[11px] font-semibold text-muted-foreground block mb-1 font-mono">Details:</span>
                               <pre className="p-2.5 bg-background border border-border rounded-md overflow-x-auto text-[11px] font-mono text-foreground leading-normal">
                                 {typeof log.details === 'string' ? log.details : JSON.stringify(log.details, null, 2)}
                               </pre>
@@ -564,7 +568,7 @@ export const LogViewer: React.FC<Props> = ({
                   <div className="w-10 h-10 rounded-full bg-muted border border-border flex items-center justify-center text-muted-foreground">
                     <ShieldCheck className="w-5 h-5" />
                   </div>
-                  <span>Không tìm thấy nhật ký kiểm toán nào</span>
+                  <span>No audit logs found</span>
                 </div>
               ) : (
                 filteredAuditLogs.map((log) => {
@@ -614,12 +618,12 @@ export const LogViewer: React.FC<Props> = ({
                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 border-b border-border/60 pb-2">
                             <div><span className="font-semibold text-muted-foreground">ID:</span> <span className="font-mono">{log.id}</span></div>
                             <div><span className="font-semibold text-muted-foreground">Actor:</span> <span className="font-mono">{log.actor}</span></div>
-                            <div><span className="font-semibold text-muted-foreground">Thời gian:</span> <span className="font-mono">{log.timestamp}</span></div>
+                            <div><span className="font-semibold text-muted-foreground">Time:</span> <span className="font-mono">{log.timestamp}</span></div>
                           </div>
 
                           {log.details && (
                             <div>
-                              <span className="text-[11px] font-semibold text-muted-foreground block mb-1 font-mono">Dữ liệu chi tiết:</span>
+                              <span className="text-[11px] font-semibold text-muted-foreground block mb-1 font-mono">Detailed Payload:</span>
                               <pre className="p-2.5 bg-background border border-border rounded-md overflow-x-auto text-[11px] font-mono text-foreground leading-normal">
                                 {typeof log.details === 'string' ? log.details : JSON.stringify(log.details, null, 2)}
                               </pre>

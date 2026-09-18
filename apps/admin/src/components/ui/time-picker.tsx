@@ -165,7 +165,7 @@ export const TimePicker: React.FC<TimePickerProps> = ({
           <div className="flex flex-col">
             <div className="flex items-center justify-between px-1 mb-1">
               <span className="text-[10px] font-semibold uppercase text-muted-foreground">
-                Giờ
+                Hours
               </span>
               <span className="text-xs font-mono font-bold text-primary">
                 {pad(currentHour)}
@@ -177,7 +177,7 @@ export const TimePicker: React.FC<TimePickerProps> = ({
               onClick={() => setHour(currentHour - 1)}
               disabled={hasMin && currentHour <= minH}
               className="h-5 flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-accent rounded mb-0.5 disabled:opacity-25 disabled:cursor-not-allowed"
-              title="Giảm 1 giờ"
+              title="Minus 1 hour"
             >
               <ChevronUp className="h-3.5 w-3.5" />
             </button>
@@ -217,7 +217,7 @@ export const TimePicker: React.FC<TimePickerProps> = ({
               type="button"
               onClick={() => setHour(currentHour + 1)}
               className="h-5 flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-accent rounded mt-0.5"
-              title="Tăng 1 giờ"
+              title="Plus 1 hour"
             >
               <ChevronDown className="h-3.5 w-3.5" />
             </button>
@@ -227,7 +227,7 @@ export const TimePicker: React.FC<TimePickerProps> = ({
           <div className="flex flex-col">
             <div className="flex items-center justify-between px-1 mb-1">
               <span className="text-[10px] font-semibold uppercase text-muted-foreground">
-                Phút
+                Minutes
               </span>
               <span className="text-xs font-mono font-bold text-primary">
                 {pad(currentMinute)}
@@ -239,7 +239,7 @@ export const TimePicker: React.FC<TimePickerProps> = ({
               onClick={() => setMinute(currentMinute - 5)}
               disabled={hasMin && currentHour === minH && currentMinute <= minM}
               className="h-5 flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-accent rounded mb-0.5 disabled:opacity-25 disabled:cursor-not-allowed"
-              title="Giảm 5 phút"
+              title="Minus 5 minutes"
             >
               <ChevronUp className="h-3.5 w-3.5" />
             </button>
@@ -279,7 +279,7 @@ export const TimePicker: React.FC<TimePickerProps> = ({
               type="button"
               onClick={() => setMinute(currentMinute + 5)}
               className="h-5 flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-accent rounded mt-0.5"
-              title="Tăng 5 phút"
+              title="Plus 5 minutes"
             >
               <ChevronDown className="h-3.5 w-3.5" />
             </button>
@@ -289,7 +289,7 @@ export const TimePicker: React.FC<TimePickerProps> = ({
         {/* Direct manual input field */}
         <div className="mt-2 pt-2 border-t flex items-center justify-between gap-2">
           <span className="text-[11px] text-muted-foreground">
-            {hasMin ? `Tối thiểu: ${minTime}` : 'Tự nhập:'}
+            {hasMin ? `Min: ${minTime}` : 'Manual:'}
           </span>
           <input
             type="time"

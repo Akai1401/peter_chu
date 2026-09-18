@@ -67,7 +67,7 @@ export class BotControlService {
       maxIntervalMinutes: 360,
       activeHoursStart: '08:00',
       activeHoursEnd: '22:30',
-      promptGuidance: 'Hỏi thăm bạn bè/khách hàng đang làm gì đó, trêu đùa lầy lội hoặc rủ đi cafe/ăn uống',
+      promptGuidance: 'Ask what friends/contacts are doing, playful banter, or invite for coffee/hangout',
       lastSentAt: null,
       nextScheduledAt: null
     };
@@ -165,7 +165,7 @@ export class BotControlService {
   }): PersonaProfile {
     const id = `persona_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
     const nowIso = new Date().toISOString();
-    const name = data.name.trim() || 'Văn phong mới';
+    const name = data.name.trim() || 'New Persona';
     const makeActive = Boolean(data.makeActive);
 
     if (makeActive) {
@@ -233,7 +233,7 @@ export class BotControlService {
     `).get(id) as any;
 
     if (!existing) {
-      throw new Error(`Không tìm thấy bộ cấu hình văn phong với ID: ${id}`);
+      throw new Error(`Persona profile not found with ID: ${id}`);
     }
 
     const nowIso = new Date().toISOString();
@@ -296,7 +296,7 @@ export class BotControlService {
     `).get(id) as any;
 
     if (!existing) {
-      throw new Error(`Không tìm thấy bộ cấu hình văn phong với ID: ${id}`);
+      throw new Error(`Persona profile not found with ID: ${id}`);
     }
 
     const nowIso = new Date().toISOString();
@@ -307,7 +307,7 @@ export class BotControlService {
     try {
       parsedPersona = JSON.parse(existing.persona);
     } catch {
-      throw new Error('Dữ liệu văn phong trong bộ cấu hình này không hợp lệ');
+      throw new Error('Persona data in this profile is invalid');
     }
 
     this.db.prepare(`
@@ -397,7 +397,7 @@ export class BotControlService {
     } else if (persona && !activeProfile) {
       // Auto-create a profile
       const newId = `persona_${Date.now()}`;
-      const newName = persona.styleSummary ? `Văn phong ${persona.tone || 'cá nhân'}` : 'Văn phong mặc định';
+      const newName = persona.styleSummary ? `Persona ${persona.tone || 'Personal'}` : 'Default Persona';
       this.db.prepare(`
         INSERT INTO persona_profiles (id, name, persona, source_thread, is_active, created_at, updated_at)
         VALUES (?, ?, ?, ?, 1, ?, ?)
@@ -447,7 +447,7 @@ export class BotControlService {
     if (action === 'START' || action === 'RESTART') {
       const currentState = this.getBotState();
       if (currentState.sessionStatus !== 'LOGGED_IN') {
-        throw new Error('Không thể khởi động hệ thống: Messenger chưa kết nối. Vui lòng kết nối Messenger trước.');
+        throw new Error('Cannot start system: Messenger is not connected. Please connect Messenger first.');
       }
     }
 
@@ -588,7 +588,7 @@ export class BotControlService {
       maxIntervalMinutes: 360,
       activeHoursStart: '08:00',
       activeHoursEnd: '22:30',
-      promptGuidance: 'Hỏi thăm bạn bè/khách hàng đang làm gì đó, trêu đùa lầy lội hoặc rủ đi cafe/ăn uống',
+      promptGuidance: 'Check in with friends or contacts on what they are up to, share friendly banter, or suggest hanging out for coffee/meals',
       lastSentAt: null,
       nextScheduledAt: null
     };
@@ -634,7 +634,7 @@ export class BotControlService {
     this.db.prepare(`
       INSERT INTO test_dispatch_queue (id, reminder_id, target_thread_id, content, action_type, status)
       VALUES (?, ?, ?, ?, 'PROACTIVE_TEST', 'PENDING')
-    `).run(jobId, 'proactive-test', target, config.promptGuidance || 'Hỏi thăm đang làm gì hoặc trêu đùa');
+    `).run(jobId, 'proactive-test', target, config.promptGuidance || 'Ask what they are doing or playful banter');
 
     this.logService.logAudit('PROACTIVE_TEST_TRIGGERED', actor, {
       jobId,

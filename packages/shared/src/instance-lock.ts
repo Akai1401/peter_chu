@@ -66,15 +66,15 @@ export function acquireProcessLock(options: {
         // Another active instance is running!
         const border = '='.repeat(68);
         console.error(`\n${border}`);
-        console.error(`❌ [LỖI] ${options.serviceTitle.toUpperCase()} ĐÃ ĐANG CHẠY Ở NƠI KHÁC TRÊN MÁY NÀY!`);
+        console.error(`❌ [ERROR] ${options.serviceTitle.toUpperCase()} IS ALREADY RUNNING ELSEWHERE ON THIS MACHINE!`);
         console.error('-'.repeat(68));
-        console.error(`  • Tiến trình đang chạy : PID ${info.pid}`);
-        console.error(`  • Thời gian khởi chạy  : ${info.startedAt}`);
-        console.error(`  • Thư mục thực thi     : ${info.cwd}`);
-        console.error(`  • File khóa (Lockfile) : ${lockPath}`);
+        console.error(`  • Running Process PID : ${info.pid}`);
+        console.error(`  • Started At          : ${info.startedAt}`);
+        console.error(`  • Working Directory   : ${info.cwd}`);
+        console.error(`  • Lockfile            : ${lockPath}`);
         console.error('-'.repeat(68));
-        console.error(`👉 Bạn không thể khởi chạy thêm phiên bản mới khi phiên bản cũ còn hoạt động.`);
-        console.error(`👉 Vui lòng tắt terminal đang chạy hoặc gõ: kill ${info.pid}`);
+        console.error(`👉 You cannot launch another instance while an existing instance is active.`);
+        console.error(`👉 Please terminate the active terminal or run: kill ${info.pid}`);
         console.error(`${border}\n`);
 
         if (options.autoExitOnConflict !== false) {

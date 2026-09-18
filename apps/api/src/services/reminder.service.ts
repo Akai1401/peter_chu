@@ -150,7 +150,7 @@ export class ReminderService {
       targetThreadId = this.getGlobalTargetThread();
     }
     if (!targetThreadId) {
-      throw new Error('Vui lòng nhập Target Thread ID hoặc cấu hình Target Thread chung trước!');
+      throw new Error('Please enter Target Thread ID or configure shared Target Thread first!');
     }
 
     const stmt = this.db.prepare(`
@@ -276,7 +276,7 @@ export class ReminderService {
     if (nextActive) {
       const isPastDue = isSchedulePastDue(existing.targetDate, existing.windowEnd, existing.maxRuns, existing.windowStart);
       if (isPastDue) {
-        throw new Error(`Lịch chạy (${existing.windowStart}) đã quá thời gian hiện tại. Vui lòng chọn thời gian mới!`);
+        throw new Error(`Schedule (${existing.windowStart}) is past due. Please choose a new time!`);
       }
     }
 
