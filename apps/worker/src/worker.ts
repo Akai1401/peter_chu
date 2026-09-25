@@ -179,6 +179,9 @@ function initWorkerDatabase(dbPath: string): Database.Database {
   try {
     db.exec(`ALTER TABLE bot_state ADD COLUMN persona_updated_at TEXT DEFAULT ''`);
   } catch {}
+  try {
+    db.exec(`ALTER TABLE bot_state ADD COLUMN proactive_chat_config TEXT DEFAULT ''`);
+  } catch {}
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS persona_profiles (

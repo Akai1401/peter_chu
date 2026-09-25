@@ -578,9 +578,17 @@ YÊU CẦU: Áp dụng chuẩn xác cách xưng hô và các từ cửa miệng 
     }
 
     if (contextSnippet && contextSnippet.trim()) {
-      prompt += `\n--- BỐI CẢNH VÀI TIN NHẮN GẦN ĐÂY TRONG HỘI THOẠI ---
+      prompt += `\n--- LỊCH SỬ CÁC TIN NHẮN GẦN ĐÂY TRONG ĐOẠN CHAT ---
 ${contextSnippet}
---- HẾT BỐI CẢNH (Lưu ý: Không lặp lại y hệt câu vừa nhắn trong quá khứ) ---\n`;
+--- NGUYÊN TẮC BẮT BUỘC DỰA TRÊN TIN NHẮN GẦN ĐÂY ---
+1. TRÁNH TRÙNG LẶP Ý CŨ (CỰC KỲ QUAN TRỌNG):
+   • Phân tích kỹ các tin nhắn gần đây để biết đối phương và bạn vừa nói chuyện về những chủ đề gì, đã hỏi câu gì.
+   • TUYỆT ĐỐI KHÔNG lặp lại cùng câu hỏi, cùng ý tưởng, cùng lời chào hoặc cùng câu đùa đã xuất hiện gần đây (ví dụ: nếu các tin gần đây đã hỏi "đang làm gì đấy", "ăn cơm chưa", "dậy chưa", "đi làm chưa" thì CẤM lặp lại cùng câu/ý đó).
+2. TÍNH HỢP LÝ THEO NGỮ CẢNH:
+   • Nếu câu chuyện gần nhất đang dở dang (ví dụ: công việc, đi chơi, thi cử, mệt mỏi, dặn dò...), bạn có thể tiếp nối một cách khéo léo và tự nhiên (ví dụ: "Vụ hôm nọ tính sao rồi?", "Đã đỡ mệt chưa?").
+   • Nếu câu chuyện trước đã kết thúc trọn vẹn từ lâu, hãy mở ra một chủ đề mới mẻ, tự nhiên theo định hướng: "${guidance || 'hỏi thăm, trêu đùa'}".
+   • Giữ câu từ đời thường, gần gũi, đúng xưng hô phong cách cá nhân, không bị giống bot hay gượng gạo.
+--- HẾT NGUYÊN TẮC BỐI CẢNH ---\n`;
     }
 
     const candidateModels = Array.from(new Set([

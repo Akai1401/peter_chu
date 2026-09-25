@@ -33,11 +33,12 @@ function setupTestDb(): Database.Database {
       active_persona_name TEXT DEFAULT '',
       persona_source_thread TEXT DEFAULT '',
       persona_updated_at TEXT DEFAULT '',
+      proactive_chat_config TEXT DEFAULT '',
       last_heartbeat TEXT,
       lock_holder_id TEXT,
       updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
-    INSERT INTO bot_state (id, status, session_status, emergency_stop, dry_run, ai_auto_reply, ai_target_thread, learned_persona, active_persona_id, active_persona_name, persona_source_thread, persona_updated_at) VALUES (1, 'RUNNING', 'LOGGED_IN', 0, 1, 1, '', '', '', '', '', '');
+    INSERT INTO bot_state (id, status, session_status, emergency_stop, dry_run, ai_auto_reply, ai_target_thread, learned_persona, active_persona_id, active_persona_name, persona_source_thread, persona_updated_at, proactive_chat_config) VALUES (1, 'RUNNING', 'LOGGED_IN', 0, 1, 1, '', '', '', '', '', '', '');
 
     CREATE TABLE IF NOT EXISTS persona_profiles (
       id TEXT PRIMARY KEY,
@@ -103,6 +104,19 @@ function setupTestDb(): Database.Database {
       message_text TEXT NOT NULL,
       reply_text TEXT NOT NULL,
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS test_dispatch_queue (
+      id TEXT PRIMARY KEY,
+      reminder_id TEXT,
+      target_thread_id TEXT NOT NULL,
+      content TEXT,
+      action_type TEXT NOT NULL DEFAULT 'MESSAGE',
+      call_duration_seconds INTEGER NOT NULL DEFAULT 30,
+      status TEXT NOT NULL DEFAULT 'PENDING',
+      error TEXT,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      finished_at TEXT
     );
   `);
   return db;
@@ -727,6 +741,77 @@ test('CronRunner - Reschedule: updates time on existing unrun reminder when user
     fs.unlinkSync(TEST_DB);
   }
 });
+
+test('Proactive Chat - reads recent conversation context to avoid repeating and ensure relevance', async () => {
+  const db = setupTestDb();
+
+  // 1. Seed recent conversation history in ai_processed_messages
+  db.prepare(`
+    INSERT INTO ai_processed_messages (id, thread_id, message_text, reply_text, created_at)
+    VALUES ('msg_prev_1', 'thread_proactive_test', 'Hôm nay tớ làm đồ án mệt quá', 'Nghỉ ngơi sớm đi nha', CURRENT_TIMESTAMP)
+  `).run();
+
+  // 2. Enqueue a PROACTIVE_TEST in test_dispatch_queue
+  db.prepare(`
+    INSERT INTO test_dispatch_queue (id, target_thread_id, content, action_type, status, created_at)
+    VALUES ('test_pro_1', 'thread_proactive_test', 'Hỏi thăm', 'PROACTIVE_TEST', 'PENDING', CURRENT_TIMESTAMP)
+  `).run();
+
+  const sentMessages: Array<{ target: string; message: string }> = [];
+  const client = {
+    isDryRun: true,
+    async sendMessage(target: string, msg: string) {
+      sentMessages.push({ target, message: msg });
+      return { success: true };
+    },
+    async getRecentThreadMessages(_target: string) {
+      return { messages: [], contextSnippet: '', targetName: undefined };
+    },
+    async close() {}
+  } as any;
+
+  let capturedContextSnippet = '';
+  const gemini = {
+    isConfigured: () => true,
+    async generateProactiveMessage(options: any) {
+      capturedContextSnippet = options.contextSnippet || '';
+      return 'Ủa vụ đồ án hôm nọ ổn thỏa chưa cậu?';
+    }
+  } as any;
+
+  const lock = new LockManager(db);
+  const limiter = new RateLimiter(db, { minSecondsBetween: 0, maxPerHour: 100 });
+  const runner = new CronRunner(db, client, lock, limiter, 'test-worker-proactive', gemini);
+
+  await runner.processTestQueue();
+
+  // Verify message was generated using the recent conversation context
+  assert.ok(capturedContextSnippet.includes('Hôm nay tớ làm đồ án mệt quá'));
+  assert.ok(capturedContextSnippet.includes('Nghỉ ngơi sớm đi nha'));
+
+  // Verify message was sent
+  assert.equal(sentMessages.length, 1);
+  assert.equal(sentMessages[0].target, 'thread_proactive_test');
+  assert.equal(sentMessages[0].message, 'Ủa vụ đồ án hôm nọ ổn thỏa chưa cậu?');
+
+  // Verify test_dispatch_queue marked COMPLETED
+  const row = db.prepare(`SELECT status FROM test_dispatch_queue WHERE id = 'test_pro_1'`).get() as any;
+  assert.equal(row.status, 'COMPLETED');
+
+  // Verify execution_logs records recent context
+  const execLog = db.prepare(`SELECT * FROM execution_logs WHERE reminder_id = 'proactive-test'`).get() as any;
+  assert.ok(execLog);
+  const details = JSON.parse(execLog.details);
+  assert.equal(details.hasRecentContext, true);
+  assert.ok(details.recentMessagesCount > 0);
+
+  await runner.stop();
+  db.close();
+  if (fs.existsSync(TEST_DB)) {
+    fs.unlinkSync(TEST_DB);
+  }
+});
+
 
 
 

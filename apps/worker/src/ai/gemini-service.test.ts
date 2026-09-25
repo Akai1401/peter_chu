@@ -589,3 +589,43 @@ test('extractReminderPayload - cleanly strips unclosed CANCEL_REMINDER block wit
   assert.ok(!res.cleanReplyText.includes('rem_test_123'));
 });
 
+test('GeminiService - generateProactiveMessage with contextSnippet and anti-repetition', async () => {
+  const originalFetch = globalThis.fetch;
+  try {
+    let capturedPrompt = '';
+    globalThis.fetch = (async (_url: any, options: any) => {
+      const parsedBody = JSON.parse(options.body);
+      capturedPrompt = parsedBody.contents[0].parts[0].text;
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          candidates: [
+            {
+              content: {
+                parts: [{ text: 'Ủa vụ nộp bài tập hôm nọ xong xuôi chưa cậu?' }]
+              }
+            }
+          ]
+        })
+      } as any;
+    }) as any;
+
+    const gemini = new GeminiService({ apiKey: 'dummy_key' });
+    const contextSnippet = `[Tôi]: "Tối nay đi cafe không?"\n[Đối phương]: "Hôm nay tớ bận làm bài tập rồi"`;
+    const message = await gemini.generateProactiveMessage({
+      guidance: 'Hỏi thăm bài tập',
+      contextSnippet,
+      targetName: 'Lan'
+    });
+
+    assert.strictEqual(message, 'Ủa vụ nộp bài tập hôm nọ xong xuôi chưa cậu?');
+    assert.ok(capturedPrompt.includes('LỊCH SỬ CÁC TIN NHẮN GẦN ĐÂY TRONG ĐOẠN CHAT'));
+    assert.ok(capturedPrompt.includes('TRÁNH TRÙNG LẶP Ý CŨ (CỰC KỲ QUAN TRỌNG)'));
+    assert.ok(capturedPrompt.includes('[Đối phương]: "Hôm nay tớ bận làm bài tập rồi"'));
+    assert.ok(capturedPrompt.includes('Lan'));
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+

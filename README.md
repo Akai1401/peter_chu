@@ -163,10 +163,14 @@ Hệ thống hỗ trợ AI bot **tự động và chủ động nhắn tin trư�
 - **Định hướng chủ đề & Phong cách (Guidance Prompt & Persona Integration)**:
   - Cung cấp ô hướng dẫn chủ đề và các tag nhanh tiện lợi: *Hỏi thăm đang làm gì*, *Trêu đùa vui vẻ*, *Rủ rê đi chơi / ăn uống*, *Nhắc nhớ vu vơ*.
   - Tự động tích hợp bộ **Hồ sơ văn phong (Persona)** đang kích hoạt, giúp câu chào mở màn mang trọn vẹn giọng điệu, từ cửa miệng và cách xưng hô tự nhiên như người thật.
+- **Đọc Lại Lịch Sử Đoạn Chat & Chống Trùng Lặp Ý Cũ (Context-Aware & Anti-Repetition)**:
+  - Trước khi khởi tạo tin nhắn chủ động, bot tự động đọc các tin nhắn gần nhất từ luồng chat Messenger trực tiếp (thông qua Playwright) hoặc lịch sử hội thoại gần nhất trong cơ sở dữ liệu (`ai_processed_messages` & `execution_logs`).
+  - **Tránh trùng lặp ý cũ**: Hệ thống phân tích kỹ lưỡng các câu chào, câu hỏi thăm hoặc chủ đề vừa được thảo luận gần đây (ví dụ: vừa hỏi *"đang làm gì đấy"*, *"ăn cơm chưa"* thì tuyệt đối không lặp lại y hệt).
+  - **Mạch trò chuyện tự nhiên & hợp lý**: Bot sẽ chọn tiếp nối câu chuyện dang dở một cách tinh tế hoặc mở ra một chủ đề mới hoàn toàn tự nhiên, đúng ngữ cảnh cuộc sống của đối phương.
 - **Quản lý & Thử nghiệm trực tiếp trên Admin Dashboard**:
   - Nhấn nút **"Chủ động nói chuyện"** trên card System Status để mở modal cấu hình.
   - Hiển thị thông báo badge trạng thái trực quan: *Chủ động: Đang chạy (lần tới: 14:25)* hoặc *Chủ động: Tắt*.
-  - Nút **"Gửi thử nghiệm ngay"**: Gửi tức thì 1 tin nhắn chủ động tới cuộc hội thoại chỉ định để kiểm tra câu chữ và chất lượng câu mở màn do AI sinh ra.
+  - Nút **"Gửi thử nghiệm ngay"**: Gửi tức thì 1 tin nhắn chủ động tới cuộc hội thoại chỉ định để kiểm tra câu chữ và chất lượng câu mở màn do AI sinh ra (có áp dụng đọc ngữ cảnh tin nhắn gần đây).
 
 ### 6. Tự Động Lên Lịch, Chế Độ Lặp Lại Hàng Ngày & Hủy Reminder Qua Tin Nhắn
 Người dùng có thể trò chuyện tự nhiên với bot qua Messenger để yêu cầu hẹn giờ, lặp lại hàng ngày, hoặc gọi dậy:

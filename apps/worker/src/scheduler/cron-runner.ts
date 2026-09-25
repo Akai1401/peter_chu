@@ -8,7 +8,7 @@ import {
   isSchedulePastDue,
   type BotStatus
 } from '@messenger/shared/node';
-import { MessengerClient } from '../messenger/playwright-client.js';
+import { MessengerClient, extractThreadId } from '../messenger/playwright-client.js';
 import { LockManager } from '../safety/lock-manager.js';
 import { RateLimiter } from '../safety/rate-limiter.js';
 import { GeminiService, extractReminderPayload } from '../ai/gemini-service.js';
@@ -661,8 +661,13 @@ export class CronRunner {
             } catch {}
           }
 
+          console.log(`[ProactiveChat] Fetching recent conversation context for test thread ${targetThread}...`);
+          const recentContext = await this.getRecentConversationContextForProactive(targetThread);
+
           const proactiveMsg = await this.geminiService.generateProactiveMessage({
             persona,
+            contextSnippet: recentContext.snippet,
+            targetName: recentContext.targetName,
             guidance
           });
 
@@ -688,7 +693,9 @@ export class CronRunner {
             details: {
               proactive: true,
               test: true,
-              message: proactiveMsg
+              message: proactiveMsg,
+              hasRecentContext: Boolean(recentContext.snippet),
+              recentMessagesCount: recentContext.count
             }
           });
 
@@ -1528,6 +1535,113 @@ export class CronRunner {
   }
 
   /**
+   * Retrieves recent conversation context for proactive messaging.
+   * Priority:
+   * 1. Live browser extraction from the active conversation thread
+   * 2. Fall back to SQLite ai_processed_messages and previous execution_logs
+   */
+  private async getRecentConversationContextForProactive(targetThread: string): Promise<{
+    snippet: string;
+    targetName?: string;
+    count: number;
+  }> {
+    const cleanThread = extractThreadId(targetThread);
+    let contextSnippet = '';
+    let targetName: string | undefined = undefined;
+    let count = 0;
+
+    // 1. Try reading from browser if active
+    try {
+      if (typeof this.messengerClient.getRecentThreadMessages === 'function') {
+        const browserRes = await this.messengerClient.getRecentThreadMessages(targetThread, 10);
+        if (browserRes && browserRes.contextSnippet && browserRes.contextSnippet.trim()) {
+          contextSnippet = browserRes.contextSnippet.trim();
+          targetName = browserRes.targetName;
+          count = browserRes.messages?.length || 0;
+          console.log(`[ProactiveChat] Loaded live thread context: ${count} messages, partner: "${targetName || 'N/A'}"`);
+        }
+      }
+    } catch (err: any) {
+      console.warn(`[ProactiveChat] Live browser context warning:`, err.message);
+    }
+
+    // 2. Fallback to SQLite if browser yielded no messages (dry-run, offline, empty page)
+    if (!contextSnippet) {
+      try {
+        const rows = this.db.prepare(`
+          SELECT message_text, reply_text, created_at
+          FROM ai_processed_messages
+          WHERE thread_id = ? OR thread_id LIKE ?
+          ORDER BY id DESC
+          LIMIT 6
+        `).all(cleanThread, `%${cleanThread}%`) as Array<{
+          message_text: string;
+          reply_text: string;
+          created_at: string;
+        }>;
+
+        if (rows.length > 0) {
+          const formatted: string[] = [];
+          for (const row of rows.reverse()) {
+            if (row.message_text) {
+              formatted.push(`[Đối phương]: "${row.message_text}"`);
+              count++;
+            }
+            if (row.reply_text) {
+              formatted.push(`[Tôi]: "${row.reply_text}"`);
+              count++;
+            }
+          }
+          contextSnippet = formatted.join('\n');
+          console.log(`[ProactiveChat] Loaded SQLite conversation context (${rows.length} records)`);
+        }
+      } catch (dbErr: any) {
+        console.warn(`[ProactiveChat] SQLite context fallback warning:`, dbErr.message);
+      }
+    }
+
+    // 3. Append recent proactive messages sent by the bot to ensure we don't repeat recent proactive topics
+    try {
+      const recentProactives = this.db.prepare(`
+        SELECT message_preview, executed_at
+        FROM execution_logs
+        WHERE (thread_id = ? OR thread_id LIKE ?)
+          AND status = 'SUCCESS'
+          AND (reminder_id = 'proactive-chat' OR reminder_id = 'proactive-test')
+        ORDER BY executed_at DESC
+        LIMIT 3
+      `).all(cleanThread, `%${cleanThread}%`) as Array<{
+        message_preview: string;
+        executed_at: string;
+      }>;
+
+      if (recentProactives.length > 0) {
+        const proactiveSnippets = recentProactives
+          .map((r) => {
+            const clean = (r.message_preview || '').replace(/^\[Proactive Chat\]:\s*/, '').trim();
+            return `[Tôi đã chủ động nhắn trước đó]: "${clean}"`;
+          })
+          .filter(Boolean)
+          .join('\n');
+
+        if (proactiveSnippets) {
+          if (contextSnippet) {
+            contextSnippet += `\n\n--- CÁC CÂU BẠN ĐÃ CHỦ ĐỘNG NHẮN GẦN ĐÂY ---\n${proactiveSnippets}`;
+          } else {
+            contextSnippet = `--- CÁC CÂU BẠN ĐÃ CHỦ ĐỘNG NHẮN GẦN ĐÂY ---\n${proactiveSnippets}`;
+          }
+        }
+      }
+    } catch {}
+
+    return {
+      snippet: contextSnippet,
+      targetName,
+      count
+    };
+  }
+
+  /**
    * Periodically checks if proactive messaging schedule is due
    * and dispatches a spontaneous conversation starter to the target thread.
    */
@@ -1618,8 +1732,13 @@ export class CronRunner {
         } catch {}
       }
 
+      console.log(`[ProactiveChat] Fetching recent conversation context for thread ${targetThread}...`);
+      const recentContext = await this.getRecentConversationContextForProactive(targetThread);
+
       const proactiveMsg = await this.geminiService.generateProactiveMessage({
         persona,
+        contextSnippet: recentContext.snippet,
+        targetName: recentContext.targetName,
         guidance: config.promptGuidance || 'Ask how they are doing or playful check-in'
       });
 
@@ -1644,7 +1763,9 @@ export class CronRunner {
           details: {
             proactive: true,
             message: proactiveMsg,
-            nextScheduledAt
+            nextScheduledAt,
+            hasRecentContext: Boolean(recentContext.snippet),
+            recentMessagesCount: recentContext.count
           }
         });
 

@@ -1459,6 +1459,168 @@ export class MessengerClient {
   }
 
   /**
+   * Reads recent messages from the specified Messenger thread (or active thread)
+   * to provide conversation context for proactive messages or AI auto-reply.
+   */
+  async getRecentThreadMessages(
+    targetThread: string,
+    limit: number = 10
+  ): Promise<{
+    messages: Array<{ text: string; isOutgoing: boolean }>;
+    contextSnippet: string;
+    targetName?: string;
+  }> {
+    if (this.isDryRun) {
+      return { messages: [], contextSnippet: '', targetName: undefined };
+    }
+
+    try {
+      await this.init();
+      this.page = await this.getActivePage();
+      if (!this.page) {
+        return { messages: [], contextSnippet: '', targetName: undefined };
+      }
+
+      const cleanThreadId = extractThreadId(targetThread.trim());
+      const threadUrl = cleanThreadId.startsWith('http')
+        ? cleanThreadId
+        : `https://www.facebook.com/messages/t/${cleanThreadId}`;
+
+      const isAlreadyOnTarget =
+        cleanThreadId !== 't' &&
+        !cleanThreadId.startsWith('http') &&
+        this.page.url().includes(cleanThreadId);
+
+      if (!isAlreadyOnTarget) {
+        console.log(`[MessengerClient] Navigating to thread to inspect recent messages: ${threadUrl}`);
+        await this.page.goto(threadUrl, {
+          waitUntil: 'domcontentloaded',
+          timeout: 25000
+        });
+        await this.page.waitForTimeout(2500);
+      }
+
+      // Extract conversation partner name from header
+      let targetName: string | undefined = undefined;
+      try {
+        const headerNameLocator = this.page.locator([
+          'div[role="main"] h1',
+          'div[role="main"] h2',
+          'div[role="main"] [data-scope="messages_header"]'
+        ].join(', ')).first();
+        if ((await headerNameLocator.count()) > 0) {
+          const rawName = (await headerNameLocator.innerText().catch(() => '')).trim();
+          if (rawName) targetName = rawName;
+        }
+      } catch {}
+
+      const extracted = await this.page.evaluate((maxCount) => {
+        const main = document.querySelector('div[role="main"]') || document.querySelector('div[role="region"]');
+        if (!main) return { messages: [], snippet: '' };
+
+        const textElements = Array.from(main.querySelectorAll('div[dir="auto"]'));
+        const collected: Array<{ text: string; isOutgoing: boolean }> = [];
+
+        const startIndex = Math.max(0, textElements.length - 40);
+        for (let i = startIndex; i < textElements.length; i++) {
+          const el = textElements[i] as HTMLElement;
+          const text = (el.textContent || '').trim();
+          if (!text || text.length < 2) continue;
+          if (text.startsWith('http')) continue;
+          if (/^(?:vừa xong|\d+\s*(?:phút|giờ|ngày|giây|tháng)|seen|đã nhận|đã gửi|sent|delivered|active now|đang hoạt động|(?:đã nhỡ|nhỡ)?\s*cuộc gọi)/i.test(text)) continue;
+
+          const lowerText = text.toLowerCase();
+          if (
+            lowerText.includes('đã xóa') ||
+            lowerText.includes('đã xoá') ||
+            lowerText.includes('đã thu hồi') ||
+            lowerText.includes('thu hồi tin nhắn') ||
+            lowerText.includes('tin nhắn đã bị') ||
+            lowerText.includes('tin nhắn đã được') ||
+            lowerText.includes('đã gỡ') ||
+            lowerText.includes('unsent') ||
+            lowerText.includes('removed a message') ||
+            lowerText.includes('deleted a message') ||
+            lowerText.includes('đã đặt biệt danh') ||
+            lowerText.includes('đã đổi biệt danh') ||
+            lowerText.includes('đã đổi chủ đề') ||
+            lowerText.includes('đã đổi biểu tượng cảm xúc') ||
+            lowerText.includes('đã ghim tin nhắn') ||
+            lowerText.includes('đã bỏ ghim') ||
+            lowerText.includes('cuộc gọi thoại') ||
+            lowerText.includes('cuộc gọi video') ||
+            lowerText.includes('cuộc gọi đã kết thúc') ||
+            lowerText.includes('thời lượng cuộc gọi') ||
+            lowerText.includes('đã bỏ lỡ cuộc gọi') ||
+            lowerText.includes('đã bắt đầu cuộc gọi') ||
+            /^(?:bạn đã (?:xóa|xoá|thu hồi|gỡ)|tin nhắn đã (?:bị|được) (?:xóa|xoá|thu hồi|gỡ)|(?:bạn|đối phương) đã (?:đặt|đổi|ghim|bỏ ghim)|cuộc gọi)/i.test(lowerText)
+          ) {
+            continue;
+          }
+
+          let curr: HTMLElement | null = el;
+          let isOutgoing = false;
+          while (curr && curr !== main) {
+            const ariaLabel = curr.getAttribute('aria-label') || '';
+            if (/^(?:bạn đã gửi|bạn gửi|you sent)/i.test(ariaLabel) || curr.getAttribute('data-testid') === 'outgoing_message') {
+              isOutgoing = true;
+              break;
+            }
+            const style = window.getComputedStyle(curr);
+            const bg = style.backgroundColor;
+            if (bg.includes('0, 132, 255') || bg.includes('0, 100, 224') || bg.includes('24, 119, 242')) {
+              isOutgoing = true;
+              break;
+            }
+            if (style.justifyContent === 'flex-end' || style.alignItems === 'flex-end') {
+              isOutgoing = true;
+              break;
+            }
+            curr = curr.parentElement;
+          }
+
+          if (!isOutgoing) {
+            const mainRect = main.getBoundingClientRect();
+            const elRect = el.getBoundingClientRect();
+            if (mainRect.width > 0 && elRect.width > 0) {
+              const distFromLeft = elRect.left - mainRect.left;
+              const distFromRight = mainRect.right - elRect.right;
+              const elCenter = elRect.left + elRect.width / 2;
+              const mainThreshold = mainRect.left + mainRect.width * 0.5;
+              if (distFromRight < distFromLeft || elCenter > mainThreshold) {
+                isOutgoing = true;
+              }
+            }
+          }
+
+          const prev = collected[collected.length - 1];
+          if (prev && prev.text === text && prev.isOutgoing === isOutgoing) continue;
+          if (prev && prev.isOutgoing === isOutgoing && prev.text.includes(text)) continue;
+
+          collected.push({ text, isOutgoing });
+        }
+
+        const recent = collected.slice(-maxCount);
+        const snippet = recent
+          .map((m) => `${m.isOutgoing ? '[Tôi]' : '[Đối phương]'}: "${m.text}"`)
+          .join('\n');
+
+        return { messages: recent, snippet };
+      }, limit);
+
+      console.log(`[MessengerClient] Inspected recent messages from thread (${extracted.messages.length} messages found, partner: "${targetName || 'Unknown'}")`);
+      return {
+        messages: extracted.messages,
+        contextSnippet: extracted.snippet,
+        targetName
+      };
+    } catch (err: any) {
+      console.warn('[MessengerClient] Warning reading recent thread messages:', err.message);
+      return { messages: [], contextSnippet: '', targetName: undefined };
+    }
+  }
+
+  /**
    * Graceful cleanup
    */
   async close(): Promise<void> {
