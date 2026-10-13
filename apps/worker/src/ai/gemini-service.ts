@@ -653,29 +653,61 @@ ${contextSnippet}
     persona?: LearnedPersona | null;
     reminderTitle?: string;
     targetName?: string;
+    contextSnippet?: string;
+    runCount?: number;
+    maxRuns?: number;
+    wakeUpMode?: boolean;
+    isDaily?: boolean;
   }): Promise<string> {
     if (!this.isConfigured()) {
       throw new Error('Gemini API key is not configured');
     }
 
-    const { promptDescription, persona, reminderTitle, targetName } = options;
+    const {
+      promptDescription,
+      persona,
+      reminderTitle,
+      targetName,
+      contextSnippet,
+      runCount = 0,
+      maxRuns = 0,
+      wakeUpMode = false,
+      isDaily = false
+    } = options;
     const recipient = targetName || 'đối phương';
     const now = new Date();
     const timeParts = getLocalTimeParts(now);
     const timeFormatted = `${String(timeParts.hour).padStart(2, '0')}:${String(timeParts.minute).padStart(2, '0')}`;
 
+    const runNumber = runCount + 1;
     let prompt = `Bạn đang đóng vai "Tôi (Chủ tài khoản)" trên Facebook Messenger.
 Hiện tại là ${timeFormatted} (Giờ Việt Nam).
-Nhiệm vụ: Hãy soạn một tin nhắn để gửi cho "${recipient}" theo yêu cầu / mô tả dưới đây.
+Nhiệm vụ: Hãy soạn một tin nhắn nhắc nhở để gửi cho "${recipient}" theo yêu cầu / mô tả dưới đây.
 
-${reminderTitle ? `• Tên lịch nhắc: ${reminderTitle}` : ''}
-• Mô tả / Yêu cầu nội dung: "${promptDescription}"
+${reminderTitle ? `• Tên việc cần nhắc: ${reminderTitle}` : ''}
+• Nội dung / Yêu cầu cốt lõi: "${promptDescription}"
+${isDaily ? '• Tần suất: Lịch nhắc HÀNG NGÀY (Daily recurring) - Đòi hỏi mỗi ngày phải có cách nhắc mới mẻ, tự nhiên.' : ''}
+${wakeUpMode ? `• Chế độ: BÁO THỨC / GỌI DẬY (Lần nhắc thứ ${runNumber}${maxRuns > 0 ? `/${maxRuns}` : ''}).` : ''}
 
-YÊU CẦU:
+YÊU CẦU CỐT LÕI:
 1. Soạn tin nhắn tự nhiên, chân thật, đời thường như người thật nhắn tin trên Facebook Messenger.
-2. Đúng trọng tâm yêu cầu/mô tả nhưng câu từ biến hóa sinh động, không rập khuôn máy móc.
+2. Đúng trọng tâm việc cần nhắc nhưng câu từ biến hóa sinh động, không rập khuôn máy móc.
 3. CHỈ TRẢ VỀ DUY NHẤT 1 ĐOẠN TIN NHẮN (ngắn gọn 1-3 câu), KHÔNG kèm lời giải thích hay chào hỏi AI, KHÔNG bọc dấu ngoặc kép, KHÔNG dùng markdown phức tạp.
 `;
+
+    if (contextSnippet && contextSnippet.trim()) {
+      prompt += `\n--- LỊCH SỬ TIN NHẮN GẦN ĐÂY & LỜI NHẮC ĐÃ GỬI TRƯỚC ĐÓ ---
+${contextSnippet.trim()}
+--- NGUYÊN TẮC BẮT BUỘC: ĐỌC LỊCH SỬ ĐỂ KHÔNG TRÙNG LẶP Ý CŨ ---
+1. TUYỆT ĐỐI TRÁNH TRÙNG LẶP (CỰC KỲ QUAN TRỌNG):
+   • Đọc kỹ các tin nhắn vừa trao đổi gần đây và các tin nhắc nhở đã gửi trước đó cho đối phương.
+   • TUYỆT ĐỐI KHÔNG gửi câu nhắc giống hệt hoặc rập khuôn với các tin nhắc nhở đã gửi trước đó! Mỗi lần nhắc phải có cách mở đầu, cách diễn đạt, trêu đùa hoặc xưng hô mới mẻ, đa dạng.
+   • Không lặp lại các câu hỏi hoặc câu chào vừa mới xuất hiện trong đoạn chat gần đây.
+2. TÍNH HỢP LÝ THEO NGỮ CẢNH HỘI THOẠI:
+   • Nếu trong các tin nhắn gần đây đối phương có chia sẻ gì liên quan (ví dụ: đang bận, đang mệt, vừa xong việc, sắp đi ngủ, mới thức dậy...), hãy khéo léo kết hợp nhắc nhở một cách tự nhiên, tâm lý như người bạn thân.
+${wakeUpMode ? `   • ĐỐI VỚI CHẾ ĐỘ BÁO THỨC / GỌI DẬY: Nếu là lần nhắc/gọi tiếp theo (lần 2, lần 3), hãy tăng dần sự thúc giục một cách thân mật, dí dỏm (ví dụ: "Dậy mau kẻo muộn giờ làm nè!", "Chuông reo lần nữa rồi đó dậy đi bồ ơi!").` : ''}
+--- HẾT NGUYÊN TẮC BỐI CẢNH ---\n`;
+    }
 
     if (persona && persona.styleSummary) {
       prompt += `\n--- HỒ SƠ PHONG CÁCH CỦA TÔI ---

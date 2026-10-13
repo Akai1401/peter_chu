@@ -305,13 +305,27 @@ export class CronRunner {
       let effectiveMessageText = reminder.content;
 
       if (actionType === 'MESSAGE' || actionType === 'MESSAGE_AND_CALL') {
-        if (reminder.ai_generate_message === 1 && this.geminiService.isConfigured()) {
+        const isRecurring = Boolean(reminder.wake_up_mode) || !reminder.target_date || (reminder.max_runs ?? 0) === 0 || (reminder.max_runs ?? 0) > 1;
+        const shouldGenerateDynamic = (reminder.ai_generate_message === 1 || isRecurring) && this.geminiService.isConfigured();
+
+        if (shouldGenerateDynamic) {
           try {
             const persona = this.getActivePersona();
+            const recentContext = await this.getRecentConversationContextForReminder(
+              effectiveThreadId,
+              reminder.id,
+              reminder.title
+            );
             const dynamicMsg = await this.geminiService.generateDynamicReminderMessage({
               promptDescription: reminder.content,
               persona,
-              reminderTitle: reminder.title
+              reminderTitle: reminder.title,
+              targetName: recentContext.targetName,
+              contextSnippet: recentContext.snippet,
+              runCount: reminder.run_count,
+              maxRuns: reminder.max_runs,
+              wakeUpMode: reminder.wake_up_mode === 1,
+              isDaily: !reminder.target_date || reminder.max_runs === 0
             });
             if (dynamicMsg) {
               effectiveMessageText = dynamicMsg;
@@ -724,13 +738,27 @@ export class CronRunner {
 
       if (actionType === 'MESSAGE' || actionType === 'MESSAGE_AND_CALL') {
         try {
-          const remRow = this.db.prepare('SELECT title, ai_generate_message FROM reminders WHERE id = ?').get(pending.reminder_id) as { title?: string; ai_generate_message?: number } | undefined;
-          if (remRow && remRow.ai_generate_message === 1 && this.geminiService.isConfigured()) {
+          const remRow = this.db.prepare('SELECT title, ai_generate_message, target_date, wake_up_mode, max_runs, run_count FROM reminders WHERE id = ?').get(pending.reminder_id) as any;
+          const isRecurring = remRow && (Boolean(remRow.wake_up_mode) || !remRow.target_date || remRow.max_runs === 0 || remRow.max_runs > 1);
+          const shouldGenerateDynamic = remRow && (remRow.ai_generate_message === 1 || isRecurring) && this.geminiService.isConfigured();
+
+          if (shouldGenerateDynamic) {
             const persona = this.getActivePersona();
+            const recentContext = await this.getRecentConversationContextForReminder(
+              effectiveTargetThread,
+              pending.reminder_id,
+              remRow.title
+            );
             const dynamicMsg = await this.geminiService.generateDynamicReminderMessage({
               promptDescription: pending.content,
               persona,
-              reminderTitle: remRow.title
+              reminderTitle: remRow.title,
+              targetName: recentContext.targetName,
+              contextSnippet: recentContext.snippet,
+              runCount: remRow.run_count,
+              maxRuns: remRow.max_runs,
+              wakeUpMode: remRow.wake_up_mode === 1,
+              isDaily: !remRow.target_date || remRow.max_runs === 0
             });
             if (dynamicMsg) {
               effectiveContent = dynamicMsg;
@@ -1184,7 +1212,7 @@ export class CronRunner {
               this.db.prepare(`
                 UPDATE reminders
                 SET window_start = ?, window_end = ?, content = ?, action_type = ?,
-                    interval_minutes = ?, max_runs = ?, wake_up_mode = ?, updated_at = ?
+                    interval_minutes = ?, max_runs = ?, wake_up_mode = ?, ai_generate_message = 1, updated_at = ?
                 WHERE id = ?
               `).run(
                 payload.windowStart,
@@ -1221,8 +1249,8 @@ export class CronRunner {
               INSERT INTO reminders (
                 id, title, content, target_thread_id, action_type, call_duration_seconds,
                 max_runs, run_count, active, window_start, window_end, interval_minutes, target_date,
-                wake_up_mode, created_at, updated_at
-              ) VALUES (?, ?, ?, ?, ?, ?, ?, 0, 1, ?, ?, ?, ?, ?, ?, ?)
+                wake_up_mode, ai_generate_message, created_at, updated_at
+              ) VALUES (?, ?, ?, ?, ?, ?, ?, 0, 1, ?, ?, ?, ?, ?, 1, ?, ?)
             `).run(
               createdReminderId,
               payload.title,
@@ -1633,6 +1661,135 @@ export class CronRunner {
         }
       }
     } catch {}
+
+    return {
+      snippet: contextSnippet,
+      targetName,
+      count
+    };
+  }
+
+  /**
+   * Retrieves recent conversation context and previous reminder messages
+   * before sending a reminder, to ensure the AI does NOT repeat past messages.
+   * Priority:
+   * 1. Live browser extraction from the active conversation thread
+   * 2. Fall back to SQLite ai_processed_messages
+   * 3. Previous reminder messages sent from execution_logs
+   */
+  private async getRecentConversationContextForReminder(
+    targetThread: string,
+    reminderId?: string,
+    reminderTitle?: string
+  ): Promise<{
+    snippet: string;
+    targetName?: string;
+    count: number;
+  }> {
+    const cleanThread = extractThreadId(targetThread);
+    let contextSnippet = '';
+    let targetName: string | undefined = undefined;
+    let count = 0;
+
+    // 1. Try reading recent messages from live browser thread
+    try {
+      if (typeof this.messengerClient.getRecentThreadMessages === 'function') {
+        const browserRes = await this.messengerClient.getRecentThreadMessages(targetThread, 10);
+        if (browserRes && browserRes.contextSnippet && browserRes.contextSnippet.trim()) {
+          contextSnippet = browserRes.contextSnippet.trim();
+          targetName = browserRes.targetName;
+          count = browserRes.messages?.length || 0;
+          console.log(`[ReminderContext] Loaded live thread context: ${count} messages, partner: "${targetName || 'N/A'}"`);
+        }
+      }
+    } catch (err: any) {
+      console.warn(`[ReminderContext] Live browser context warning:`, err.message);
+    }
+
+    // 2. Fallback to SQLite if browser yielded no messages (dry-run, offline, etc.)
+    if (!contextSnippet) {
+      try {
+        const rows = this.db.prepare(`
+          SELECT message_text, reply_text, created_at
+          FROM ai_processed_messages
+          WHERE thread_id = ? OR thread_id LIKE ?
+          ORDER BY id DESC
+          LIMIT 6
+        `).all(cleanThread, `%${cleanThread}%`) as Array<{
+          message_text: string;
+          reply_text: string;
+          created_at: string;
+        }>;
+
+        if (rows.length > 0) {
+          const formatted: string[] = [];
+          for (const row of rows.reverse()) {
+            if (row.message_text) {
+              formatted.push(`[Đối phương]: "${row.message_text}"`);
+              count++;
+            }
+            if (row.reply_text) {
+              formatted.push(`[Tôi]: "${row.reply_text}"`);
+              count++;
+            }
+          }
+          contextSnippet = formatted.join('\n');
+          console.log(`[ReminderContext] Loaded SQLite conversation context (${rows.length} records)`);
+        }
+      } catch (dbErr: any) {
+        console.warn(`[ReminderContext] SQLite context fallback warning:`, dbErr.message);
+      }
+    }
+
+    // 3. Append previous reminder execution logs for this reminder and thread
+    try {
+      const pastReminderLogs = this.db.prepare(`
+        SELECT message_preview, executed_at, details
+        FROM execution_logs
+        WHERE (thread_id = ? OR thread_id LIKE ?)
+          AND status = 'SUCCESS'
+          AND reminder_id != 'proactive-chat'
+          AND reminder_id != 'proactive-test'
+        ORDER BY executed_at DESC
+        LIMIT 6
+      `).all(cleanThread, `%${cleanThread}%`) as Array<{
+        message_preview: string;
+        executed_at: string;
+        details?: string;
+      }>;
+
+      if (pastReminderLogs.length > 0) {
+        const reminderSnippets: string[] = [];
+        for (const log of pastReminderLogs) {
+          let msgText = '';
+          if (log.details) {
+            try {
+              const parsed = JSON.parse(log.details);
+              if (parsed.effectiveMessage) {
+                msgText = parsed.effectiveMessage;
+              }
+            } catch {}
+          }
+          if (!msgText && log.message_preview) {
+            msgText = log.message_preview.replace(/^\[.*?\]:\s*/, '').trim();
+          }
+          if (msgText && !reminderSnippets.includes(`- "${msgText}"`)) {
+            reminderSnippets.push(`- "${msgText}"`);
+          }
+        }
+
+        if (reminderSnippets.length > 0) {
+          const pastNotice = `--- CÁC LỜI NHẮC ĐÃ GỬI TRƯỚC ĐÓ CHO ĐỐI PHƯƠNG ---\n${reminderSnippets.join('\n')}\n=> BẮT BUỘC: Lần này PHẢI đổi cách nói, câu từ mới mẻ, TUYỆT ĐỐI KHÔNG lặp lại các câu trên!`;
+          if (contextSnippet) {
+            contextSnippet += `\n\n${pastNotice}`;
+          } else {
+            contextSnippet = pastNotice;
+          }
+        }
+      }
+    } catch (logErr: any) {
+      console.warn(`[ReminderContext] Previous reminder logs warning:`, logErr.message);
+    }
 
     return {
       snippet: contextSnippet,

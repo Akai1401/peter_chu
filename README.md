@@ -188,6 +188,10 @@ Người dùng có thể trò chuyện tự nhiên với bot qua Messenger để
 - **Tự động kích hoạt Chế Độ Gọi Dậy (`wakeUpMode: true`)**:
   - Khi phát hiện yêu cầu "gọi dậy", "đánh thức", "báo thức": AI tự động bật `wakeUpMode: true` cùng hình thức `MESSAGE_AND_CALL` và lên lịch gọi lặp lại (ví dụ 3 lần, mỗi 5 phút).
   - Lịch được lưu trực tiếp vào cơ sở dữ liệu SQLite (`reminders`).
+- **Đọc Lại Lịch Sử Tin Nhắn & Chống Trùng Lặp Lời Nhắc (Context-Aware & Anti-Repetition)**:
+  - Khi gửi tin nhắn nhắc nhở (đặc biệt với lịch nhắc Hàng ngày `Daily recurring` hoặc chế độ Gọi dậy `Wake-up mode` lặp lại nhiều lần), bot tự động đọc tối đa 10 tin nhắn gần nhất từ luồng chat Messenger (hoặc cơ sở dữ liệu) và các lời nhắc đã gửi trước đó trong `execution_logs`.
+  - **Chống trùng lặp tuyệt đối**: AI phân tích kỹ các câu nhắc đã gửi trước đó (hôm qua, hôm kia, hoặc lần réo chuông trước) để tuyệt đối không gửi lại nguyên văn hay cấu trúc câu rập khuôn; mỗi lần nhắc sẽ đổi cách mở đầu, cách trêu đùa hoặc xưng hô mới mẻ.
+  - **Hợp lý theo ngữ cảnh**: Kết hợp khéo léo ngữ cảnh trò chuyện gần nhất của đối phương (ví dụ đối phương vừa than mệt, bận tăng ca, hay vừa thức dậy...) để lời nhắc chu đáo và tự nhiên như người thật. Ở chế độ gọi dậy/báo thức nhiều lần, mức độ nhắc nhở và giục giã được tăng dần một cách dí dỏm.
 - **Cơ chế Tự Động Ngắt Chuông Thông Minh**:
   - Khi đến giờ hẹn, hệ thống thực hiện cuộc gọi thoại Messenger kèm tin nhắn.
   - Ngay khi người dùng **nghe máy**, **tắt máy / từ chối cuộc gọi**, hoặc **nhắn tin trả lời lại trong đoạn chat**, hệ thống tự động nhận diện và ngắt lịch nhắc (`active = 0`), không tiếp tục làm phiền người dùng.

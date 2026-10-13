@@ -812,6 +812,98 @@ test('Proactive Chat - reads recent conversation context to avoid repeating and 
   }
 });
 
+test('Reminder - reads recent conversation context and previous reminder logs to avoid repeating messages', async () => {
+  const db = setupTestDb();
+
+  // 1. Seed recent conversation history in ai_processed_messages
+  db.prepare(`
+    INSERT INTO ai_processed_messages (id, thread_id, message_text, reply_text, created_at)
+    VALUES ('msg_rem_1', 'thread_reminder_test', 'Nay đi làm về mệt quá bồ ơi', 'Thương thế, về tắm rửa nghỉ ngơi nhé', CURRENT_TIMESTAMP)
+  `).run();
+
+  // 2. Seed a previous reminder execution log
+  db.prepare(`
+    INSERT INTO execution_logs (id, reminder_id, thread_id, status, idempotency_key, message_preview, executed_at, details)
+    VALUES (
+      'exec_past_1',
+      'rem_test_anti_rep',
+      'thread_reminder_test',
+      'SUCCESS',
+      'idem_1',
+      'Nhớ uống thuốc nhé bồ',
+      CURRENT_TIMESTAMP,
+      json_object('effectiveMessage', 'Đã 21:00 rồi, nhớ uống thuốc nhé bồ ơi!')
+    )
+  `).run();
+
+  // 3. Create a reminder with ai_generate_message = 1
+  db.prepare(`
+    INSERT INTO reminders (
+      id, title, content, target_thread_id, action_type, call_duration_seconds,
+      max_runs, run_count, active, window_start, window_end, interval_minutes,
+      wake_up_mode, ai_generate_message, created_at, updated_at
+    ) VALUES (
+      'rem_test_anti_rep', 'Uống thuốc', 'Nhắc uống thuốc', 'thread_reminder_test', 'MESSAGE', 25,
+      0, 1, 1, '21:00', '21:00', 1,
+      0, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+    )
+  `).run();
+
+  // 4. Enqueue a test dispatch for this reminder
+  db.prepare(`
+    INSERT INTO test_dispatch_queue (id, reminder_id, target_thread_id, content, action_type, status, created_at)
+    VALUES ('test_dispatch_rem_1', 'rem_test_anti_rep', 'thread_reminder_test', 'Nhắc uống thuốc', 'MESSAGE', 'PENDING', CURRENT_TIMESTAMP)
+  `).run();
+
+  const sentMessages: Array<{ target: string; message: string }> = [];
+  const client = {
+    isDryRun: true,
+    async sendMessage(target: string, msg: string) {
+      sentMessages.push({ target, message: msg });
+      return { success: true };
+    },
+    async getRecentThreadMessages(_target: string) {
+      return { messages: [], contextSnippet: '', targetName: undefined };
+    },
+    async close() {}
+  } as any;
+
+  let capturedOptions: any = null;
+  const gemini = {
+    isConfigured: () => true,
+    async generateDynamicReminderMessage(options: any) {
+      capturedOptions = options;
+      return 'Ê bồ ơi đi làm mệt nhưng cũng nhớ uống thuốc rồi hẵng ngủ nha!';
+    }
+  } as any;
+
+  const lock = new LockManager(db);
+  const limiter = new RateLimiter(db, { minSecondsBetween: 0, maxPerHour: 100 });
+  const runner = new CronRunner(db, client, lock, limiter, 'test-worker-rem-context', gemini);
+
+  await runner.processTestQueue();
+
+  // Verify message was generated with conversation context and previous reminder logs
+  assert.ok(capturedOptions);
+  assert.ok(capturedOptions.contextSnippet.includes('Nay đi làm về mệt quá bồ ơi'));
+  assert.ok(capturedOptions.contextSnippet.includes('CÁC LỜI NHẮC ĐÃ GỬI TRƯỚC ĐÓ CHO ĐỐI PHƯƠNG'));
+  assert.ok(capturedOptions.contextSnippet.includes('Đã 21:00 rồi, nhớ uống thuốc nhé bồ ơi!'));
+  assert.ok(capturedOptions.contextSnippet.includes('TUYỆT ĐỐI KHÔNG lặp lại các câu trên'));
+  assert.strictEqual(capturedOptions.isDaily, true);
+
+  // Verify sent message
+  assert.equal(sentMessages.length, 1);
+  assert.equal(sentMessages[0].target, 'thread_reminder_test');
+  assert.equal(sentMessages[0].message, 'Ê bồ ơi đi làm mệt nhưng cũng nhớ uống thuốc rồi hẵng ngủ nha!');
+
+  await runner.stop();
+  db.close();
+  if (fs.existsSync(TEST_DB)) {
+    fs.unlinkSync(TEST_DB);
+  }
+});
+
+
 
 
 

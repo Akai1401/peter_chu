@@ -526,6 +526,52 @@ test('GeminiService - generateDynamicReminderMessage creates contextual message 
   }
 });
 
+test('GeminiService - generateDynamicReminderMessage enforces anti-repetition with context snippet and past reminders', async () => {
+  const originalFetch = globalThis.fetch;
+  try {
+    let capturedPrompt = '';
+    globalThis.fetch = (async (_url: any, options: any) => {
+      const body = JSON.parse(options.body);
+      capturedPrompt = body.contents[0].parts[0].text;
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          candidates: [
+            {
+              content: {
+                parts: [{ text: '"Nay đừng thức khuya nữa nha Thủy, ngủ sớm cho khỏe nè!"' }]
+              }
+            }
+          ]
+        })
+      } as any;
+    }) as any;
+
+    const gemini = new GeminiService({ apiKey: 'dummy_key' });
+    const msg = await gemini.generateDynamicReminderMessage({
+      promptDescription: 'Nhắc đi ngủ lúc 23:00',
+      reminderTitle: 'Đi ngủ',
+      targetName: 'Thủy',
+      isDaily: true,
+      wakeUpMode: true,
+      runCount: 1,
+      maxRuns: 3,
+      contextSnippet: '[Đối phương]: "Hôm nay tao mệt quá"\n[Tôi]: "Nghỉ ngơi đi nha"\n--- CÁC LỜI NHẮC ĐÃ GỬI TRƯỚC ĐÓ CHO ĐỐI PHƯƠNG ---\n- "11h đêm rồi mau ngủ đi thôi"'
+    });
+
+    assert.strictEqual(msg, 'Nay đừng thức khuya nữa nha Thủy, ngủ sớm cho khỏe nè!');
+    assert.ok(capturedPrompt.includes('LỊCH SỬ TIN NHẮN GẦN ĐÂY & LỜI NHẮC ĐÃ GỬI TRƯỚC ĐÓ'));
+    assert.ok(capturedPrompt.includes('TUYỆT ĐỐI TRÁNH TRÙNG LẶP (CỰC KỲ QUAN TRỌNG)'));
+    assert.ok(capturedPrompt.includes('Hôm nay tao mệt quá'));
+    assert.ok(capturedPrompt.includes('11h đêm rồi mau ngủ đi thôi'));
+    assert.ok(capturedPrompt.includes('Lần nhắc thứ 2/3'));
+    assert.ok(capturedPrompt.includes('Lịch nhắc HÀNG NGÀY'));
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test('extractCompleteJsonObjects - extracts valid JSON objects from truncated or concatenated text', () => {
   const malformed = `[
     { "title": "First", "score": 1 },
